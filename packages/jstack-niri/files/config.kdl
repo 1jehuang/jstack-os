@@ -1,0 +1,317 @@
+// jstack OS - niri configuration
+// Derived from the reference machine setup, sanitized for general use.
+// KDL format: https://kdl.dev
+// Docs: https://github.com/YaLTeR/niri/wiki/Configuration:-Introduction
+
+input {
+    keyboard {
+        xkb {
+            // jstack keymap: Caps -> Escape, Right Alt -> Mod5 (monitor nav layer)
+            file "/usr/share/jstack/xkb/custom.xkb"
+        }
+        repeat-delay 250
+        repeat-rate 25
+        numlock
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        accel-speed 0.2
+    }
+
+    mouse {
+    }
+
+    trackpoint {
+    }
+
+    touch {
+        off
+    }
+
+    tablet {
+    }
+}
+
+// Disable the overview hot corner (top-left).
+gestures {
+    hot-corners {
+        off
+    }
+}
+
+// Outputs are auto-configured by default. Per-machine overrides belong in
+// the user's own config. See: niri msg outputs
+
+layout {
+    gaps 0
+    center-focused-column "never"
+
+    preset-column-widths {
+        proportion 0.25
+        proportion 0.5
+        proportion 0.75
+    }
+
+    default-column-width { proportion 0.5; }
+
+    focus-ring {
+        width 0.5
+        // Black to gray gradient
+        active-gradient from="#000000" to="gray" angle=45
+        inactive-color "transparent"
+    }
+
+    border {
+        off
+        width 0.5
+        active-color "#ffffff"
+        inactive-color "#666666"
+        urgent-color "#ff0000"
+    }
+
+    shadow {
+        softness 30
+        spread 5
+        offset x=0 y=5
+        color "#0007"
+    }
+
+    struts {
+        left 0.58
+        right 0.58
+        top 0.58
+        bottom 0.58
+    }
+}
+
+// Startup
+spawn-at-startup "waybar"
+// Foot terminal server for instant terminal startup
+spawn-at-startup "sh" "-c" "until niri msg outputs >/dev/null 2>&1; do sleep 0.25; done; exec foot --server"
+// Wallpaper (niri draws only a background color; awww/swww draws images)
+spawn-at-startup "awww-daemon"
+spawn-at-startup "sh" "-c" "for i in $(seq 1 20); do awww query >/dev/null 2>&1 && break; sleep 0.5; done; awww img /usr/share/jstack/wallpapers/pure_black.png"
+// Auto-suspend monitors after 10 minutes idle
+spawn-at-startup "sh" "-c" "until niri msg outputs >/dev/null 2>&1; do sleep 0.25; done; exec /usr/lib/jstack/scripts/swayidle-start.sh"
+// Keep a single external monitor stacked above the laptop screen
+spawn-at-startup "/usr/lib/jstack/scripts/monitor-above.sh"
+
+prefer-no-csd
+
+// Xwayland for legacy/X11 apps
+xwayland-satellite {
+}
+
+screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+// Global blur settings (used by the launcher rule below).
+blur {
+    passes 2
+    offset 1.5
+    noise 0.01
+    saturation 1.2
+}
+
+animations {
+    slowdown 1.0
+
+    window-open {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    window-close {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    window-resize {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+
+    workspace-switch {
+        spring damping-ratio=1.0 stiffness=4500 epsilon=0.0001
+    }
+
+    config-notification-open-close {
+        duration-ms 150
+        curve "ease-out-expo"
+    }
+}
+
+// Window rules
+
+// Firefox picture-in-picture floats by default.
+window-rule {
+    match app-id=r#"firefox$"# title="^Picture-in-Picture$"
+    open-floating true
+}
+
+// Rounded corners for all windows.
+window-rule {
+    geometry-corner-radius 6
+    clip-to-geometry true
+}
+
+// Terminals default to quarter width.
+window-rule {
+    match app-id=r#"^kitty$"#
+    default-column-width { proportion 0.25; }
+}
+
+window-rule {
+    match app-id="foot"
+    default-column-width { proportion 0.25; }
+}
+
+window-rule {
+    match app-id="Alacritty"
+    default-column-width { proportion 0.25; }
+}
+
+window-rule {
+    match title=r#"btop"#
+    default-column-width { proportion 0.5; }
+}
+
+window-rule {
+    match app-id="Dunst"
+    opacity 0.75
+}
+
+// Launcher: floating with blur behind it.
+window-rule {
+    match app-id="tofi"
+    open-floating true
+    open-on-output "current"
+
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+layer-rule {
+    match namespace=r#"^(tofi|launcher)$"#
+
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+// Open browsers on the current output/workspace.
+window-rule {
+    match app-id="google-chrome"
+    open-on-output "current"
+}
+
+// Focus new windows when they open (fixes xdg-open not focusing).
+window-rule {
+    open-focused true
+}
+
+// Fixed workspaces
+workspace "1"
+workspace "2"
+workspace "3"
+workspace "4"
+workspace "5"
+
+binds {
+    // Terminals and launcher
+    Alt+Return hotkey-overlay-title="Open Terminal (kitty)" { spawn "kitty" "--single-instance"; }
+    Alt+Shift+Return hotkey-overlay-title="Open Terminal (foot)" { spawn "foot"; }
+    Alt+Space hotkey-overlay-title="App Launcher" { spawn "sh" "-c" "tofi-drun --drun-launch=true"; }
+    Ctrl+Shift+N allow-inhibiting=false hotkey-overlay-title="Firefox: New Private Window" { spawn "/usr/lib/jstack/scripts/firefox-private-window-shortcut.sh"; }
+
+    // Volume (PipeWire/WirePlumber), 3% steps capped at 100%
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "-l" "1.0" "@DEFAULT_AUDIO_SINK@" "3%+"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "-l" "1.0" "@DEFAULT_AUDIO_SINK@" "3%-"; }
+    XF86AudioMute        allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+    XF86AudioMicMute     allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle"; }
+
+    // Media keys
+    XF86AudioPlay  allow-when-locked=true { spawn "playerctl" "play-pause"; }
+    XF86AudioPause allow-when-locked=true { spawn "playerctl" "pause"; }
+    XF86AudioNext  allow-when-locked=true { spawn "playerctl" "next"; }
+    XF86AudioPrev  allow-when-locked=true { spawn "playerctl" "previous"; }
+    XF86AudioStop  allow-when-locked=true { spawn "playerctl" "stop"; }
+
+    // Window management
+    Alt+Q { close-window; }
+
+    // Alt + vim keys for window navigation
+    Alt+H { focus-column-left; }
+    Alt+J { focus-window-or-workspace-down; }
+    Alt+K { focus-window-or-workspace-up; }
+    Alt+L { focus-column-right; }
+
+    // Alt+Shift + vim keys for moving windows
+    Alt+Shift+H { move-column-left; }
+    Alt+Shift+J { move-window-to-workspace-down; }
+    Alt+Shift+K { move-window-to-workspace-up; }
+    Alt+Shift+L { move-column-right; }
+
+    // Right Alt (Mod5, via jstack keymap) + vim keys = monitor switching
+    Mod5+H { focus-monitor-left; }
+    Mod5+J { focus-monitor-down; }
+    Mod5+K { focus-monitor-up; }
+    Mod5+L { focus-monitor-right; }
+
+    // Alt+1..4 window width presets
+    Alt+1 hotkey-overlay-title="Window 25% width" { set-column-width "25%"; }
+    Alt+2 hotkey-overlay-title="Window 50% width" { set-column-width "50%"; }
+    Alt+3 hotkey-overlay-title="Window 75% width" { set-column-width "75%"; }
+    Alt+4 hotkey-overlay-title="Window 100% width" { set-column-width "100%"; }
+
+    // Workspace switching
+    Alt+5 { focus-workspace 5; }
+    Alt+6 { focus-workspace 6; }
+    Alt+7 { focus-workspace 7; }
+    Alt+8 { focus-workspace 8; }
+    Alt+9 { focus-workspace 9; }
+    Alt+Shift+0 hotkey-overlay-title="Focus Last Workspace" { spawn "/usr/lib/jstack/scripts/focus-last-workspace.sh"; }
+
+    // Clipboard helpers (send Ctrl+C/V to focused app)
+    Alt+C hotkey-overlay-title="Copy (Ctrl+C)" { spawn "wtype" "-M" "ctrl" "-k" "c" "-m" "ctrl"; }
+    Alt+V hotkey-overlay-title="Paste (Ctrl+V)" { spawn "wtype" "-M" "ctrl" "-k" "v" "-m" "ctrl"; }
+    Alt+A hotkey-overlay-title="Copy All (Ctrl+A, Ctrl+C)" { spawn "sh" "-c" "wtype -M ctrl -k a -m ctrl && wtype -M ctrl -k c -m ctrl"; }
+    Alt+Comma hotkey-overlay-title="Send Ctrl+Left" { spawn "wtype" "-M" "ctrl" "-k" "Left" "-m" "ctrl"; }
+    Alt+Period hotkey-overlay-title="Send Ctrl+Right" { spawn "wtype" "-M" "ctrl" "-k" "Right" "-m" "ctrl"; }
+    Alt+Backspace hotkey-overlay-title="Send Ctrl+Backspace" { spawn "wtype" "-M" "ctrl" "-k" "BackSpace" "-m" "ctrl"; }
+
+    // Instant switch to previous window
+    Alt+Tab { focus-window-previous; }
+
+    // Column sizing
+    Alt+R { switch-preset-column-width; }
+    Alt+F { maximize-column; }
+
+    // Screenshots
+    Print { screenshot-window; }
+    Ctrl+Print { screenshot-screen; }
+    Alt+Print { screenshot; }
+
+    Ctrl+Alt+Delete { quit; }
+
+    // Function keys (work without Fn)
+    F1 allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+    F2 allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05-"; }
+    F3 allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+"; }
+    F4 allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle"; }
+    F5 allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
+    F6 allow-when-locked=true { spawn "brightnessctl" "set" "5%+"; }
+    F7 allow-when-locked=true { spawn "playerctl" "previous"; }
+    F8 allow-when-locked=true { spawn "playerctl" "play-pause"; }
+    F9 allow-when-locked=true { spawn "playerctl" "next"; }
+    F10 allow-when-locked=true { spawn "playerctl" "stop"; }
+    F11 { fullscreen-window; }
+
+    // Standard brightness keys
+    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
+    XF86MonBrightnessUp allow-when-locked=true { spawn "brightnessctl" "set" "5%+"; }
+}

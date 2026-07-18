@@ -1,0 +1,44 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-niri
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS niri desktop: config, keymap, and helper scripts"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=(
+  'niri'
+  'waybar'
+  'foot'
+  'kitty'
+  'tofi'
+  'swayidle'
+  'playerctl'
+  'brightnessctl'
+  'wtype'
+  'xwayland-satellite'
+  'dunst'
+  'wireplumber'
+  'jq'
+  'python'
+  'awww'
+  'xorg-xkbcomp'
+)
+source=()
+
+package() {
+  local files="$startdir/files"
+
+  # Default niri config for new users (skel) and system fallback
+  install -Dm644 "$files/config.kdl" "$pkgdir/etc/skel/.config/niri/config.kdl"
+
+  # Shared assets
+  install -Dm644 "$files/xkb/custom.xkb" "$pkgdir/usr/share/jstack/xkb/custom.xkb"
+  install -Dm644 "$files/wallpapers/pure_black.png" "$pkgdir/usr/share/jstack/wallpapers/pure_black.png"
+
+  # Helper scripts
+  install -dm755 "$pkgdir/usr/lib/jstack/scripts"
+  for s in "$files"/scripts/*; do
+    install -Dm755 "$s" "$pkgdir/usr/lib/jstack/scripts/$(basename "$s")"
+  done
+}
