@@ -120,6 +120,8 @@ breaking change.
 | ~/.local/bin/captive-portal-autoaccept (900-line engine) | distro | no personal data found |
 | ~/.local/bin/captive-portal-watch (notification watcher) | distro | |
 | captive-portal-helper.service/.timer, captive-portal-watch.service | distro | installed as system-wide user units + preset (auto-enabled) |
+| Wi-Fi boot recovery service/timer | distro | generic health check; recovers iwd ENFILE failures when iwd is active and only reloads kernel modules when Intel iwlwifi is loaded. No-op without wireless hardware |
+| Intel BE200/BE201 firmware crash signature | hardware | observed `Microcode SW error` can leave duplicate wlan interfaces; handled conditionally by the distro recovery service rather than hardcoding Intel module options for everyone |
 | ~/src/tofi fork (typo-tolerant matching, Ctrl-f/b/g/h/m) | distro | packaged as tofi-jstack, builds from github.com/1jehuang/tofi (public), provides/conflicts tofi. Replaces AUR tofi |
 | ~/.config/tofi/config (fullscreen orange/black theme) | distro | ships in tofi-jstack /etc/skel |
 | tofi-drun-workspace.sh | pending | revisit: depends on workspace-restore behavior; plain tofi-drun shipped in niri config for now |

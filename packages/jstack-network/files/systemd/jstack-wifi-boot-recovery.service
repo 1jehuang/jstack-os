@@ -1,0 +1,9 @@
+[Unit]
+Description=Recover an unusable Wi-Fi interface after boot
+After=iwd.service NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /usr/lib/jstack/network/wifi-boot-recovery --run
+TimeoutStartSec=150

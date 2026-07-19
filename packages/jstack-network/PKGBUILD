@@ -1,16 +1,19 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-network
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc="jstack OS network stack: tofi Wi-Fi picker and captive portal auto-handling"
+pkgdesc="jstack OS network stack: Wi-Fi reliability, picker, and captive portal handling"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
 license=('MIT')
 depends=(
+  'kmod'
   'networkmanager'
   'python'
   'libnotify'
+  'systemd'
   'tofi-jstack'
+  'util-linux'
   'xdg-utils'
 )
 source=()
@@ -22,6 +25,20 @@ package() {
   for b in wifi-pick captive-portal-helper captive-portal-autoaccept captive-portal-watch; do
     install -Dm755 "$files/bin/$b" "$pkgdir/usr/bin/$b"
   done
+
+  # Internal boot-time Wi-Fi recovery helper.
+  install -Dm755 "$files/libexec/wifi-boot-recovery" \
+    "$pkgdir/usr/lib/jstack/network/wifi-boot-recovery"
+
+  # systemd system units. The timer is enabled by the distro preset and runs
+  # once shortly after boot without delaying graphical.target.
+  install -Dm644 "$files/systemd/jstack-wifi-boot-recovery.service" \
+    "$pkgdir/usr/lib/systemd/system/jstack-wifi-boot-recovery.service"
+  install -Dm644 "$files/systemd/jstack-wifi-boot-recovery.timer" \
+    "$pkgdir/usr/lib/systemd/system/jstack-wifi-boot-recovery.timer"
+  install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system-preset/90-jstack-network.preset" <<'EOF'
+enable jstack-wifi-boot-recovery.timer
+EOF
 
   # systemd user units (enabled via preset)
   install -Dm644 "$files/systemd/captive-portal-helper.service" \

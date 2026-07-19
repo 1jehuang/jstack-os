@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Wi-Fi initialization shortly after boot
+
+[Timer]
+OnBootSec=6s
+AccuracySec=1s
+Unit=jstack-wifi-boot-recovery.service
+
+[Install]
+WantedBy=timers.target

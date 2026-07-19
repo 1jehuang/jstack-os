@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# Recover Wi-Fi when boot initialization leaves NetworkManager without a
+# usable station interface. This handles two failures observed on Intel BE201:
+#
+# 1. iwd's NEW_INTERFACE request fails with ENFILE, leaving wlan unavailable.
+# 2. iwlwifi firmware restarts during initialization and leaves duplicate
+#    station interfaces behind.
+#
+# The service is safe on other systems. It exits immediately when no wireless
+# hardware exists and only reloads kernel modules when iwlwifi is loaded.
+set -uo pipefail
+
+readonly TAG="jstack-wifi-boot-recovery"
+readonly LOCK_FILE="${JSTACK_WIFI_LOCK_FILE:-/run/${TAG}.lock}"
+readonly SYS_CLASS_NET="${JSTACK_WIFI_SYS_CLASS_NET:-/sys/class/net}"
+readonly SYS_CLASS_IEEE80211="${JSTACK_WIFI_SYS_CLASS_IEEE80211:-/sys/class/ieee80211}"
+readonly SYS_MODULE="${JSTACK_WIFI_SYS_MODULE:-/sys/module}"
+readonly NMCLI="${JSTACK_WIFI_NMCLI:-/usr/bin/nmcli}"
+readonly JOURNALCTL="${JSTACK_WIFI_JOURNALCTL:-/usr/bin/journalctl}"
+readonly SYSTEMCTL="${JSTACK_WIFI_SYSTEMCTL:-/usr/bin/systemctl}"
+readonly MODPROBE="${JSTACK_WIFI_MODPROBE:-/usr/bin/modprobe}"
+readonly UDEVADM="${JSTACK_WIFI_UDEVADM:-/usr/bin/udevadm}"
+readonly LOGGER="${JSTACK_WIFI_LOGGER:-/usr/bin/logger}"
+readonly SLEEP="${JSTACK_WIFI_SLEEP:-/usr/bin/sleep}"
+
+log() {
+  "$LOGGER" -t "$TAG" -- "$*" 2>/dev/null || true
+  printf '%s: %s\n' "$TAG" "$*"
+}
+
+wireless_phys_exist() {
+  compgen -G "$SYS_CLASS_IEEE80211/phy*" >/dev/null 2>&1
+}
+
+intel_driver_loaded() {
+  [ -d "$SYS_MODULE/iwlwifi" ]
+}
+
+firmware_crash_count() {
+  if [ -n "${JSTACK_WIFI_TEST_CRASH_COUNT:-}" ]; then
+    printf '%s\n' "$JSTACK_WIFI_TEST_CRASH_COUNT"
+    return
+  fi
+
+  "$JOURNALCTL" -b -k --no-pager 2>/dev/null \
+    | grep -c 'iwlwifi .*Microcode SW error detected' || true
+}
+
+wireless_ifaces() {
+  local phy_link
+  for phy_link in "$SYS_CLASS_NET"/*/phy80211; do
+    [ -e "$phy_link" ] || continue
+    basename "$(dirname "$phy_link")"
+  done
+}
+
+wireless_iface_count() {
+  wireless_ifaces | wc -l
+}
+
+nm_state() {
+  local iface=$1
+  "$NMCLI" -g GENERAL.STATE device show "$iface" 2>/dev/null \
+    | grep -oE '^[0-9]+' || true
+}
+
+health_reason() {
+  local -a ifaces=()
+  local state
+
+  mapfile -t ifaces < <(wireless_ifaces)
+  if ((${#ifaces[@]} == 0)); then
+    printf 'no wireless network interface'
+    return 1
+  fi
+  if ((${#ifaces[@]} > 1)); then
+    printf 'duplicate wireless interfaces: %s' "${ifaces[*]}"
+    return 1
+  fi
+
+  state=$(nm_state "${ifaces[0]}")
+  if [[ ! "$state" =~ ^[0-9]+$ ]]; then
+    printf 'NetworkManager does not know interface %s' "${ifaces[0]}"
+    return 1
+  fi
+  if ((state < 30)); then
+    printf 'NetworkManager state %s for %s is not usable' "$state" "${ifaces[0]}"
+    return 1
+  fi
+
+  printf '%s is usable (NetworkManager state %s)' "${ifaces[0]}" "$state"
+}
+
+classify_initial_state() {
+  local crashes count
+
+  if ! wireless_phys_exist && ! intel_driver_loaded; then
+    printf 'no-hardware\n'
+    return
+  fi
+
+  crashes=$(firmware_crash_count)
+  count=$(wireless_iface_count)
+
+  if ((crashes == 0)) && health_reason >/dev/null; then
+    printf 'healthy\n'
+  elif intel_driver_loaded && { ((crashes > 0)) || ((count > 1)) || ! wireless_phys_exist; }; then
+    printf 'driver-recovery\n'
+  else
+    printf 'userspace-recovery\n'
+  fi
+}
+
+wait_for_stable_health() {
+  local required_good=$1
+  local max_samples=$2
+  local crash_baseline=$3
+  local good=0 current_crashes reason sample
+
+  for ((sample = 1; sample <= max_samples; sample++)); do
+    current_crashes=$(firmware_crash_count)
+    if ((current_crashes > crash_baseline)); then
+      log "new iwlwifi firmware crash detected while waiting"
+      return 1
+    fi
+
+    if reason=$(health_reason); then
+      ((good += 1))
+      if ((good >= required_good)); then
+        log "$reason; stable for $((required_good / 2)) seconds"
+        return 0
+      fi
+    else
+      good=0
+    fi
+    "$SLEEP" 0.5
+  done
+
+  reason=$(health_reason 2>&1) || true
+  log "health did not stabilize: ${reason:-unknown state}"
+  return 1
+}
+
+restart_userspace_wifi() {
+  if "$SYSTEMCTL" is-active --quiet iwd.service; then
+    log "restarting iwd and NetworkManager"
+    "$SYSTEMCTL" restart iwd.service
+  else
+    log "restarting NetworkManager (iwd is not active)"
+  fi
+  "$SYSTEMCTL" restart NetworkManager.service
+}
+
+module_loaded() {
+  [ -d "$SYS_MODULE/$1" ]
+}
+
+module_has_holders() {
+  local holders="$SYS_MODULE/$1/holders"
+  [ -d "$holders" ] && find "$holders" -mindepth 1 -maxdepth 1 -print -quit \
+    | grep -q .
+}
+
+unload_module() {
+  local module=$1
+  module_loaded "$module" || return 0
+  if ! "$MODPROBE" -r "$module"; then
+    log "failed to unload $module"
+    return 1
+  fi
+}
+
+reload_intel_wifi() {
+  local module unload_failed=0 iwd_was_active=0
+
+  log "stopping network services for Intel Wi-Fi driver reset"
+  "$SYSTEMCTL" stop NetworkManager.service
+  if "$SYSTEMCTL" is-active --quiet iwd.service; then
+    iwd_was_active=1
+    "$SYSTEMCTL" stop iwd.service
+  fi
+
+  for module in iwlmld iwlmvm iwlwifi; do
+    unload_module "$module" || unload_failed=1
+  done
+
+  # Reset mac80211's interface-name allocator as well. Without this, a clean
+  # recovery can return as wlan1 even after the stale wlan0 disappeared.
+  for module in mac80211 cfg80211; do
+    if module_loaded "$module" && ! module_has_holders "$module"; then
+      unload_module "$module" || unload_failed=1
+    fi
+  done
+
+  if ((unload_failed)); then
+    log "driver unload was incomplete; restarting services without reloading"
+  else
+    "$SLEEP" 1
+    log "loading iwlwifi"
+    "$MODPROBE" iwlwifi
+    "$UDEVADM" settle --timeout=10 || true
+  fi
+
+  if ((iwd_was_active)); then
+    "$SYSTEMCTL" start iwd.service
+  fi
+  "$SYSTEMCTL" start NetworkManager.service
+  return "$unload_failed"
+}
+
+run_recovery() {
+  local classification crashes reason attempt baseline
+
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    return 0
+  fi
+
+  classification=$(classify_initial_state)
+  crashes=$(firmware_crash_count)
+  reason=$(health_reason 2>&1) || true
+  log "initial check: class=$classification, crashes=$crashes, interfaces=$(wireless_iface_count), state=${reason:-unknown}"
+
+  if [ "$classification" = no-hardware ]; then
+    log "no wireless hardware present; nothing to do"
+    return 0
+  fi
+
+  if [ "$classification" != driver-recovery ]; then
+    if wait_for_stable_health 6 16 "$crashes"; then
+      return 0
+    fi
+    classification=$(classify_initial_state)
+  fi
+
+  if [ "$classification" != driver-recovery ]; then
+    baseline=$(firmware_crash_count)
+    restart_userspace_wifi
+    if wait_for_stable_health 4 24 "$baseline"; then
+      log "Wi-Fi recovered after userspace restart"
+      return 0
+    fi
+  fi
+
+  if ! intel_driver_loaded; then
+    reason=$(health_reason 2>&1) || true
+    log "FAILED after userspace recovery; non-Intel driver will not be reloaded: ${reason:-unknown state}"
+    return 1
+  fi
+
+  for attempt in 1 2 3; do
+    baseline=$(firmware_crash_count)
+    log "full Intel Wi-Fi recovery attempt $attempt"
+    reload_intel_wifi || true
+    if wait_for_stable_health 6 30 "$baseline"; then
+      log "Wi-Fi recovered after Intel driver reset $attempt"
+      return 0
+    fi
+  done
+
+  reason=$(health_reason 2>&1) || true
+  log "FAILED after all recovery attempts: ${reason:-unknown state}"
+  return 1
+}
+
+case "${1:---run}" in
+  --classify)
+    classify_initial_state
+    ;;
+  --check)
+    health_reason
+    printf '\n'
+    ;;
+  --run)
+    run_recovery
+    ;;
+  *)
+    printf 'usage: %s [--run|--check|--classify]\n' "$0" >&2
+    exit 2
+    ;;
+esac
