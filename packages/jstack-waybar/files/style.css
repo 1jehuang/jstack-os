@@ -1,0 +1,173 @@
+* {
+    border: none;
+    border-radius: 0;
+    font-family: 'JetBrainsMono Nerd Font ExtraLight', 'JetBrainsMono NF ExtraLight', monospace;
+    font-size: 13px;
+    min-height: 0;
+}
+
+window#waybar {
+    background-color: #000000;
+    color: #888888;
+    margin-top: 5px;
+}
+
+#clock {
+    padding: 0 10px;
+    margin: 0 5px;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 15px;
+}
+
+#cpu,
+#memory,
+#temperature,
+#disk,
+#network,
+#custom-net,
+#pulseaudio,
+#battery,
+#custom-battery,
+#tray {
+    padding: 0 5px;
+    margin: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 0;
+}
+
+#tray {
+    border-top-right-radius: 15px;
+    border-bottom-right-radius: 15px;
+}
+
+#network,
+#custom-net {
+    color: #888888;
+}
+
+#custom-net.hotspot,
+#custom-net.hotspot-bluetooth,
+#custom-net.hotspot-usb {
+    color: #89dceb;
+}
+
+#network.disconnected {
+    color: #f38ba8;
+}
+
+#custom-net.wifi-good,
+#custom-net.wifi-ok,
+#custom-net.wifi-weak,
+#custom-net.wifi-poor,
+#custom-net.ethernet {
+    color: #888888;
+}
+
+#custom-net.disconnected {
+    color: #f38ba8;
+}
+
+#cpu {
+    color: #888888;
+}
+
+#cpu.warning {
+    color: #f9e2af;
+}
+
+#cpu.critical {
+    color: #f38ba8;
+}
+
+#memory {
+    color: #888888;
+}
+
+#memory.warning {
+    color: #f9e2af;
+}
+
+#memory.critical {
+    color: #f38ba8;
+}
+
+#temperature {
+    color: #888888;
+}
+
+#temperature.warning {
+    color: #f9e2af;
+}
+
+#temperature.critical {
+    color: #f44336;
+}
+
+#disk {
+    color: #888888;
+}
+
+#disk.warning {
+    color: #f9e2af;
+}
+
+#disk.critical {
+    color: #f38ba8;
+}
+
+#pulseaudio {
+    color: #888888;
+}
+
+#battery,
+#custom-battery {
+    color: #888888;
+}
+
+#battery.high,
+#custom-battery.high {
+    color: #a6e3a1;
+}
+
+#battery.medium,
+#custom-battery.medium {
+    color: #f9e2af;
+}
+
+#battery.warning,
+#custom-battery.warning {
+    color: #fab387;
+}
+
+#battery.critical,
+#custom-battery.critical {
+    color: #f38ba8;
+}
+
+#battery.charging,
+#custom-battery.charging {
+    color: #89dceb;
+}
+
+#tray {
+    color: #888888;
+}
+
+/* Custom workspaces module - dot visualization */
+#custom-workspaces {
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 0 10px;
+    border-radius: 15px;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+#window {
+    margin-left: 15px;
+    margin-right: 10px;
+}
+
+#custom-window-uptime {
+    color: #555555;
+    margin-right: 10px;
+}

@@ -1,0 +1,47 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-waybar
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS waybar: config, theme, and custom niri-aware modules"
+arch=('x86_64')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=(
+  'waybar'
+  'python'
+  'networkmanager'
+  'rofi-wayland'
+  'libnotify'
+  'ttf-jetbrains-mono-nerd'
+)
+makedepends=('rust' 'cargo')
+source=()
+
+build() {
+  local files="$startdir/files"
+  for crate in niri-workspaces-rs battery-rs window-uptime-rs; do
+    (cd "$files/rs/$crate" && cargo build --release --locked)
+  done
+}
+
+package() {
+  local files="$startdir/files"
+
+  # Default waybar config for new users
+  install -Dm644 "$files/config" "$pkgdir/etc/skel/.config/waybar/config"
+  install -Dm644 "$files/style.css" "$pkgdir/etc/skel/.config/waybar/style.css"
+
+  # Helper scripts
+  install -dm755 "$pkgdir/usr/lib/jstack/waybar"
+  for s in "$files"/scripts/*; do
+    install -Dm755 "$s" "$pkgdir/usr/lib/jstack/waybar/$(basename "$s")"
+  done
+
+  # Compiled custom modules
+  install -Dm755 "$files/rs/niri-workspaces-rs/target/release/niri-workspaces" \
+    "$pkgdir/usr/lib/jstack/waybar/niri-workspaces"
+  install -Dm755 "$files/rs/battery-rs/target/release/waybar-battery" \
+    "$pkgdir/usr/lib/jstack/waybar/battery-status"
+  install -Dm755 "$files/rs/window-uptime-rs/target/release/window-uptime" \
+    "$pkgdir/usr/lib/jstack/waybar/window-uptime"
+}

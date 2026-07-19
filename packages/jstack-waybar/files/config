@@ -1,0 +1,117 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 20,
+    "modules-left": [
+        "clock",
+        "niri/window",
+        "custom/window-uptime"
+    ],
+    "modules-center": [
+        "custom/workspaces"
+    ],
+    "modules-right": [
+        "custom/net",
+        "cpu",
+        "memory",
+        "temperature",
+        "disk",
+        "pulseaudio",
+        "custom/battery",
+        "tray"
+    ],
+    "clock": {
+        "format": "{:%A, %B %d %I:%M %p}",
+        "interval": 60
+    },
+    "tray": {
+        "icon-size": 16,
+        "spacing": 10,
+        "show-passive-items": true
+    },
+    "custom/workspaces": {
+        "exec": "/usr/lib/jstack/waybar/niri-workspaces",
+        "return-type": "json",
+        "format": "{}",
+        "escape": false
+    },
+    "custom/net": {
+        "exec": "/usr/lib/jstack/waybar/net-status",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 10,
+        "format": "{}",
+        "tooltip": true,
+        "on-click": "/usr/lib/jstack/waybar/wifi-menu.sh"
+    },
+    "temperature": {
+        "format": "\udb80\ude38 {temperatureC}\u00b0",
+        "format-critical": "\udb83\ude01 {temperatureC}\u00b0",
+        "critical-threshold": 80,
+        "tooltip": true,
+        "tooltip-format": "CPU Temperature: {temperatureC}\u00b0C / {temperatureF}\u00b0F",
+        "interval": 5,
+        "warning-threshold": 70
+    },
+    "cpu": {
+        "format": "\udb83\udee0 {usage}%",
+        "interval": 1,
+        "states": {
+            "warning": 70,
+            "critical": 90
+        },
+        "tooltip": true,
+        "tooltip-format": "CPU Usage: {usage}%\nLoad Average: {load}\nFrequency: {avg_frequency} GHz"
+    },
+    "memory": {
+        "format": "\udb81\ude1a {}%",
+        "tooltip": true,
+        "tooltip-format": "Memory: {percentage}% ({used} GB / {total} GB)\nSwap: {swapPercentage}% ({swapUsed} GB / {swapTotal} GB)",
+        "interval": 1,
+        "states": {
+            "warning": 70,
+            "critical": 90
+        }
+    },
+    "disk": {
+        "format": "\udb80\uddbc {}%",
+        "path": "/",
+        "tooltip": true,
+        "tooltip-format": "Disk Usage: {percentage_used}% ({used} / {total})\nFree: {free} ({percentage_free}%)",
+        "interval": 30,
+        "warning": 80,
+        "critical": 90
+    },
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "\udb81\udd81 Muted",
+        "format-icons": [
+            "\udb81\udd7f",
+            "\udb81\udd80",
+            "\udb81\udd7e"
+        ],
+        "tooltip": true,
+        "tooltip-format": "Volume: {volume}%\nDevice: {desc}",
+        "interval": 5
+    },
+    "custom/battery": {
+        "exec": "/usr/lib/jstack/waybar/battery-status",
+        "return-type": "json",
+        "interval": 30,
+        "signal": 8,
+        "tooltip": true
+    },
+    "niri/window": {
+        "format": "{app_id} | {title}",
+        "swap-icon-label": false,
+        "max-length": 80,
+        "tooltip": true,
+        "tooltip-format": "{app_id}\n{title}"
+    },
+    "custom/window-uptime": {
+        "exec": "/usr/lib/jstack/waybar/window-uptime",
+        "return-type": "json",
+        "format": "{}",
+        "tooltip": true
+    }
+}

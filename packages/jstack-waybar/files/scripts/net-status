@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Unified Waybar network module.
+
+Replaces the old split between the built-in `network` module (pinned to wlan0)
+and `custom/hotspot`. A single module now reflects whatever the *actual* active
+default route is:
+
+  - Wi-Fi (wl*):           Wi-Fi signal icon + signal %
+  - iPhone BT tether:      hotspot icon (bnep*/"iPhone Network")
+  - iPhone USB tether:     hotspot icon (ipheth*)
+  - Ethernet:              ethernet icon
+  - Nothing:               disconnected icon
+
+Throughput (down/up) is computed from /sys interface counters and rendered in a
+fixed-width token so the bar does not jiggle.
+
+Signalled instantly via SIGRTMIN+10 by ~/.config/waybar/dbus-monitor.sh on every
+NetworkManager event; a slow interval acts as a fallback.
+"""
+
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+STATE_FILE = Path.home() / ".cache" / "waybar-net-status-state.json"
+
+IPHONE_SSID = os.environ.get("IPHONE_HOTSPOT_SSID", "iPhone")
+IPHONE_BT_CONNECTION = os.environ.get("IPHONE_BLUETOOTH_CONNECTION", "iPhone Network")
+
+# Wi-Fi signal icons (weak -> strong)
+WIFI_ICONS = ["\U000f091f", "\U000f0921", "\U000f0924", "\U000f0927", "\U000f0928"]
+ICON_ETHERNET = "\U000f0200"      # 󰈀
+ICON_DISCONNECTED = "\U000f092d"  # 󰤭
+ICON_HOTSPOT = "\U000f05a9"       # 󰖩 wifi/hotspot (matches previous hotspot module)
+
+
+def run(cmd: List[str], timeout: float = 1.0) -> str:
+    try:
+        return subprocess.check_output(
+            cmd, text=True, stderr=subprocess.DEVNULL, timeout=timeout
+        ).strip()
+    except Exception:
+        return ""
+
+
+def route_interface() -> str:
+    """Interface carrying the default route to the internet."""
+    rg = run(["ip", "-4", "route", "get", "1.1.1.1"])
+    if rg:
+        parts = rg.split()
+        if "dev" in parts:
+            idx = parts.index("dev")
+            if idx + 1 < len(parts):
+                return parts[idx + 1]
+
+    defaults = run(["ip", "-4", "route", "show", "default"])
+    best_iface, best_metric = "", None
+    for line in defaults.splitlines():
+        parts = line.split()
+        if "dev" not in parts:
+            continue
+        iface = parts[parts.index("dev") + 1]
+        metric = 0
+        if "metric" in parts:
+            mi = parts.index("metric")
+            if mi + 1 < len(parts):
+                try:
+                    metric = int(parts[mi + 1])
+                except ValueError:
+                    metric = 0
+        if best_metric is None or metric < best_metric:
+            best_metric, best_iface = metric, iface
+    return best_iface
+
+
+def active_connection_names() -> List[str]:
+    out = run(["nmcli", "-t", "-g", "NAME", "connection", "show", "--active"])
+    return [l for l in out.splitlines() if l]
+
+
+def active_wifi_ssid_and_signal(iface: str) -> Tuple[str, Optional[int]]:
+    out = run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,DEVICE", "device", "wifi"])
+    for line in out.splitlines():
+        # nmcli escapes ':' inside fields as '\:'; split carefully from the right
+        parts = line.split(":")
+        if len(parts) < 4:
+            continue
+        active = parts[0]
+        device = parts[-1]
+        signal_raw = parts[-2]
+        ssid = ":".join(parts[1:-2])
+        if active in ("yes", "*") and (device == iface or not iface):
+            sig = int(signal_raw) if signal_raw.isdigit() else None
+            return ssid, sig
+    return "", None
+
+
+def read_iface_stats(iface: str) -> Optional[Tuple[int, int]]:
+    base = Path("/sys/class/net") / iface / "statistics"
+    try:
+        return int((base / "rx_bytes").read_text()), int((base / "tx_bytes").read_text())
+    except Exception:
+        return None
+
+
+def load_state() -> dict:
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def save_state(state: dict) -> None:
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(state))
+    except Exception:
+        pass
+
+
+def compact_rate(bps: float) -> str:
+    v = max(0.0, bps)
+    if v < 1024:
+        return f"{min(int(round(v)), 999):03d}B"
+    if v < 1024 ** 2:
+        return f"{min(int(round(v / 1024)), 999):03d}K"
+    if v < 1024 ** 3:
+        return f"{min(int(round(v / 1024 ** 2)), 999):03d}M"
+    return f"{min(int(round(v / 1024 ** 3)), 999):03d}G"
+
+
+def human_rate(bps: float) -> str:
+    v = max(0.0, bps)
+    if v < 1024:
+        return f"{v:0.1f} B/s"
+    if v < 1024 ** 2:
+        return f"{v / 1024:0.1f} KB/s"
+    if v < 1024 ** 3:
+        return f"{v / 1024 ** 2:0.1f} MB/s"
+    return f"{v / 1024 ** 3:0.1f} GB/s"
+
+
+def wifi_icon(signal: Optional[int]) -> str:
+    if signal is None:
+        return WIFI_ICONS[0]
+    idx = min(len(WIFI_ICONS) - 1, max(0, signal * len(WIFI_ICONS) // 101))
+    return WIFI_ICONS[idx]
+
+
+def wifi_class(signal: Optional[int]) -> str:
+    if signal is None:
+        return "wifi-poor"
+    if signal >= 75:
+        return "wifi-good"
+    if signal >= 60:
+        return "wifi-ok"
+    if signal >= 40:
+        return "wifi-weak"
+    return "wifi-poor"
+
+
+def ipaddr(iface: str) -> str:
+    out = run(["ip", "-4", "-o", "addr", "show", "dev", iface])
+    for line in out.splitlines():
+        parts = line.split()
+        if "inet" in parts:
+            return parts[parts.index("inet") + 1].split("/")[0]
+    return ""
+
+
+def emit(text: str, tooltip: str, cls: List[str]) -> None:
+    print(json.dumps({"text": text, "tooltip": tooltip, "class": cls}))
+
+
+def main() -> None:
+    iface = route_interface()
+    now = time.time()
+
+    if not iface or iface == "lo":
+        emit(f"{ICON_DISCONNECTED} ", "No active network", ["disconnected"])
+        return
+
+    # Throughput
+    stats = read_iface_stats(iface)
+    down = up = 0.0
+    if stats:
+        rx, tx = stats
+        prev = load_state()
+        if prev.get("iface") == iface:
+            dt = now - float(prev.get("ts", 0))
+            if dt > 0:
+                down = max(0.0, (rx - float(prev.get("rx", 0))) / dt)
+                up = max(0.0, (tx - float(prev.get("tx", 0))) / dt)
+        save_state({"iface": iface, "ts": now, "rx": rx, "tx": tx})
+    active_names = active_connection_names()
+    ip = ipaddr(iface)
+
+    # Classify
+    is_bt = IPHONE_BT_CONNECTION in active_names or iface.startswith("bnep")
+    is_usb = iface.startswith("ipheth")
+    is_wifi = iface.startswith("wl")
+    is_eth = iface.startswith(("en", "eth"))
+
+    if is_bt or is_usb:
+        mode = "bluetooth" if is_bt else "usb"
+        tooltip = [
+            "Internet via iPhone hotspot",
+            f"Mode: {mode}",
+            f"Interface: {iface}",
+        ]
+        if ip:
+            tooltip.append(f"IP: {ip}")
+        tooltip.append(f"Down: {human_rate(down)}")
+        tooltip.append(f"Up: {human_rate(up)}")
+        emit(
+            f"{ICON_HOTSPOT}",
+            "\n".join(tooltip),
+            ["hotspot", f"hotspot-{mode}"],
+        )
+        return
+
+    if is_wifi:
+        ssid, signal = active_wifi_ssid_and_signal(iface)
+        icon = wifi_icon(signal)
+        tooltip = [f"Wi-Fi: {ssid or 'unknown'}", f"Interface: {iface}"]
+        tooltip.append(f"Signal: {signal}%" if signal is not None else "Signal: unknown")
+        if ip:
+            tooltip.append(f"IP: {ip}")
+        tooltip.append(f"Down: {human_rate(down)}")
+        tooltip.append(f"Up: {human_rate(up)}")
+        sig_text = f"{signal}%" if signal is not None else ""
+        emit(
+            f"{icon} {sig_text}".rstrip(),
+            "\n".join(tooltip),
+            [wifi_class(signal)],
+        )
+        return
+
+    if is_eth:
+        tooltip = [f"Ethernet: {iface}"]
+        if ip:
+            tooltip.append(f"IP: {ip}")
+        tooltip.append(f"Down: {human_rate(down)}")
+        tooltip.append(f"Up: {human_rate(up)}")
+        emit(f"{ICON_ETHERNET}", "\n".join(tooltip), ["ethernet"])
+        return
+
+    # Unknown interface but routed (e.g. tun/vpn). Show ethernet-ish icon.
+    tooltip = [f"Network: {iface}"]
+    if ip:
+        tooltip.append(f"IP: {ip}")
+    tooltip.append(f"Down: {human_rate(down)}")
+    tooltip.append(f"Up: {human_rate(up)}")
+    emit(f"{ICON_ETHERNET}", "\n".join(tooltip), ["ethernet"])
+
+
+if __name__ == "__main__":
+    main()

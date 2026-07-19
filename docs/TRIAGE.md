@@ -79,9 +79,40 @@ breaking change.
 | fuzzel, rofi | cruft | binds disabled |
 | keyd | pending | referenced in comments (win-key nav); audit /etc/keyd next |
 
+## waybar (audited 2026-07-19)
+
+### config modules
+
+| Item | Bucket | Notes |
+|---|---|---|
+| clock, cpu, memory, temperature, disk, pulseaudio, tray, niri/window | distro | temperature: dropped hardcoded hwmon2 path (machine-specific), waybar autodetects |
+| custom/workspaces (niri-workspaces-rs, Rust) | distro | built from source in PKGBUILD, /usr/lib/jstack/waybar |
+| custom/battery (battery-rs, Rust) | distro | decimal battery readout |
+| custom/window-uptime (window-uptime-rs, Rust) | distro | |
+| custom/net (net-status py + wifi-menu.sh + dbus-monitor.sh) | distro | unified network module; dbus-monitor.sh not yet spawned anywhere (TODO: wire as user service or spawn-at-startup) |
+| custom/jcode-sessions, jcode-pss, jcode-ambient | personal | promotion candidates once jstack-agent package exists |
+| custom/yc-demo-day | personal | |
+| custom/cargo-build | personal | dev workflow |
+| custom/spotui, stop-song-launcher | personal | |
+| custom/airpods, airpods-case (+icons, dbus py) | personal | niche hardware; promotion candidate |
+| custom/whisper (whisper-rs) | personal | depends on local whisper dictation stack |
+| custom/recording | personal | depends on toggle-recording script |
+| custom/vram, audio-device, camera, docker, hotspot, wifi, window-number | cruft | unreferenced in module lists or superseded by custom/net |
+| config-hyprland | cruft | not shipping hyprland |
+| detect-compositor.sh | distro | shipped |
+| style.css | distro | sanitized: removed personal module styles + /home icon urls |
+| niri-workspaces .bak/.running binaries, __pycache__ | cruft | |
+| battery-decimal.py, airpods.sh/dbus.sh, niri-events.sh, niri-workspaces.sh | cruft | superseded by Rust rewrites |
+| waybar-power-monitor-rs, whisper-rs | personal | not referenced by shipped config |
+
+### Packages implied
+
+| Package | Bucket | Notes |
+|---|---|---|
+| waybar, networkmanager, rofi-wayland, libnotify, ttf-jetbrains-mono-nerd, python | distro | wifi-menu uses rofi; nerd font needed for icons |
+
 ## Pending audits
 
-- [ ] waybar config (+detect-compositor.sh)
 - [ ] tofi config + /usr/local/bin/tofi-drun fork
 - [ ] kitty / foot configs
 - [ ] keyd system config
