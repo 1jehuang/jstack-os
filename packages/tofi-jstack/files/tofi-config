@@ -1,0 +1,45 @@
+# Fullscreen Theme (based on official tofi fullscreen theme)
+
+# Window geometry - fullscreen
+width = 100%
+height = 100%
+border-width = 0
+outline-width = 0
+padding-left = 35%
+padding-top = 35%
+
+# Appearance
+background-color = #000A
+
+# Typography  
+font = monospace
+text-color = #ffffff
+prompt-color = #ff4500
+selection-color = #ff6347
+selection-background = #000A
+selection-match-color = #ff4500
+default-result-color = #ffffff
+alternate-result-color = #f0f0f0
+
+# Layout & spacing
+result-spacing = 25
+num-results = 5
+selection-background-padding = 0
+text-cursor = true
+text-cursor-style = bar
+text-cursor-color = #ff4500
+text-cursor-thickness = 3
+
+# Behavior
+matching-algorithm = typo
+hide-cursor = false
+drun-launch = true
+history = true
+physical-keybindings = false
+
+# Keybindings - tofi doesn't support custom key-exit
+# Alt+Tab exit not supported, use Escape
+
+# Input
+prompt-text = ""
+placeholder-text = ""

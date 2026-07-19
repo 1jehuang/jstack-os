@@ -1,0 +1,34 @@
+# Maintainer: Jeremy <jstack-os>
+# jstack's tofi fork: typo-tolerant matching, emacs-style keybindings.
+# Upstream tofi is unmaintained; this tracks github.com/1jehuang/tofi.
+pkgname=tofi-jstack
+pkgver=r265.bb5617b
+pkgrel=1
+pkgdesc="Tiny Wayland launcher (jstack fork: typo-tolerant matching, Ctrl-f/b/g/h/m binds)"
+arch=('x86_64')
+url="https://github.com/1jehuang/tofi"
+license=('MIT')
+depends=('wayland' 'libxkbcommon' 'cairo' 'pango' 'harfbuzz')
+makedepends=('git' 'meson' 'ninja' 'scdoc' 'wayland-protocols')
+provides=('tofi')
+conflicts=('tofi')
+source=("git+https://github.com/1jehuang/tofi.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd tofi
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  arch-meson tofi build
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+
+  # jstack default theme (fullscreen, orange/black)
+  install -Dm644 "$startdir/files/tofi-config" \
+    "$pkgdir/etc/skel/.config/tofi/config"
+}

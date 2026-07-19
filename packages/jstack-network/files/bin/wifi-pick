@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+import csv
+import os
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+TOFI_BASE = [
+    "tofi",
+    "--config", os.path.expanduser("~/.config/tofi/config"),
+    # Keep the same fullscreen orange/black style, empty prompt, and centered
+    # five-result viewport as Alt+Space. Let tofi scroll/filter instead of
+    # trying to draw every nearby network at once, which can overflow the screen.
+    # Keep history disabled by default so password prompts never get saved.
+    # The network picker enables its own separate history file below, matching
+    # tofi-drun's frequent-pick behavior without sharing app-launcher history.
+    "--history", "false",
+    "--drun-launch", "false",
+]
+
+MAX_SSID_CHARS = 32
+SCAN_ACTION = "Scan again"
+TURN_WIFI_ON_ACTION = "Turn WiFi on"
+CAPTIVE_STATUS_FILE = Path.home() / ".cache" / "captive-portal-helper" / "ssid-status.tsv"
+FAST_STARTUP = os.environ.get("WIFI_PICK_FULL_REFRESH", "") not in ("1", "true", "yes")
+
+
+def run(cmd, *, input=None, timeout=20):
+    return subprocess.run(cmd, input=input, text=True, capture_output=True, timeout=timeout)
+
+
+def notify(summary, body=""):
+    if shutil_which("notify-send"):
+        subprocess.Popen(["notify-send", summary, body])
+
+
+def trigger_captive_portal_check():
+    helper = Path("/usr/bin/captive-portal-helper")
+    if not helper.exists():
+        return
+    # Run the same helper as the 30s systemd timer immediately, then once more
+    # shortly after in case NetworkManager's connectivity state lags DHCP. The
+    # helper records full/portal/limited status and de-dupes portal opens.
+    subprocess.Popen(
+        ["bash", "-lc", f"{str(helper)!r} >/dev/null 2>&1; sleep 3; {str(helper)!r} >/dev/null 2>&1"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def trigger_post_connect_verification(ssid):
+    helper = Path("/usr/bin/captive-portal-helper")
+    quoted_helper = str(helper)
+    script = f'''
+ssid={ssid!r}
+helper={quoted_helper!r}
+notify() {{ notify-send -a Wi-Fi -i network-wireless "$1" "${{2:-}}" 2>/dev/null || true; }}
+
+# Let DHCP, DNS, and NetworkManager's connectivity probe settle. Run the helper
+# first because it can auto-accept simple click-through portals or open the
+# browser for JS-heavy portals.
+sleep 2
+[ -x "$helper" ] && "$helper" >/dev/null 2>&1 || true
+
+for delay in 3 5 8; do
+  state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
+  case "$state" in
+    full)
+      notify "Wi-Fi internet works" "$ssid has full connectivity. No manual speedtest needed."
+      exit 0
+      ;;
+    portal|limited)
+      [ -x "$helper" ] && "$helper" >/dev/null 2>&1 || true
+      ;;
+  esac
+  sleep "$delay"
+done
+
+state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
+case "$state" in
+  full)
+    notify "Wi-Fi internet works" "$ssid has full connectivity. No manual speedtest needed."
+    ;;
+  portal|limited)
+    notify "Wi-Fi needs portal login" "$ssid connected, but internet is still $state. Browser login pages were opened if a portal was detected."
+    ;;
+  none|unknown|"")
+    notify "Wi-Fi internet not verified" "$ssid connected, but NetworkManager reports ${{state:-unknown}}. Try opening a browser or switching networks."
+    ;;
+  *)
+    notify "Wi-Fi check result" "$ssid connectivity state: $state"
+    ;;
+esac
+'''
+    subprocess.Popen(
+        ["bash", "-lc", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def nmcli(args, timeout=20):
+    return run(["nmcli", *args], timeout=timeout)
+
+
+def parse_nmcli_terse(text):
+    # nmcli -t escapes separators as \: . csv with escapechar handles this well.
+    rows = []
+    reader = csv.reader(text.splitlines(), delimiter=":", escapechar="\\")
+    for row in reader:
+        rows.append(row)
+    return rows
+
+
+@dataclass
+class Net:
+    in_use: str
+    ssid: str
+    security: str
+    signal: int
+    known: bool = False
+    active: bool = False
+    portal_status: str = ""
+
+
+def get_known():
+    # Most WiFi profiles are named after their SSID, but not all. Start with
+    # names for speed, then ask NetworkManager for each saved SSID so renamed
+    # profiles still count as known and can reconnect via their profile ID.
+    p = nmcli(["-t", "-f", "NAME,TYPE", "con", "show"])
+    known = set()
+    profiles = {}
+    wireless_names = []
+    for row in parse_nmcli_terse(p.stdout):
+        if len(row) >= 2 and row[1] == "802-11-wireless":
+            name = row[0]
+            wireless_names.append(name)
+            known.add(name)
+            profiles.setdefault(name, name)
+
+    # Fast path for the launcher: most Wi-Fi profiles are named exactly after
+    # their SSID. Asking NetworkManager for 802-11-wireless.ssid requires one
+    # extra nmcli call per saved network, which was ~350ms of spawn latency on
+    # this machine. Keep the exact renamed-profile scan available for explicit
+    # full refresh/debug use via WIFI_PICK_FULL_REFRESH=1.
+    if FAST_STARTUP:
+        return known, profiles
+
+    for name in wireless_names:
+        p = nmcli(["-t", "-f", "802-11-wireless.ssid", "con", "show", name], timeout=4)
+        for row in parse_nmcli_terse(p.stdout):
+            if len(row) >= 2 and row[0] == "802-11-wireless.ssid" and row[1]:
+                ssid = row[1]
+                known.add(ssid)
+                profiles.setdefault(ssid, name)
+    return known, profiles
+
+
+def wifi_enabled():
+    p = nmcli(["-t", "-f", "WIFI", "general"], timeout=5)
+    return p.returncode == 0 and p.stdout.strip().lower() == "enabled"
+
+
+def set_wifi_enabled(enabled=True):
+    return nmcli(["radio", "wifi", "on" if enabled else "off"], timeout=10)
+
+
+def rescan_wifi(*, wait=False):
+    if wait:
+        p = nmcli(["dev", "wifi", "rescan"], timeout=15)
+        # NetworkManager updates scan results asynchronously even after nmcli
+        # returns, so give it a short moment before rebuilding the menu.
+        time.sleep(1.2)
+        return p.returncode == 0
+    subprocess.Popen(["nmcli", "dev", "wifi", "rescan"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
+def get_networks():
+    known, profiles = get_known()
+    remembered_status = get_remembered_portal_status()
+    p = nmcli(["-t", "-f", "IN-USE,SSID,SECURITY,SIGNAL", "dev", "wifi", "list", "--rescan", "no"])
+    nets = []
+    for row in parse_nmcli_terse(p.stdout):
+        if len(row) < 4:
+            continue
+        in_use, ssid, sec, sig = row[:4]
+        if not ssid:
+            continue
+        try:
+            signal = int(sig or 0)
+        except ValueError:
+            signal = 0
+        active = in_use == "*"
+        status = remembered_status.get(ssid, "")
+        nets.append(Net(in_use, ssid, sec or "open", signal, ssid in known, active, status))
+    # Deduplicate by SSID, keep strongest/current/known.
+    best = {}
+    for n in nets:
+        old = best.get(n.ssid)
+        score = (10000 if n.active else 0) + (1000 if n.known else 0) + n.signal
+        old_score = -1 if old is None else ((10000 if old.active else 0) + (1000 if old.known else 0) + old.signal)
+        if score > old_score:
+            best[n.ssid] = n
+    nets = list(best.values())
+    nets.sort(key=lambda n: (not n.active, not n.known, -n.signal, n.ssid.lower()))
+    return nets, profiles
+
+
+def connectivity_state():
+    p = nmcli(["networking", "connectivity", "check"], timeout=8)
+    state = p.stdout.strip().lower()
+    return state if p.returncode == 0 and state else ""
+
+
+def get_remembered_portal_status():
+    status = {}
+    try:
+        for line in CAPTIVE_STATUS_FILE.read_text(encoding="utf-8").splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[0] and parts[1]:
+                status[parts[0]] = parts[1]
+    except FileNotFoundError:
+        pass
+    return status
+
+
+def tofi(lines, prompt=None, extra=None):
+    cmd = TOFI_BASE.copy()
+    if prompt is not None:
+        cmd.extend(["--prompt-text", prompt])
+    if extra:
+        cmd.extend(extra)
+    data = "\n".join(lines) + ("\n" if lines else "")
+    p = run(cmd, input=data, timeout=120)
+    # tofi returns 1 both for real errors and for a normal user cancel/Escape.
+    # Do not retry here, otherwise cancelling appears to require exiting twice.
+    return p.stdout.rstrip("\n") if p.returncode == 0 else ""
+
+
+def wifi_history_file():
+    state_home = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    os.makedirs(state_home, exist_ok=True)
+    return os.path.join(state_home, "tofi-wifi-history")
+
+
+def prune_history_entry(entry):
+    # Keep utility actions from being promoted by tofi history above real SSIDs.
+    path = wifi_history_file()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        with open(path, "w", encoding="utf-8") as f:
+            for line in lines:
+                _count, sep, name = line.partition(" ")
+                if not sep or name.rstrip("\n") != entry:
+                    f.write(line)
+    except FileNotFoundError:
+        pass
+
+
+def prompt_password(ssid):
+    # tofi as dmenu-style arbitrary input. If require-match is unsupported, fallback still usually accepts typed input.
+    return tofi([""], prompt=f"Password for {ellipsize(ssid, 24)}: ", extra=[
+        "--require-match", "false",
+        "--hide-input", "false",
+        "--history", "false",
+    ])
+
+
+def ellipsize(text, max_chars):
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 1:
+        return text[:max_chars]
+    return text[: max_chars - 1].rstrip() + "…"
+
+
+def display_line(n):
+    active = "▶" if n.active else " "
+    profile = " 󰆓" if n.known else ""
+    security = " " if n.security in ("--", "", "open") else " "
+    ssid = ellipsize(n.ssid, MAX_SSID_CHARS)
+    portal = {
+        "full": " 󰄬",
+        "portal": " 󰌾",
+        "limited": " 󰌾",
+        "none": " 󰤮",
+        "unknown": " ?",
+    }.get(n.portal_status, "")
+    # Compact legend: ▶ active, 󰆓 saved profile,  open network,
+    #  secured network. The menu uses tofi's print-index option to map back
+    # reliably, so decoration changes do not affect selection.
+    return f"{active} {ssid}{profile}{security}{portal}"
+
+
+def choose(lines, *, use_history=True):
+    extra = [
+        "--require-match", "true",
+        "--print-index", "true",
+    ]
+    if use_history:
+        extra.extend(["--history", "true", "--history-file", wifi_history_file()])
+    return tofi(lines, extra=extra)
+
+
+def menu_items_for(nets):
+    # Keep Scan again discoverable in the default five-row app-launcher layout,
+    # while preserving all networks below it for typing/filtering.
+    scan_slot = min(4, len(nets))
+    return nets[:scan_slot] + [SCAN_ACTION] + nets[scan_slot:]
+
+
+def menu_line(item):
+    return item if item == SCAN_ACTION else display_line(item)
+
+
+def main():
+    if not shutil_which("nmcli") or not shutil_which("tofi"):
+        print("wifi-pick requires nmcli and tofi", file=sys.stderr)
+        return 1
+
+    if not wifi_enabled():
+        choice = choose([TURN_WIFI_ON_ACTION], use_history=False)
+        if choice != "1":
+            return 0
+        notify("WiFi", "Turning WiFi on…")
+        p = set_wifi_enabled(True)
+        if p.returncode != 0:
+            notify("WiFi failed", (p.stderr or p.stdout or "could not enable WiFi")[:220])
+            return p.returncode
+        time.sleep(1.5)
+
+    # Start a scan but don't block the first paint for long. Cached results
+    # appear immediately; the in-menu scan action below can do a blocking refresh.
+    rescan_wifi(wait=False)
+    # Do not wait for scan results before showing the menu. Cached results are
+    # usually what the user wants for spawn latency; "Scan again" performs a
+    # blocking refresh when freshness matters.
+    time.sleep(0.05)
+
+    while True:
+        nets, profiles = get_networks()
+        items = menu_items_for(nets)
+        lines = [menu_line(item) for item in items]
+        if os.environ.get("WIFI_PICK_DUMP"):
+            print("\n".join(lines))
+            return 0
+        choice = choose(lines)
+        if not choice:
+            return 0
+        try:
+            selected = int(choice) - 1
+        except ValueError:
+            return 1
+        if selected < 0 or selected >= len(items):
+            return 1
+        item = items[selected]
+        if item == SCAN_ACTION:
+            prune_history_entry(SCAN_ACTION)
+            notify("WiFi", "Scanning for networks…")
+            rescan_wifi(wait=True)
+            continue
+        n = item
+        break
+
+    notify("WiFi", f"Connecting to {n.ssid}…")
+    if n.known and n.ssid in profiles:
+        p = nmcli(["con", "up", "id", profiles[n.ssid]], timeout=45)
+    elif n.security in ("--", "", "open"):
+        p = nmcli(["dev", "wifi", "connect", n.ssid], timeout=45)
+    else:
+        pw = prompt_password(n.ssid)
+        if not pw:
+            return 0
+        p = nmcli(["dev", "wifi", "connect", n.ssid, "password", pw], timeout=60)
+
+    if p.returncode == 0:
+        notify("WiFi connected", n.ssid)
+        trigger_captive_portal_check()
+        trigger_post_connect_verification(n.ssid)
+        return 0
+    notify("WiFi failed", (p.stderr or p.stdout or "unknown error")[:220])
+    return p.returncode
+
+
+def shutil_which(name):
+    from shutil import which
+    return which(name)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

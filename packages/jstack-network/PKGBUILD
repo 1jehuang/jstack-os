@@ -1,0 +1,38 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-network
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS network stack: tofi Wi-Fi picker and captive portal auto-handling"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=(
+  'networkmanager'
+  'python'
+  'libnotify'
+  'tofi-jstack'
+  'xdg-utils'
+)
+source=()
+
+package() {
+  local files="$startdir/files"
+
+  # CLI tools
+  for b in wifi-pick captive-portal-helper captive-portal-autoaccept captive-portal-watch; do
+    install -Dm755 "$files/bin/$b" "$pkgdir/usr/bin/$b"
+  done
+
+  # systemd user units (enabled via preset)
+  install -Dm644 "$files/systemd/captive-portal-helper.service" \
+    "$pkgdir/usr/lib/systemd/user/captive-portal-helper.service"
+  install -Dm644 "$files/systemd/captive-portal-helper.timer" \
+    "$pkgdir/usr/lib/systemd/user/captive-portal-helper.timer"
+  install -Dm644 "$files/systemd/captive-portal-watch.service" \
+    "$pkgdir/usr/lib/systemd/user/captive-portal-watch.service"
+
+  install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user-preset/90-jstack-network.preset" <<'EOF'
+enable captive-portal-helper.timer
+enable captive-portal-watch.service
+EOF
+}

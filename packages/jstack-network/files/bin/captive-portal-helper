@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/captive-portal-helper"
+STATE_FILE="$STATE_DIR/state"
+STATUS_FILE="$STATE_DIR/ssid-status.tsv"
+mkdir -p "$STATE_DIR"
+
+notify() {
+  local summary="$1" body="${2:-}" urgency="${3:-normal}" icon="${4:-network-wireless}"
+  notify-send -a "Wi-Fi" -u "$urgency" -i "$icon" "$summary" "$body" 2>/dev/null || true
+}
+
+# Extract the engine's "NEED_INPUT: ..." marker (what the user must type, e.g.
+# "an email address; a password") from an autoaccept run log, if present.
+need_input_from_log() {
+  local log="$1"
+  grep -oE 'NEED_INPUT:.*' "$log" 2>/dev/null | tail -n 1 | sed 's/^NEED_INPUT:[[:space:]]*//'
+}
+
+open_portal_pages() {
+  # Open several plain-HTTP canaries because captive portals vary in what they
+  # intercept. neverssl is human-friendly; the 204 URLs are what OSes commonly
+  # use and often redirect straight to the portal.
+  nohup xdg-open 'http://neverssl.com/' >/dev/null 2>&1 &
+  nohup xdg-open 'http://nmcheck.gnome.org/' >/dev/null 2>&1 &
+  nohup xdg-open 'http://connectivitycheck.gstatic.com/generate_204' >/dev/null 2>&1 &
+}
+
+current_ssid() {
+  nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1=="yes" {print $2; exit}'
+}
+
+ssid="$(current_ssid || true)"
+[ -n "$ssid" ] || exit 0
+
+state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
+last="$(cat "$STATE_FILE" 2>/dev/null || true)"
+key="$ssid|$state"
+
+remember_status() {
+  local ssid="$1" state="$2" tmp
+  tmp="$STATUS_FILE.tmp"
+  touch "$STATUS_FILE"
+  awk -F '\t' -v ssid="$ssid" '$1 != ssid { print }' "$STATUS_FILE" > "$tmp" || true
+  printf '%s\t%s\t%s\n' "$ssid" "$state" "$(date +%s)" >> "$tmp"
+  mv "$tmp" "$STATUS_FILE"
+}
+
+remember_status "$ssid" "$state"
+
+case "$state" in
+  portal|limited)
+    if [ "$last" != "$key" ]; then
+      printf '%s' "$key" > "$STATE_FILE"
+      notify "Wi-Fi captive portal detected" "Trying automatic accept for $ssid… ($state)"
+      if command -v captive-portal-autoaccept >/dev/null 2>&1; then
+        auto_log="$STATE_DIR/autoaccept.last.log"
+        if captive-portal-autoaccept >"$auto_log" 2>&1; then
+          cat "$auto_log" >>"$STATE_DIR/autoaccept.log" 2>/dev/null || true
+          new_state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
+          remember_status "$ssid" "$new_state"
+          if [ "$new_state" = "full" ]; then
+            notify "Wi-Fi internet works" "Auto-accepted captive portal for $ssid. NetworkManager reports full connectivity."
+            exit 0
+          fi
+          notify "Wi-Fi portal auto-accept incomplete" "Tried automatic accept for $ssid, result: ${new_state:-unknown}. Opening browser login pages." "normal"
+        else
+          rc=$?
+          cat "$auto_log" >>"$STATE_DIR/autoaccept.log" 2>/dev/null || true
+          need_input="$(need_input_from_log "$auto_log")"
+          if [ -n "$need_input" ] && [ "$need_input" != "browser login" ]; then
+            # The portal genuinely needs the user to type something. Tell them
+            # exactly what, so they can act from the notification.
+            notify "Wi-Fi portal needs you to enter: $need_input" \
+              "$ssid requires $need_input. Opening the login page in your browser so you can fill it in." \
+              "critical" "dialog-password"
+          else
+            reason="$(tail -n 1 "$auto_log" 2>/dev/null || true)"
+            notify "Wi-Fi portal needs browser" "Auto-accept failed for $ssid (exit $rc). ${reason:-Opening browser login pages.}" "normal"
+          fi
+        fi
+      fi
+      notify "Opening Wi-Fi login pages" "Opened browser checks for $ssid. Complete the portal if it appears."
+      open_portal_pages
+    fi
+    ;;
+  full)
+    # Reset after successful internet so a future portal on same SSID opens again.
+    case "$last" in
+      "$ssid|portal"|"$ssid|limited"|"$ssid|none"|"$ssid|unknown")
+        notify "Wi-Fi internet works" "$ssid has full connectivity. No manual speedtest needed."
+        ;;
+    esac
+    printf '%s' "$key" > "$STATE_FILE"
+    ;;
+  *)
+    ;;
+esac

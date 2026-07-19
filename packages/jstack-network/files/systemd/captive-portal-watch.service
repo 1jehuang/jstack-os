@@ -1,0 +1,13 @@
+[Unit]
+Description=High-visibility Wi-Fi and captive portal watcher
+After=graphical-session.target NetworkManager.service
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/captive-portal-watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

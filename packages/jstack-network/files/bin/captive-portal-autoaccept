@@ -1,0 +1,900 @@
+#!/usr/bin/env python3
+"""Conservative browserless captive portal acceptor.
+
+Tries to complete only simple no-login HTML captive portals. It follows the
+redirect from an HTTP canary URL, finds forms/links that look like
+terms/continue/connect actions, checks required/terms checkboxes, preserves
+hidden CSRF/session fields, and submits the safest-looking candidate.
+
+It intentionally refuses anything that appears to require credentials, payment,
+CAPTCHA, vouchers/codes, room/last-name login, or required personal info.
+"""
+from __future__ import annotations
+
+import html.parser
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
+
+import requests
+
+# These default to the real production endpoints but can be overridden (e.g. by
+# the offline benchmark) so the engine can be exercised end-to-end against a
+# local mock portal without touching the network or the host's real Wi-Fi.
+CANARY_URL = os.environ.get("CAPTIVE_CANARY_URL", "http://neverssl.com/")
+# A secondary positive signal. NetworkManager's own connectivity state can lag a
+# few seconds behind a successful portal submission, so we also probe a known
+# 204 endpoint directly to confirm we are really online.
+PROD_PROBE_URL = os.environ.get(
+    "CAPTIVE_PROBE_URL", "http://connectivitycheck.gstatic.com/generate_204"
+)
+TIMEOUT = 8
+MAX_FORMS = 8
+MAX_LINKS = 12
+MAX_CANDIDATES = 12
+MAX_HTML_CHARS = 750_000
+# How many sequential portal pages (Continue -> Accept -> ...) to walk before
+# giving up. Real click-through portals are almost always 1-3 steps.
+MAX_STEPS = 6
+DEFAULT_UA = "Mozilla/5.0 (X11; Linux x86_64) captive-portal-helper"
+
+# Hard visible-page dangers. If these appear in visible form/link text, the
+# portal likely needs something more than a click-through accept.
+HARD_DANGER_WORDS = (
+    "password", "passwd", "passcode", "captcha", "recaptcha", "hcaptcha",
+    "payment", "card", "credit", "billing", "paypal", "venmo",
+    "room", "lastname", "last_name", "last-name", "voucher", "coupon",
+)
+
+# Field-specific dangers. Hidden fields often contain auth/challenge/code tokens,
+# so these are applied to visible/user-editable controls, not hidden CSRF fields.
+FIELD_DANGER_WORDS = HARD_DANGER_WORDS + (
+    "phone", "mobile", "email", "e-mail", "code",
+)
+
+UNSAFE_OPTIONAL_WORDS = (
+    "newsletter", "marketing", "promotional", "promotion", "promo", "offers",
+    "advertising", "survey", "email", "e-mail", "sms", "phone", "mobile",
+)
+
+# Brand-account / rewards-signup decoys. These appear on the destination website
+# (or as a rewards upsell on the splash) but never grant network access. We match
+# them against the *visible* text of links/buttons only -- never the action URL,
+# since legitimate guest endpoints are sometimes literally /signup or /register.
+ACCOUNT_DECOY_WORDS = (
+    "create account", "create an account", "create your account",
+    "sign up", "signup", "register", "registration",
+    "my account", "forgot password", "reset password", "join now",
+    "rewards account", "create a free account",
+)
+
+# A page with no forms but at least this many links is treated as a normal
+# content website (e.g. the brand marketing site a portal bounced us to), not a
+# minimal captive splash, so we do not mine it for "safe-looking" decoy links.
+LINK_SITE_THRESHOLD = 25
+
+SAFE_ACTION_WORDS = (
+    "accept", "agree", "connect", "continue", "proceed", "start", "join",
+    "access internet", "get online", "go online", "free internet", "internet",
+    "submit", "login", "log in", "sign in", "go",
+    "authorize", "authorise", "get connected", "i agree", "i accept",
+    "agree and continue", "agree & continue", "free wifi", "free wi-fi",
+)
+TERMS_WORDS = (
+    "terms", "condition", "privacy", "policy", "agreement", "agree", "accept",
+    "consent", "eula",
+)
+YES_WORDS = ("yes", "true", "accept", "agree", "allow", "on", "1", "continue", "connect")
+NO_WORDS = ("no", "false", "decline", "disagree", "deny", "cancel", "reject")
+
+
+@dataclass
+class Input:
+    attrs: Dict[str, str]
+    text: str = ""
+
+
+@dataclass
+class Link:
+    attrs: Dict[str, str]
+    text: str = ""
+
+
+@dataclass
+class Form:
+    attrs: Dict[str, str]
+    inputs: List[Input] = field(default_factory=list)
+    buttons: List[Input] = field(default_factory=list)
+    text: str = ""
+
+
+@dataclass
+class Candidate:
+    method: str
+    action: str
+    data: Dict[str, str]
+    score: int
+    source: str
+
+
+class Parser(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.forms: List[Form] = []
+        self.links: List[Link] = []
+        self.buttons: List[Input] = []
+        self.current: Optional[Form] = None
+        self.current_button: Optional[Input] = None
+        self.current_link: Optional[Link] = None
+        self.in_label = False
+        self.current_label_for: str = ""
+        self.current_label_text: str = ""
+        self.current_label_inputs: List[Input] = []
+
+    def handle_starttag(self, tag: str, attrs_list: List[Tuple[str, Optional[str]]]):
+        attrs = {k.lower(): (v or "") for k, v in attrs_list}
+        tag = tag.lower()
+        if tag == "form":
+            if self.current:
+                self.forms.append(self.current)
+            self.current = Form(attrs=attrs)
+        elif tag == "label":
+            self.in_label = True
+            self.current_label_for = attrs.get("for", "")
+            self.current_label_text = ""
+            self.current_label_inputs = []
+        elif tag == "a":
+            self.current_link = Link(attrs)
+        elif tag == "button" and not self.current:
+            attrs.setdefault("type", "button")
+            button = Input(attrs)
+            self.buttons.append(button)
+            self.current_button = button
+        elif self.current and tag == "input":
+            inp = Input(attrs)
+            self.current.inputs.append(inp)
+            if self.in_label:
+                self.current_label_inputs.append(inp)
+        elif self.current and tag == "button":
+            attrs.setdefault("type", "submit")
+            button = Input(attrs)
+            self.current.buttons.append(button)
+            self.current_button = button
+        elif self.current and tag == "textarea":
+            attrs.setdefault("type", "textarea")
+            inp = Input(attrs)
+            self.current.inputs.append(inp)
+            if self.in_label:
+                self.current_label_inputs.append(inp)
+        elif self.current and tag == "select":
+            attrs.setdefault("type", "select")
+            inp = Input(attrs)
+            self.current.inputs.append(inp)
+            if self.in_label:
+                self.current_label_inputs.append(inp)
+
+    def handle_data(self, data: str):
+        text = data.strip()
+        if not text:
+            return
+        if self.current:
+            self.current.text += " " + text
+        if self.current_button:
+            self.current_button.text += " " + text
+        if self.current_link:
+            self.current_link.text += " " + text
+        if self.in_label:
+            self.current_label_text += " " + text
+
+    def handle_endtag(self, tag: str):
+        tag = tag.lower()
+        if tag == "label":
+            label_text = self.current_label_text.strip()
+            if label_text and self.current:
+                for inp in self.current_label_inputs:
+                    inp.text += " " + label_text
+                if self.current_label_for:
+                    for inp in self.current.inputs:
+                        if inp.attrs.get("id") == self.current_label_for:
+                            inp.text += " " + label_text
+            self.current_label_for = ""
+            self.current_label_text = ""
+            self.current_label_inputs = []
+            self.in_label = False
+        elif tag == "button":
+            self.current_button = None
+        elif tag == "a":
+            if self.current_link and (self.current_link.attrs.get("href") or self.current_link.attrs.get("onclick")):
+                self.links.append(self.current_link)
+            self.current_link = None
+        elif tag == "form" and self.current:
+            self.forms.append(self.current)
+            self.current = None
+            self.current_button = None
+
+    def close(self):
+        super().close()
+        if self.current:
+            self.forms.append(self.current)
+            self.current = None
+        if self.current_link and (self.current_link.attrs.get("href") or self.current_link.attrs.get("onclick")):
+            self.links.append(self.current_link)
+            self.current_link = None
+
+
+def nm_connectivity() -> str:
+    try:
+        return subprocess.check_output(["nmcli", "-t", "networking", "connectivity", "check"], text=True, timeout=10).strip()
+    except Exception:
+        return "unknown"
+
+
+def probe_online(sess: Optional[requests.Session] = None) -> bool:
+    """Direct positive check that we have real internet.
+
+    A captive portal intercepts plain HTTP and returns a 200 splash page instead
+    of the expected empty 204. Once we are actually online, the 204 endpoint
+    returns status 204 with no body and is not redirected to a portal host.
+    """
+    closer = False
+    if sess is None:
+        sess = requests.Session()
+        sess.headers.update({"User-Agent": DEFAULT_UA})
+        closer = True
+    try:
+        resp = sess.get(PROD_PROBE_URL, timeout=TIMEOUT, allow_redirects=False)
+    except Exception:
+        return False
+    finally:
+        if closer:
+            sess.close()
+    return resp.status_code == 204 and not resp.headers.get("Location")
+
+
+def is_online(sess: Optional[requests.Session] = None) -> bool:
+    """Online if either NetworkManager or a direct 204 probe says so.
+
+    Tests can force a deterministic answer with CAPTIVE_FORCE_ONLINE=1/0 so the
+    benchmark never depends on the host's real connectivity.
+    """
+    forced = os.environ.get("CAPTIVE_FORCE_ONLINE")
+    if forced is not None:
+        return forced.strip().lower() in ("1", "true", "yes", "full")
+    # In benchmark mode we drive connectivity purely from the mock probe so the
+    # result does not depend on the host's real Wi-Fi state.
+    if os.environ.get("CAPTIVE_SKIP_NM", "").strip().lower() not in ("1", "true", "yes"):
+        if nm_connectivity() == "full":
+            return True
+    if probe_online(sess):
+        return True
+    return False
+
+
+def meta_refresh_url(html_text: str, base_url: str) -> Optional[str]:
+    """Find a <meta http-equiv=refresh ... url=...> redirect target.
+
+    Handles attribute order, quoting style, and single quotes nested inside a
+    double-quoted content value (e.g. content="2; URL='/splash'").
+    """
+    for m in re.finditer(r"<meta\b[^>]*>", html_text or "", re.IGNORECASE):
+        tag = m.group(0)
+        if not re.search(r"http-equiv\s*=\s*['\"]?\s*refresh", tag, re.IGNORECASE):
+            continue
+        cm = re.search(r"content\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", tag, re.IGNORECASE)
+        if not cm:
+            continue
+        content = cm.group(1).strip("\"'")
+        um = re.search(r"url\s*=\s*['\"]?\s*([^'\"\s;>]+)", content, re.IGNORECASE)
+        if not um:
+            continue
+        url = safe_url(um.group(1).strip(), base_url)
+        if url:
+            return url
+    return None
+
+
+# Explicit JS-redirect assignment patterns ONLY. We deliberately do not reuse
+# url_from_onclick's generic quoted-URL fallback here: scanning a whole portal
+# page with that fallback wrongly matches form action="/x" / href="/y" and would
+# bypass the form we actually need to submit.
+JS_REDIRECT_PATTERNS = (
+    r"(?:window\.|document\.)?location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]",
+    r"location\.assign\(\s*['\"]([^'\"]+)['\"]\s*\)",
+    r"location\.replace\(\s*['\"]([^'\"]+)['\"]\s*\)",
+)
+
+
+# Same as JS_REDIRECT_PATTERNS but the quoted URL is immediately concatenated
+# with the current location's query string / hash, e.g.
+#   window.location.href = '/check' + document.location.search;
+# GlobalReach-style portals (Starbucks, many UniFi/Meraki splash hosts) rely on
+# this to carry the gateway-issued ap_name/login_url/continue_url/mac params over
+# to the real splash. If we drop the concatenation we land on a paramless URL
+# that bounces to the brand's marketing site, which is exactly the Starbucks
+# failure this guards against. We capture which part (search vs hash) so we can
+# re-attach the live value from base_url.
+JS_REDIRECT_CONCAT_PATTERNS = (
+    r"(?:window\.|document\.)?location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]\s*\+\s*"
+    r"(?:window\.|document\.)?location\.(search|hash)",
+    r"location\.assign\(\s*['\"]([^'\"]+)['\"]\s*\+\s*"
+    r"(?:window\.|document\.)?location\.(search|hash)\s*\)",
+    r"location\.replace\(\s*['\"]([^'\"]+)['\"]\s*\+\s*"
+    r"(?:window\.|document\.)?location\.(search|hash)\s*\)",
+)
+
+
+def js_redirect_url(html_text: str, base_url: str) -> Optional[str]:
+    """Find a top-level JS redirect such as window.location='...'.
+
+    Many portals serve a tiny page whose only logic is a JS redirect to the real
+    splash. We only honor http(s) targets via safe_url, so this cannot be used to
+    reach javascript:/data: schemes. Strict patterns avoid matching form/link
+    URLs elsewhere on a real portal page.
+
+    Concatenated forms like `'/check' + document.location.search` are handled
+    first so the gateway-issued query/hash params are preserved; dropping them is
+    what made the Starbucks/GlobalReach portal bounce to the marketing site.
+    """
+    for pat in JS_REDIRECT_CONCAT_PATTERNS:
+        m = re.search(pat, html_text or "", re.IGNORECASE)
+        if m:
+            target, part = m.group(1).strip(), m.group(2).lower()
+            parsed = urlparse(base_url)
+            suffix = ""
+            if part == "search" and parsed.query:
+                suffix = "?" + parsed.query
+            elif part == "hash" and parsed.fragment:
+                suffix = "#" + parsed.fragment
+            url = safe_url(target + suffix, base_url)
+            if url:
+                return url
+    for pat in JS_REDIRECT_PATTERNS:
+        m = re.search(pat, html_text or "", re.IGNORECASE)
+        if m:
+            url = safe_url(m.group(1).strip(), base_url)
+            if url:
+                return url
+    return None
+
+
+def word_re(word: str) -> re.Pattern[str]:
+    if re.search(r"\W", word):
+        return re.compile(re.escape(word), re.IGNORECASE)
+    return re.compile(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])", re.IGNORECASE)
+
+
+def has_any(text: str, words: Tuple[str, ...]) -> bool:
+    return any(word_re(w).search(text or "") for w in words)
+
+
+def score_words(text: str, words: Tuple[str, ...]) -> int:
+    low = (text or "").lower()
+    score = 0
+    for i, word in enumerate(words):
+        if word in low:
+            score += max(1, 40 - i)
+    return score
+
+
+def attrs_blob(attrs: Dict[str, str], keys: Tuple[str, ...]) -> str:
+    return " ".join(attrs.get(k, "") for k in keys)
+
+
+def input_type(inp: Input) -> str:
+    return inp.attrs.get("type", "text").strip().lower() or "text"
+
+
+def is_required(inp: Input) -> bool:
+    return "required" in inp.attrs or inp.attrs.get("aria-required", "").lower() == "true"
+
+
+def is_disabled(inp: Input) -> bool:
+    return "disabled" in inp.attrs or inp.attrs.get("aria-disabled", "").lower() == "true"
+
+
+def field_blob(inp: Input) -> str:
+    return (attrs_blob(inp.attrs, ("name", "id", "class", "placeholder", "aria-label", "title", "value")) + " " + inp.text).strip()
+
+
+def visible_form_blob(form: Form) -> str:
+    visible_inputs = [i for i in form.inputs if input_type(i) != "hidden"]
+    return " ".join(
+        [form.text, attrs_blob(form.attrs, ("id", "class", "aria-label", "title"))]
+        + [field_blob(i) for i in visible_inputs]
+        + [field_blob(b) for b in form.buttons]
+    )
+
+
+def safe_url(raw: str, base_url: str) -> Optional[str]:
+    raw = (raw or "").strip()
+    if not raw or raw.startswith("#"):
+        return None
+    if raw.lower().startswith(("javascript:", "data:", "mailto:", "tel:")):
+        return None
+    url = urljoin(base_url, raw)
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return None
+    return url
+
+
+def url_from_onclick(js: str, base_url: str) -> Optional[str]:
+    js = js or ""
+    patterns = [
+        r"(?:window\.)?location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]",
+        r"document\.location(?:\.href)?\s*=\s*['\"]([^'\"]+)['\"]",
+        r"location\.assign\(\s*['\"]([^'\"]+)['\"]\s*\)",
+        r"location\.replace\(\s*['\"]([^'\"]+)['\"]\s*\)",
+        # Generic fallback for simple helpers like accept('/guest/continue').
+        r"['\"]((?:https?://|/)[^'\"]+)['\"]",
+    ]
+    for pat in patterns:
+        m = re.search(pat, js, re.IGNORECASE)
+        if m:
+            url = safe_url(m.group(1), base_url)
+            if url:
+                return url
+    return None
+
+
+def score_button(inp: Input) -> int:
+    if is_disabled(inp):
+        return -100
+    typ = input_type(inp)
+    if typ in ("reset", "image"):
+        return -100
+    blob = field_blob(inp)
+    score = score_words(blob, SAFE_ACTION_WORDS)
+    if has_any(blob, HARD_DANGER_WORDS):
+        score -= 120
+    return score
+
+
+def checkbox_should_check(inp: Input, form: Form, checkbox_count: int, form_score: int) -> bool:
+    blob = field_blob(inp)
+    if has_any(blob, UNSAFE_OPTIONAL_WORDS):
+        return False
+    if has_any(blob, TERMS_WORDS) or has_any(blob, SAFE_ACTION_WORDS):
+        return True
+    if is_required(inp):
+        return not has_any(blob, FIELD_DANGER_WORDS)
+    # Captive portals often have a single unlabeled checkbox directly before a
+    # Connect/Continue button. Only auto-check a generic *optional* checkbox when
+    # it is the only checkbox in the form and the form already has a clear safe
+    # action. With multiple checkboxes we cannot tell an extra optional box
+    # (e.g. "remember me", "email me offers") from the consent box, so we leave
+    # unrecognized optional ones unchecked.
+    return checkbox_count == 1 and form_score > 0
+
+
+def choose_radio(radios: List[Input]) -> Optional[Input]:
+    enabled = [r for r in radios if not is_disabled(r)]
+    for r in enabled:
+        if "checked" in r.attrs:
+            return r
+    best: Optional[Input] = None
+    best_score = 0
+    for r in enabled:
+        blob = field_blob(r)
+        score = score_words(blob, YES_WORDS) - score_words(blob, NO_WORDS)
+        if has_any(blob, FIELD_DANGER_WORDS):
+            score -= 100
+        if score > best_score:
+            best_score = score
+            best = r
+    return best if best_score > 0 else None
+
+
+def build_candidate_from_form(form: Form, base_url: str) -> Optional[Candidate]:
+    visible = visible_form_blob(form)
+    if has_any(visible, HARD_DANGER_WORDS):
+        print("refuse: login/payment/captcha/voucher-looking visible form", file=sys.stderr)
+        return None
+
+    action = safe_url(form.attrs.get("action", "") or base_url, base_url)
+    if not action:
+        print("refuse: unsafe form action", file=sys.stderr)
+        return None
+
+    method = form.attrs.get("method", "get").strip().lower()
+    if method not in ("get", "post"):
+        method = "get"
+
+    # Positive "this is a click-through accept" signal. We score visible text and
+    # button labels (what a human sees), plus the action URL and hidden field
+    # names. Hidden names like accept/agree/grant/continue are a strong, common
+    # signal on no-submit auto-posting portals. This only adds positive signal:
+    # credential/PII forms are already refused by the field checks below/above,
+    # so a higher score can never cause us to submit something unsafe.
+    hidden_names = " ".join(
+        i.attrs.get("name", "") for i in form.inputs if input_type(i) == "hidden"
+    )
+    action_path = urlparse(action).path.replace("/", " ").replace("-", " ").replace("_", " ")
+    form_score = score_words(
+        " ".join([visible, form.attrs.get("action", ""), action_path, hidden_names]),
+        SAFE_ACTION_WORDS,
+    )
+    data: Dict[str, str] = {}
+    checked_safe_controls = 0
+    checkbox_count = len([i for i in form.inputs if input_type(i) == "checkbox"])
+    radio_groups: Dict[str, List[Input]] = {}
+
+    for inp in form.inputs:
+        typ = input_type(inp)
+        name = inp.attrs.get("name", "")
+        if is_disabled(inp):
+            continue
+
+        if typ == "hidden":
+            if name:
+                data[name] = inp.attrs.get("value", "")
+            continue
+
+        if typ in ("submit", "button", "reset", "image"):
+            continue
+
+        required = is_required(inp)
+        risky = has_any(field_blob(inp), FIELD_DANGER_WORDS)
+
+        if typ in ("password", "file"):
+            print(f"refuse: unsupported credential/upload field {typ}", file=sys.stderr)
+            return None
+
+        if typ in ("email", "tel", "number"):
+            if required:
+                print(f"refuse: required personal-info field {typ}", file=sys.stderr)
+                return None
+            continue
+
+        if typ in ("textarea", "select"):
+            if required:
+                print(f"refuse: required unsupported field type {typ}", file=sys.stderr)
+                return None
+            continue
+
+        if typ == "checkbox":
+            if not name:
+                continue
+            if risky and required:
+                print("refuse: required risky checkbox", file=sys.stderr)
+                return None
+            if checkbox_should_check(inp, form, checkbox_count, form_score):
+                data[name] = inp.attrs.get("value", "on") or "on"
+                checked_safe_controls += 1
+            continue
+
+        if typ == "radio":
+            if name:
+                radio_groups.setdefault(name, []).append(inp)
+            continue
+
+        # Text/search/url/unknown visible inputs: never invent values. Required
+        # visible text means this is not a click-through portal.
+        if required:
+            print("refuse: required text/unknown field", file=sys.stderr)
+            return None
+        if risky:
+            continue
+
+    for name, radios in radio_groups.items():
+        chosen = choose_radio(radios)
+        if chosen:
+            data[name] = chosen.attrs.get("value", "on") or "on"
+            checked_safe_controls += 1
+        elif any(is_required(r) for r in radios):
+            print("refuse: required radio group without safe choice", file=sys.stderr)
+            return None
+
+    submitters = [
+        i for i in form.inputs + form.buttons
+        if input_type(i) in ("submit", "button", "") and not is_disabled(i)
+    ]
+    best = max(submitters, key=score_button, default=None)
+    best_score = score_button(best) if best else 0
+    if best and best_score > 0 and best.attrs.get("name"):
+        data[best.attrs["name"]] = best.attrs.get("value", "")
+
+    # A submit button may override the form's action/method via formaction/
+    # formmethod (HTML5). When the safe winning button carries these, honor
+    # them so we POST/GET to the accept endpoint rather than a default that may
+    # belong to a decline path. We still run the result through safe_url.
+    if best and best_score > 0:
+        fa = best.attrs.get("formaction", "").strip()
+        if fa:
+            fa_url = safe_url(fa, base_url)
+            if not fa_url:
+                print("refuse: unsafe button formaction", file=sys.stderr)
+                return None
+            action = fa_url
+        fm = best.attrs.get("formmethod", "").strip().lower()
+        if fm in ("get", "post"):
+            method = fm
+
+    score = form_score + max(0, best_score) + checked_safe_controls * 20
+    if score <= 0:
+        print("refuse: no clear accept/connect action", file=sys.stderr)
+        return None
+
+    return Candidate(method=method, action=action, data=data, score=score, source="form")
+
+
+def build_submission(form: Form, base_url: str) -> Optional[Tuple[str, str, Dict[str, str]]]:
+    """Compatibility helper used by the offline tests."""
+    cand = build_candidate_from_form(form, base_url)
+    if not cand:
+        return None
+    return cand.method, cand.action, cand.data
+
+
+def build_candidate_from_link(link: Link, base_url: str) -> Optional[Candidate]:
+    href = link.attrs.get("href", "")
+    action = safe_url(href, base_url) or url_from_onclick(link.attrs.get("onclick", ""), base_url)
+    if not action:
+        return None
+    # Visible-text only blob for decoy detection. We must NOT match decoy words
+    # against the href, because legitimate guest endpoints are sometimes literally
+    # /signup or /register (GlobalReach/UniFi). A human reads the link text, so we
+    # judge "create account / sign up / my account" decoys by that text alone.
+    text_blob = " ".join([
+        link.text,
+        attrs_blob(link.attrs, ("aria-label", "title")),
+    ])
+    if has_any(text_blob, ACCOUNT_DECOY_WORDS):
+        return None
+    blob = " ".join([
+        link.text,
+        href,
+        attrs_blob(link.attrs, ("id", "class", "aria-label", "title", "role")),
+    ])
+    if has_any(blob, HARD_DANGER_WORDS) or has_any(blob, UNSAFE_OPTIONAL_WORDS):
+        return None
+    score = score_words(blob, SAFE_ACTION_WORDS)
+    # Avoid clicking pure Terms/Privacy links. They are safe-looking but not the
+    # action that grants access.
+    if score <= 0:
+        return None
+    return Candidate(method="get", action=action, data={}, score=score, source="link")
+
+
+def build_candidate_from_button(button: Input, base_url: str) -> Optional[Candidate]:
+    action = url_from_onclick(button.attrs.get("onclick", ""), base_url)
+    if not action:
+        return None
+    text_blob = field_blob(button)
+    if has_any(text_blob, ACCOUNT_DECOY_WORDS):
+        return None
+    blob = field_blob(button) + " " + button.attrs.get("onclick", "")
+    if has_any(blob, HARD_DANGER_WORDS) or has_any(blob, UNSAFE_OPTIONAL_WORDS):
+        return None
+    score = score_words(blob, SAFE_ACTION_WORDS)
+    if score <= 0:
+        return None
+    return Candidate(method="get", action=action, data={}, score=score, source="button")
+
+
+def submit_candidate(sess: requests.Session, cand: Candidate) -> Optional[requests.Response]:
+    """Submit one candidate and return the resulting response (or None)."""
+    print(f"try_{cand.source}: method={cand.method} score={cand.score} url={cand.action}")
+    try:
+        if cand.method == "post":
+            resp = sess.post(cand.action, data=cand.data, timeout=TIMEOUT, allow_redirects=True)
+        else:
+            resp = sess.get(cand.action, params=cand.data, timeout=TIMEOUT, allow_redirects=True)
+    except Exception as e:
+        print(f"submit failed: {e}", file=sys.stderr)
+        return None
+    print(f"after_submit_online={is_online(sess)}")
+    return resp
+
+
+def follow_redirects(sess: requests.Session, resp: requests.Response) -> requests.Response:
+    """Chase meta-refresh and trivial JS (window.location) redirects.
+
+    requests already follows HTTP 3xx redirects. Portals frequently add a
+    meta-refresh or a one-line window.location bounce on top of that, so we chase
+    a small bounded number of those to reach the real splash/success page.
+    """
+    for _ in range(4):
+        body = resp.text[:MAX_HTML_CHARS]
+        nxt = meta_refresh_url(body, resp.url) or js_redirect_url(body, resp.url)
+        if not nxt or nxt.rstrip("/") == resp.url.rstrip("/"):
+            break
+        print(f"follow_redirect -> {nxt}")
+        try:
+            resp = sess.get(nxt, timeout=TIMEOUT, allow_redirects=True)
+        except Exception as e:
+            print(f"redirect failed: {e}", file=sys.stderr)
+            break
+    return resp
+
+
+def fetch_portal(sess: requests.Session, url: str) -> Optional[requests.Response]:
+    try:
+        resp = sess.get(url, timeout=TIMEOUT, allow_redirects=True)
+    except Exception as e:
+        print(f"request failed: {e}", file=sys.stderr)
+        return None
+    return follow_redirects(sess, resp)
+
+
+def looks_like_content_site(parser: Parser) -> bool:
+    """True if this page looks like a normal website, not a captive splash.
+
+    Captive portals are minimal: a splash with one accept form/button/link. When
+    a portal instead bounces us to the operator's marketing site (e.g. Starbucks
+    sending us to www.starbucks.com), the page has no submittable accept form but
+    dozens of navigation links. Mining those links finds "safe-looking" decoys
+    such as Sign in / Create account that never grant network access -- exactly
+    the Starbucks misfire. We refuse to click links/buttons on such pages.
+    """
+    return not parser.forms and len(parser.links) >= LINK_SITE_THRESHOLD
+
+
+def candidates_for(resp: requests.Response) -> List[Candidate]:
+    parser = Parser()
+    parser.feed(resp.text[:MAX_HTML_CHARS])
+    parser.close()
+    content_site = looks_like_content_site(parser)
+    print(
+        f"portal_url={resp.url} forms={len(parser.forms)} "
+        f"links={len(parser.links)} buttons={len(parser.buttons)}"
+        + (" content_site=1" if content_site else "")
+    )
+    candidates: List[Candidate] = []
+    for form in parser.forms[:MAX_FORMS]:
+        cand = build_candidate_from_form(form, resp.url)
+        if cand:
+            candidates.append(cand)
+    # On a normal content website (no accept form, many links) every "safe"
+    # link is a navigation decoy, so do not click anything. We still honor forms
+    # above in case a content-heavy splash legitimately carries an accept form.
+    if not content_site:
+        for link in parser.links[:MAX_LINKS]:
+            cand = build_candidate_from_link(link, resp.url)
+            if cand:
+                candidates.append(cand)
+        for button in parser.buttons[:MAX_LINKS]:
+            cand = build_candidate_from_button(button, resp.url)
+            if cand:
+                candidates.append(cand)
+    candidates.sort(key=lambda c: c.score, reverse=True)
+    return candidates
+
+
+# Maps a coarse field signal to a short, human-friendly thing to tell the user
+# they must type. Order matters: earlier entries are reported first.
+NEED_SIGNALS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("a password", ("password", "passwd", "passcode")),
+    ("a payment / credit card", ("card", "credit", "billing", "payment", "paypal", "venmo")),
+    ("an email address", ("email", "e-mail")),
+    ("a phone number", ("phone", "mobile", "sms")),
+    ("a voucher / access code", ("voucher", "coupon", "promo code", "access code", "code")),
+    ("a room number / last name", ("room", "last name", "lastname", "last_name", "last-name")),
+    ("a CAPTCHA", ("captcha", "recaptcha", "hcaptcha")),
+    ("your name", ("first name", "full name", "full_name", "your name")),
+)
+
+
+def analyze_required_inputs(resp: requests.Response) -> List[str]:
+    """Best-effort: what real info is this portal page asking the user for?
+
+    Returns a short, de-duplicated, human-readable list (e.g. ["an email
+    address", "a password"]) so the notification can tell the user exactly what
+    to enter in the browser. Empty list means we could not identify a specific
+    input requirement (generic "needs browser login").
+    """
+    parser = Parser()
+    parser.feed(resp.text[:MAX_HTML_CHARS])
+    parser.close()
+
+    # Inspect visible (non-hidden) controls plus their labels/placeholders, and
+    # password/email/tel input *types* directly, across all forms on the page.
+    blobs: List[str] = []
+    has_password = has_email = has_tel = False
+    for form in parser.forms:
+        for inp in form.inputs:
+            typ = input_type(inp)
+            if typ == "hidden":
+                continue
+            if typ == "password":
+                has_password = True
+            elif typ == "email":
+                has_email = True
+            elif typ == "tel":
+                has_tel = True
+            blobs.append(field_blob(inp))
+        blobs.append(form.text)
+    page_text = " ".join(blobs)
+
+    needs: List[str] = []
+    for label, words in NEED_SIGNALS:
+        if has_any(page_text, words):
+            needs.append(label)
+    if has_password and "a password" not in needs:
+        needs.insert(0, "a password")
+    if has_email and "an email address" not in needs:
+        needs.append("an email address")
+    if has_tel and "a phone number" not in needs:
+        needs.append("a phone number")
+
+    # De-dupe while preserving order.
+    seen: set[str] = set()
+    ordered = [n for n in needs if not (n in seen or seen.add(n))]
+    return ordered
+
+
+def run_accept(sess: requests.Session, start_url: str = CANARY_URL) -> int:
+    """Walk a (possibly multi-step) click-through portal.
+
+    Returns 0 if we end up online, 1 if no safe action completed it, 2 on a
+    network error before we ever saw a portal page.
+    """
+    if is_online(sess):
+        print("already online")
+        return 0
+
+    resp = fetch_portal(sess, start_url)
+    if resp is None:
+        return 2
+
+    seen_actions: set[str] = set()
+    for step in range(MAX_STEPS):
+        if is_online(sess):
+            print(f"online after step {step}")
+            return 0
+
+        candidates = candidates_for(resp)
+        if not candidates:
+            print(f"no safe candidate at step {step}", file=sys.stderr)
+            break
+
+        progressed = False
+        for cand in candidates[:MAX_CANDIDATES]:
+            key = f"{cand.method}:{cand.action}:{sorted(cand.data.items())}"
+            if key in seen_actions:
+                continue
+            seen_actions.add(key)
+            new_resp = submit_candidate(sess, cand)
+            if new_resp is None:
+                continue
+            new_resp = follow_redirects(sess, new_resp)
+            if is_online(sess):
+                print(f"online after submit at step {step}")
+                return 0
+            resp = new_resp
+            progressed = True
+            break
+
+        if not progressed:
+            print(f"no new action to try at step {step}", file=sys.stderr)
+            break
+
+    if is_online(sess):
+        return 0
+
+    # We could not click our way online. Tell the user exactly what this portal
+    # is asking for (email/password/code/etc) so the notification is actionable.
+    # Printed on stdout in a stable, greppable form for the helper to parse.
+    needs = analyze_required_inputs(resp)
+    if needs:
+        print("NEED_INPUT: " + "; ".join(needs))
+    else:
+        print("NEED_INPUT: browser login")
+    return 1
+
+
+def main() -> int:
+    sess = requests.Session()
+    sess.headers.update({"User-Agent": DEFAULT_UA})
+    try:
+        return run_accept(sess)
+    finally:
+        sess.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

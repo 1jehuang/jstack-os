@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically check for Wi-Fi captive portal
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=captive-portal-helper.service
+
+[Install]
+WantedBy=timers.target

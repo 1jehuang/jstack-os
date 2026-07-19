@@ -111,9 +111,25 @@ breaking change.
 |---|---|---|
 | waybar, networkmanager, rofi-wayland, libnotify, ttf-jetbrains-mono-nerd, python | distro | wifi-menu uses rofi; nerd font needed for icons |
 
+## network stack: wifi-pick + captive portal + tofi (audited 2026-07-19)
+
+| Item | Bucket | Notes |
+|---|---|---|
+| ~/.local/bin/wifi-pick (tofi Wi-Fi picker) | distro | promoted from personal. Sanitized: /usr/local tofi fork ref → plain tofi, helper paths → /usr/bin |
+| ~/.local/bin/captive-portal-helper | distro | opens/auto-accepts captive portals |
+| ~/.local/bin/captive-portal-autoaccept (900-line engine) | distro | no personal data found |
+| ~/.local/bin/captive-portal-watch (notification watcher) | distro | |
+| captive-portal-helper.service/.timer, captive-portal-watch.service | distro | installed as system-wide user units + preset (auto-enabled) |
+| ~/src/tofi fork (typo-tolerant matching, Ctrl-f/b/g/h/m) | distro | packaged as tofi-jstack, builds from github.com/1jehuang/tofi (public), provides/conflicts tofi. Replaces AUR tofi |
+| ~/.config/tofi/config (fullscreen orange/black theme) | distro | ships in tofi-jstack /etc/skel |
+| tofi-drun-workspace.sh | pending | revisit: depends on workspace-restore behavior; plain tofi-drun shipped in niri config for now |
+| ~/.cache captive portal state files | personal | runtime state, never shipped |
+
+Note: jstack-niri Alt+W bind can now point at /usr/bin/wifi-pick (was dropped
+as personal). TODO: update jstack-niri config.kdl.
+
 ## Pending audits
 
-- [ ] tofi config + /usr/local/bin/tofi-drun fork
 - [ ] kitty / foot configs
 - [ ] keyd system config
 - [ ] dunst config

@@ -226,6 +226,7 @@ binds {
     Alt+Return hotkey-overlay-title="Open Terminal (kitty)" { spawn "kitty" "--single-instance"; }
     Alt+Shift+Return hotkey-overlay-title="Open Terminal (foot)" { spawn "foot"; }
     Alt+Space hotkey-overlay-title="App Launcher" { spawn "sh" "-c" "tofi-drun --drun-launch=true"; }
+    Alt+W hotkey-overlay-title="WiFi Picker" { spawn "wifi-pick"; }
     Ctrl+Shift+N allow-inhibiting=false hotkey-overlay-title="Firefox: New Private Window" { spawn "/usr/lib/jstack/scripts/firefox-private-window-shortcut.sh"; }
 
     // Volume (PipeWire/WirePlumber), 3% steps capped at 100%

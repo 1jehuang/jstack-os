@@ -1,0 +1,749 @@
+#!/usr/bin/env python3
+"""High-visibility, low-spam Wi-Fi / captive portal watcher.
+
+Notification model:
+- Current status uses a replace-in-place notification slot.
+- Important transitions use rate-limited event toasts.
+- Bad states use backoff reminders instead of fixed repeated spam.
+- Healthy startup is quiet, so service restarts do not create noise.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "captive-portal-watch"
+EVENT_DIR = STATE_DIR / "events"
+NOTIFICATION_DIR = STATE_DIR / "notifications"
+STATE_FILE = STATE_DIR / "last-state.json"
+EVENT_RETENTION_SECONDS = 7 * 24 * 60 * 60
+
+CHECK_INTERVAL_SECONDS = 6
+PORTAL_OPEN_COOLDOWN_SECONDS = 20 * 60
+CONNECT_EVENT_COOLDOWN_SECONDS = 2 * 60
+DISCONNECT_EVENT_COOLDOWN_SECONDS = 2 * 60
+STATUS_EVENT_COOLDOWN_SECONDS = 3 * 60
+RESTORED_EVENT_COOLDOWN_SECONDS = 60
+UNKNOWN_OPEN_DELAY_SECONDS = 24
+
+# Backoff reminders: first reminder is fairly quick, then progressively quieter.
+BAD_REMINDER_STEPS_SECONDS = [90, 180, 300, 600, 900]
+DISCONNECTED_REMINDER_STEPS_SECONDS = [300, 600, 900]
+
+PORTAL_URLS = [
+    "http://neverssl.com/",
+    "http://nmcheck.gnome.org/",
+    "http://connectivitycheck.gstatic.com/generate_204",
+]
+
+BAD_STATUSES = {"portal", "limited", "none", "unknown"}
+
+
+@dataclasses.dataclass
+class WifiState:
+    wifi_present: bool = False
+    dev: str = ""
+    dev_state: str = "unavailable"
+    ssid: str = ""
+    nm_state: str = ""
+    conn_key: str = "no-wifi"
+    status: str = "disconnected"
+    signal: str = ""
+    security: str = ""
+    ip4: str = ""
+    gateway: str = ""
+    dns: str = ""
+    ap: str = ""
+    freq: str = ""
+    rssi: str = ""
+    txrate: str = ""
+
+    @property
+    def effective_status(self) -> str:
+        if self.dev_state != "connected":
+            return "disconnected"
+        return self.status or "unknown"
+
+    @property
+    def effective_key(self) -> str:
+        if self.dev_state != "connected":
+            return self.conn_key or "no-wifi"
+        return self.conn_key or f"{self.dev}:{self.ssid or 'unknown SSID'}"
+
+
+def log(message: str) -> None:
+    ts = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    print(f"{ts} {message}", flush=True)
+
+
+def run(cmd: list[str], timeout: float = 3.0) -> str:
+    try:
+        proc = subprocess.run(
+            cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+    if proc.returncode != 0 and not proc.stdout:
+        return ""
+    return proc.stdout.strip("\n")
+
+
+def first_line(text: str) -> str:
+    return next((line for line in text.splitlines() if line), "")
+
+
+def join_lines(text: str) -> str:
+    return " | ".join(line for line in text.splitlines() if line)
+
+
+def shell_open(url: str) -> None:
+    try:
+        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        log(f"Cannot open {url}: xdg-open not found")
+
+
+def state_hash(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8", "replace")).hexdigest()[:24]
+
+
+def ensure_dirs() -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    EVENT_DIR.mkdir(parents=True, exist_ok=True)
+    NOTIFICATION_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def read_json(path: Path, default: Any) -> Any:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return default
+
+
+def write_json_atomic(path: Path, data: Any) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+        f.write("\n")
+    tmp.replace(path)
+
+
+def event_file(event_key: str) -> Path:
+    return EVENT_DIR / f"{state_hash(event_key)}.json"
+
+
+def event_allowed(event_key: str, cooldown_seconds: int, *, now: float | None = None, update: bool = True) -> bool:
+    now = time.time() if now is None else now
+    path = event_file(event_key)
+    data = read_json(path, {})
+    last = float(data.get("last", 0) or 0)
+    if last and now - last < cooldown_seconds:
+        return False
+    if update:
+        write_json_atomic(path, {"last": now, "event": event_key})
+    return True
+
+
+def cleanup_old_events() -> None:
+    now = time.time()
+    try:
+        for path in EVENT_DIR.glob("*.json"):
+            data = read_json(path, {})
+            last = float(data.get("last", 0) or 0)
+            if last and now - last > EVENT_RETENTION_SECONDS:
+                path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def notify_send(
+    summary: str,
+    body: str,
+    *,
+    urgency: str = "normal",
+    icon: str = "network-wireless",
+    timeout_ms: int = 9000,
+    replace_slot: str | None = None,
+) -> None:
+    cmd = [
+        "notify-send",
+    ]
+    if replace_slot:
+        cmd.append("-p")
+
+    cmd.extend([
+        "-a",
+        "Wi-Fi",
+        "-u",
+        urgency,
+        "-t",
+        str(timeout_ms),
+        "-i",
+        icon,
+    ])
+
+    id_path: Path | None = None
+    if replace_slot:
+        id_path = NOTIFICATION_DIR / f"{replace_slot}.id"
+        old_id = ""
+        try:
+            old_id = id_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+        if old_id.isdigit():
+            cmd.extend(["-r", old_id])
+
+    cmd.extend([summary, body])
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=4,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return
+
+    if replace_slot and id_path and proc.stdout.strip().isdigit():
+        try:
+            id_path.write_text(proc.stdout.strip() + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
+
+def notify_event_rate_limited(
+    event_key: str,
+    cooldown_seconds: int,
+    summary: str,
+    body: str,
+    *,
+    urgency: str = "normal",
+    icon: str = "network-wireless",
+    timeout_ms: int = 9000,
+) -> bool:
+    if not event_allowed(event_key, cooldown_seconds):
+        log(f"Notification suppressed by cooldown: {event_key}")
+        return False
+    notify_send(summary, body, urgency=urgency, icon=icon, timeout_ms=timeout_ms)
+    return True
+
+
+def connectivity() -> str:
+    value = run(["nmcli", "-t", "networking", "connectivity", "check"], timeout=6).strip()
+    if not value:
+        value = run(["nmcli", "-t", "networking", "connectivity"], timeout=3).strip()
+    return value or "unknown"
+
+
+def parse_iw_link(dev: str) -> dict[str, str]:
+    text = run(["iw", "dev", dev, "link"], timeout=2)
+    info: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("Connected to "):
+            parts = line.split()
+            if len(parts) >= 3:
+                info["ap"] = parts[2]
+        elif line.startswith("freq:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                info["freq"] = f"{parts[1]} MHz"
+        elif line.startswith("signal:"):
+            info["rssi"] = line.removeprefix("signal:").strip()
+        elif line.startswith("tx bitrate:"):
+            info["txrate"] = line.removeprefix("tx bitrate:").strip()
+    return info
+
+
+def collect_state() -> WifiState:
+    state = WifiState()
+    dev_status = run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"], timeout=3)
+    wifi_rows: list[tuple[str, str]] = []
+    for line in dev_status.splitlines():
+        parts = line.split(":")
+        if len(parts) >= 3 and parts[1] == "wifi":
+            wifi_rows.append((parts[0], parts[2]))
+
+    if not wifi_rows:
+        return state
+
+    state.wifi_present = True
+    connected = next(((dev, st) for dev, st in wifi_rows if st == "connected"), None)
+    state.dev, state.dev_state = connected or wifi_rows[0]
+    state.conn_key = f"{state.dev}:{state.dev_state}"
+
+    if state.dev_state != "connected":
+        state.status = "disconnected"
+        return state
+
+    state.ssid = first_line(run(["nmcli", "-t", "-g", "GENERAL.CONNECTION", "device", "show", state.dev], timeout=3))
+    state.nm_state = first_line(run(["nmcli", "-t", "-g", "GENERAL.STATE", "device", "show", state.dev], timeout=3))
+    state.ip4 = join_lines(run(["nmcli", "-t", "-g", "IP4.ADDRESS", "device", "show", state.dev], timeout=3))
+    state.gateway = join_lines(run(["nmcli", "-t", "-g", "IP4.GATEWAY", "device", "show", state.dev], timeout=3))
+    state.dns = join_lines(run(["nmcli", "-t", "-g", "IP4.DNS", "device", "show", state.dev], timeout=3))
+
+    wifi_list = run(
+        ["nmcli", "-t", "-e", "no", "-f", "ACTIVE,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"],
+        timeout=3,
+    )
+    for line in wifi_list.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) >= 2 and parts[0] == "yes":
+            state.signal = parts[1]
+            state.security = parts[2] if len(parts) >= 3 else ""
+            break
+
+    iw_info = parse_iw_link(state.dev)
+    state.ap = iw_info.get("ap", "")
+    state.freq = iw_info.get("freq", "")
+    state.rssi = iw_info.get("rssi", "")
+    state.txrate = iw_info.get("txrate", "")
+
+    state.status = connectivity()
+    state.ssid = state.ssid or "unknown SSID"
+    state.conn_key = f"{state.dev}:{state.ssid}"
+    return state
+
+
+def status_label(status: str) -> str:
+    return {
+        "full": "Internet OK",
+        "portal": "Browser login required",
+        "limited": "Limited connectivity",
+        "none": "No internet",
+        "unknown": "Internet check unclear",
+        "disconnected": "Wi-Fi disconnected",
+    }.get(status, status)
+
+
+def status_summary(state: WifiState) -> str:
+    status = state.effective_status
+    if status == "full":
+        return f"Wi-Fi online: {state.ssid}"
+    if status == "portal":
+        return f"Wi-Fi portal login needed: {state.ssid}"
+    if status == "limited":
+        return f"Wi-Fi limited/no internet: {state.ssid}"
+    if status == "none":
+        return f"Wi-Fi has no internet: {state.ssid}"
+    if status == "unknown":
+        return f"Wi-Fi internet check unclear: {state.ssid}"
+    if status == "disconnected":
+        return "Wi-Fi disconnected"
+    return f"Wi-Fi connectivity {status}: {state.ssid}"
+
+
+def status_icon(status: str) -> str:
+    return {
+        "full": "network-wireless",
+        "portal": "dialog-password",
+        "limited": "network-error",
+        "none": "network-error",
+        "unknown": "dialog-question",
+        "disconnected": "network-offline",
+    }.get(status, "network-wireless")
+
+
+def status_urgency(status: str) -> str:
+    if status in {"portal", "limited", "none"}:
+        return "critical"
+    return "normal"
+
+
+def signal_text(state: WifiState) -> str:
+    if state.signal and state.rssi:
+        return f"{state.signal}% ({state.rssi})"
+    if state.signal:
+        return f"{state.signal}%"
+    if state.rssi:
+        return state.rssi
+    return "unknown"
+
+
+def notification_body(state: WifiState, *, action: str = "") -> str:
+    status = state.effective_status
+    if status == "disconnected":
+        lines = [
+            f"Device: {state.dev or 'none'}",
+            f"State: {state.dev_state or 'unavailable'}",
+            "NetworkManager: Wi-Fi is not connected",
+        ]
+    else:
+        lines = [
+            f"Status: {status_label(status)}",
+            f"Signal: {signal_text(state)}",
+            f"IP: {state.ip4 or 'none yet'}",
+            f"Gateway: {state.gateway or 'none yet'}",
+            f"DNS: {state.dns or 'none yet'}",
+        ]
+        if action:
+            lines.append(f"Action: {action}")
+    return "\n".join(lines)
+
+
+def detailed_body(state: WifiState) -> str:
+    if state.effective_status == "disconnected":
+        if state.wifi_present:
+            return "\n".join(
+                [
+                    f"Device: {state.dev or 'unknown'}",
+                    f"State: {state.dev_state or 'unknown'}",
+                    "NetworkManager: Wi-Fi is not connected",
+                ]
+            )
+        return "No Wi-Fi device is currently visible to NetworkManager."
+
+    return "\n".join(
+        [
+            f"SSID: {state.ssid or 'unknown'}",
+            f"Device: {state.dev or 'unknown'}",
+            f"Signal: {signal_text(state)}",
+            f"Security: {state.security or 'open/unknown'}",
+            f"Connectivity: {state.status or 'unknown'}",
+            f"IP: {state.ip4 or 'none yet'}",
+            f"Gateway: {state.gateway or 'none yet'}",
+            f"DNS: {state.dns or 'none yet'}",
+            f"AP: {state.ap or 'unknown'}" + (f" @ {state.freq}" if state.freq else ""),
+            f"TX rate: {state.txrate or 'unknown'}",
+            f"NetworkManager: {state.nm_state or 'unknown'}",
+        ]
+    )
+
+
+def debounce_required(status: str) -> int:
+    # Portal is actionable and usually reliable. limited/none/unknown can flicker during DHCP/probe startup.
+    return {
+        "full": 1,
+        "portal": 1,
+        "limited": 2,
+        "none": 2,
+        "unknown": 3,
+        "disconnected": 1,
+    }.get(status, 2)
+
+
+def backoff_interval(index: int, steps: list[int]) -> int:
+    if not steps:
+        return 300
+    return steps[min(index, len(steps) - 1)]
+
+
+def save_last_state(conn_key: str, status: str, state_since: float) -> None:
+    write_json_atomic(
+        STATE_FILE,
+        {
+            "connection": conn_key,
+            "status": status,
+            "state_since": state_since,
+            "updated_at": time.time(),
+        },
+    )
+
+
+def load_last_state() -> dict[str, Any]:
+    data = read_json(STATE_FILE, {})
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def maybe_open_portal(state: WifiState, state_since: float) -> str:
+    status = state.effective_status
+    if status not in BAD_STATUSES:
+        return ""
+
+    if status == "unknown":
+        remaining = UNKNOWN_OPEN_DELAY_SECONDS - int(time.time() - state_since)
+        if remaining > 0:
+            return f"will try login page if still unclear in {remaining}s"
+
+    event_key = f"portal-open:{state.effective_key}"
+    if not event_allowed(event_key, PORTAL_OPEN_COOLDOWN_SECONDS):
+        return "login page already opened recently"
+
+    for url in PORTAL_URLS:
+        shell_open(url)
+        time.sleep(1)
+    log(f"Opened captive portal browser checks for {state.effective_key}: status={status}")
+    return "opened browser login checks"
+
+
+def update_status_notification(state: WifiState, *, action: str = "", summary: str | None = None) -> None:
+    status = state.effective_status
+    notify_send(
+        summary or status_summary(state),
+        notification_body(state, action=action),
+        urgency=status_urgency(status),
+        icon=status_icon(status),
+        timeout_ms=15000 if status in BAD_STATUSES else 9000,
+        replace_slot="status",
+    )
+
+
+class WifiWatcher:
+    def __init__(self) -> None:
+        persisted = load_last_state()
+        self.persisted_conn = str(persisted.get("connection", "") or "")
+        self.persisted_status = str(persisted.get("status", "") or "")
+        self.persisted_since = float(persisted.get("state_since", time.time()) or time.time())
+
+        self.candidate_conn = ""
+        self.candidate_status = ""
+        self.candidate_count = 0
+
+        self.effective_conn = ""
+        self.effective_status = ""
+        self.state_since = time.time()
+        self.bad_reminder_index = 0
+        self.disconnected_reminder_index = 0
+        self.last_bad_reminder_at = time.time()
+        self.last_disconnected_reminder_at = time.time()
+
+    def observe(self, state: WifiState) -> None:
+        conn = state.effective_key
+        status = state.effective_status
+        now = time.time()
+
+        if conn == self.candidate_conn and status == self.candidate_status:
+            self.candidate_count += 1
+        else:
+            self.candidate_conn = conn
+            self.candidate_status = status
+            self.candidate_count = 1
+            log(f"Candidate Wi-Fi state: connection={conn} status={status}")
+
+        required = debounce_required(status)
+        if self.candidate_count < required:
+            log(f"Debouncing Wi-Fi state {conn} / {status}: {self.candidate_count}/{required}")
+            return
+
+        if conn == self.effective_conn and status == self.effective_status:
+            self.handle_periodic(state)
+            return
+
+        # Suppress restart noise if the service starts into exactly the state it last recorded.
+        if not self.effective_conn and conn == self.persisted_conn and status == self.persisted_status:
+            self.effective_conn = conn
+            self.effective_status = status
+            self.state_since = self.persisted_since if self.persisted_since else now
+            self.last_bad_reminder_at = now
+            self.last_disconnected_reminder_at = now
+            save_last_state(conn, status, self.state_since)
+            log(f"Startup quiet: continuing persisted Wi-Fi state connection={conn} status={status}")
+            self.handle_periodic(state)
+            return
+
+        old_conn = self.effective_conn
+        old_status = self.effective_status
+        startup = not self.effective_conn
+        self.effective_conn = conn
+        self.effective_status = status
+        self.state_since = now
+        self.bad_reminder_index = 0
+        self.disconnected_reminder_index = 0
+        self.last_bad_reminder_at = now
+        self.last_disconnected_reminder_at = now
+        save_last_state(conn, status, self.state_since)
+        self.handle_transition(state, old_conn, old_status, startup=startup)
+
+    def handle_transition(self, state: WifiState, old_conn: str, old_status: str, *, startup: bool) -> None:
+        status = state.effective_status
+        conn = state.effective_key
+        same_conn = old_conn == conn
+
+        if startup and status == "full":
+            log(f"Startup quiet: Wi-Fi already online connection={conn}")
+            return
+
+        action = ""
+        if status in BAD_STATUSES:
+            action = maybe_open_portal(state, self.state_since)
+
+        update_status_notification(state, action=action)
+
+        if status == "full":
+            if old_status and old_status != "full":
+                notify_event_rate_limited(
+                    f"restored:{conn}",
+                    RESTORED_EVENT_COOLDOWN_SECONDS,
+                    f"Internet restored: {state.ssid}",
+                    notification_body(state),
+                    urgency="normal",
+                    icon="network-wireless",
+                    timeout_ms=9000,
+                )
+                log(f"Internet restored: connection={conn} previous={old_status}")
+            else:
+                notify_event_rate_limited(
+                    f"connected:{conn}",
+                    CONNECT_EVENT_COOLDOWN_SECONDS,
+                    f"Wi-Fi online: {state.ssid}",
+                    notification_body(state),
+                    urgency="normal",
+                    icon="network-wireless",
+                    timeout_ms=9000,
+                )
+                log(f"Wi-Fi online: connection={conn}")
+            return
+
+        if status == "disconnected":
+            notify_event_rate_limited(
+                f"disconnected:{conn}",
+                DISCONNECT_EVENT_COOLDOWN_SECONDS,
+                "Wi-Fi disconnected",
+                notification_body(state),
+                urgency="normal",
+                icon="network-offline",
+                timeout_ms=10000,
+            )
+            log(f"Wi-Fi disconnected: connection={conn} previous={old_conn}/{old_status}")
+            return
+
+        if status in BAD_STATUSES:
+            reason = status_label(status)
+            if status == "portal":
+                summary = f"Captive portal detected: {state.ssid}"
+            elif same_conn:
+                summary = f"Wi-Fi issue: {reason}"
+            else:
+                summary = f"Wi-Fi needs attention: {state.ssid}"
+
+            notify_event_rate_limited(
+                f"status:{conn}:{status}",
+                STATUS_EVENT_COOLDOWN_SECONDS,
+                summary,
+                notification_body(state, action=action),
+                urgency=status_urgency(status),
+                icon=status_icon(status),
+                timeout_ms=15000,
+            )
+            log(f"Wi-Fi issue: connection={conn} status={status} previous={old_conn}/{old_status} action={action}")
+            return
+
+        notify_event_rate_limited(
+            f"status:{conn}:{status}",
+            STATUS_EVENT_COOLDOWN_SECONDS,
+            f"Wi-Fi connectivity changed: {status}",
+            notification_body(state),
+            urgency="normal",
+            icon="network-wireless",
+            timeout_ms=9000,
+        )
+        log(f"Wi-Fi connectivity changed: connection={conn} status={status} previous={old_conn}/{old_status}")
+
+    def handle_periodic(self, state: WifiState) -> None:
+        status = state.effective_status
+        conn = state.effective_key
+        now = time.time()
+
+        if status in BAD_STATUSES:
+            interval = backoff_interval(self.bad_reminder_index, BAD_REMINDER_STEPS_SECONDS)
+            if now - self.last_bad_reminder_at >= interval:
+                action = maybe_open_portal(state, self.state_since)
+                summary = f"Still waiting on Wi-Fi internet: {state.ssid}"
+                update_status_notification(state, action=action, summary=summary)
+                self.last_bad_reminder_at = now
+                self.bad_reminder_index += 1
+                log(f"Wi-Fi bad-state reminder: connection={conn} status={status} next_index={self.bad_reminder_index} action={action}")
+            return
+
+        if status == "disconnected":
+            interval = backoff_interval(self.disconnected_reminder_index, DISCONNECTED_REMINDER_STEPS_SECONDS)
+            if now - self.last_disconnected_reminder_at >= interval:
+                update_status_notification(state, summary="Wi-Fi still disconnected")
+                self.last_disconnected_reminder_at = now
+                self.disconnected_reminder_index += 1
+                log(f"Wi-Fi disconnected reminder: connection={conn} next_index={self.disconnected_reminder_index}")
+            return
+
+        # Healthy full status gets no periodic notifications.
+
+    def run_forever(self) -> None:
+        cleanup_old_events()
+        while True:
+            state = collect_state()
+            self.observe(state)
+            time.sleep(CHECK_INTERVAL_SECONDS)
+
+
+def print_state() -> None:
+    state = collect_state()
+    print(f"connection={state.effective_key}")
+    print(f"status={state.effective_status}")
+    print(detailed_body(state))
+
+
+def test_notification() -> None:
+    state = collect_state()
+    notify_send(
+        "Wi-Fi notification test",
+        notification_body(state, action="test notification only"),
+        urgency=status_urgency(state.effective_status),
+        icon=status_icon(state.effective_status),
+        timeout_ms=10000,
+        replace_slot="status",
+    )
+
+
+def explain() -> None:
+    print(
+        "\n".join(
+            [
+                "Wi-Fi notification behavior:",
+                "- Healthy full-connectivity startup is quiet, so service restarts do not spam.",
+                "- Status changes are debounced: portal/full/disconnect quickly, limited/none/unknown more cautiously.",
+                "- The main status notification is replaced in-place instead of stacking copies.",
+                "- Important transition toasts are rate-limited per network/status.",
+                "- Portal/browser auto-open is cooled down for 20 minutes per network.",
+                "- Bad-state reminders back off: 90s, 3m, 5m, 10m, then 15m.",
+                "- Disconnected reminders back off: 5m, 10m, then 15m.",
+                "- Unknown connectivity opens browser checks only if it persists for 24s.",
+            ]
+        )
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="High-visibility, low-spam Wi-Fi captive portal watcher")
+    parser.add_argument("--print-state", action="store_true", help="print current Wi-Fi diagnostic state and exit")
+    parser.add_argument("--test-notification", action="store_true", help="show/replace one Wi-Fi test notification and exit")
+    parser.add_argument("--explain", action="store_true", help="explain notification anti-spam behavior and exit")
+    args = parser.parse_args()
+
+    ensure_dirs()
+
+    if args.print_state:
+        print_state()
+        return 0
+    if args.test_notification:
+        test_notification()
+        return 0
+    if args.explain:
+        explain()
+        return 0
+
+    WifiWatcher().run_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

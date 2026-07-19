@@ -1,0 +1,6 @@
+[Unit]
+Description=Open browser when NetworkManager detects a captive portal
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/captive-portal-helper
