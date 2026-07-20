@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "graph_model_id": "jstack-no-usb-dual-boot-v1",
+  "control_state": "windows.reboot_to_installer_pending",
+  "journal_head_hash": "691364d225bcaa970d47178ec5b412950ee66f0bfd154bf862cae2d0ed05fc62",
+  "release_manifest_hash": "abababababababababababababababababababababababababababababababab",
+  "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+  "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "partition_phase": "windows_handoff",
+  "partition_fingerprint": "ce6c229e55e5222672b53f64d6c4ba94b1dda7d1647e93fff5b54b6f19235138",
+  "intended_boot_target": "installer",
+  "nonce": "fixture-nonce-1"
+}

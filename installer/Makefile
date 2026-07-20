@@ -1,9 +1,9 @@
 PYTHON ?= python3
 MODEL := model/installer-state-graph.json
 
-.PHONY: check validate test docs
+.PHONY: check validate test docs core
 
-check: validate test docs
+check: validate test docs core
 
 validate:
 	$(PYTHON) tools/validate_state_graph.py $(MODEL)
@@ -14,3 +14,6 @@ test:
 docs:
 	$(PYTHON) tools/render_state_graph.py $(MODEL) ../docs/installer/generated
 	git diff --exit-code -- ../docs/installer/generated
+
+core:
+	$(MAKE) -C core check

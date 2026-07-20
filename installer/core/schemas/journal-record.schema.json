@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/journal-record.schema.json",
+  "title": "JStack append-only journal record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "sequence",
+    "previous_record_hash",
+    "actor",
+    "transition_id",
+    "record_type",
+    "precondition_hash",
+    "postcondition_hash",
+    "plan_hash",
+    "created_objects"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "previous_record_hash": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actor": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "transition_id": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "record_type": {
+      "enum": [
+        "action_intent",
+        "action_committed",
+        "state_advanced"
+      ]
+    },
+    "precondition_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "postcondition_hash": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plan_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "created_objects": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/rollbackObject"
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "record_type": {
+            "const": "action_intent"
+          }
+        },
+        "required": [
+          "record_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "postcondition_hash": {
+            "type": "null"
+          },
+          "created_objects": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_type": {
+            "const": "action_committed"
+          }
+        },
+        "required": [
+          "record_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "postcondition_hash": {
+            "$ref": "common.schema.json#/$defs/hash256"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_type": {
+            "const": "state_advanced"
+          }
+        },
+        "required": [
+          "record_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "postcondition_hash": {
+            "$ref": "common.schema.json#/$defs/hash256"
+          },
+          "created_objects": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

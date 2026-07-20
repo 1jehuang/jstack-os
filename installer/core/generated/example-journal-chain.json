@@ -1,0 +1,79 @@
+[
+  {
+    "schema_version": 1,
+    "sequence": 0,
+    "previous_record_hash": null,
+    "actor": "windows_bootstrap",
+    "transition_id": "create_installer_entry",
+    "record_type": "action_intent",
+    "precondition_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "postcondition_hash": null,
+    "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+    "created_objects": []
+  },
+  {
+    "schema_version": 1,
+    "sequence": 1,
+    "previous_record_hash": "f8d6781587de8a5e350e6be9afd170e62c76d1d29b27209dae2237ab5bccd38f",
+    "actor": "windows_bootstrap",
+    "transition_id": "create_installer_entry",
+    "record_type": "action_committed",
+    "precondition_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "postcondition_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+    "created_objects": [
+      {
+        "kind": "boot_entry",
+        "stable_id": "uefi:Boot0007"
+      }
+    ]
+  },
+  {
+    "schema_version": 1,
+    "sequence": 2,
+    "previous_record_hash": "1249054cc9ad2107a0a99c822e6a972a8cc856710bc99eb99f1fa4ebf3a7cdf8",
+    "actor": "windows_bootstrap",
+    "transition_id": "create_installer_entry",
+    "record_type": "state_advanced",
+    "precondition_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "postcondition_hash": "44bfe9d9b95d5b3f53fa40dfe47a9011f59744a61072e4a7e42cb3c6b17ff397",
+    "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+    "created_objects": []
+  },
+  {
+    "schema_version": 1,
+    "sequence": 3,
+    "previous_record_hash": "df1c8626c4247235e334561f018cab46932f8af20a25813ad9e3a1dd3ca15fb5",
+    "actor": "windows_bootstrap",
+    "transition_id": "reboot_to_installer",
+    "record_type": "action_intent",
+    "precondition_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+    "postcondition_hash": null,
+    "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+    "created_objects": []
+  },
+  {
+    "schema_version": 1,
+    "sequence": 4,
+    "previous_record_hash": "d84ade9fb38c16e3080c508b73ea66b58df98cf9caae4e54014bbf545ef08fac",
+    "actor": "windows_bootstrap",
+    "transition_id": "reboot_to_installer",
+    "record_type": "action_committed",
+    "precondition_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+    "postcondition_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+    "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+    "created_objects": []
+  },
+  {
+    "schema_version": 1,
+    "sequence": 5,
+    "previous_record_hash": "a4ac026d50282f82fa9db8e884f661ea8f8ea4d113e67905c5a1983d3bff49ef",
+    "actor": "windows_bootstrap",
+    "transition_id": "reboot_to_installer",
+    "record_type": "state_advanced",
+    "precondition_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+    "postcondition_hash": "fb6d30347943c5a8840ec21cd8dc3b30951a091259d721b79e6037c23af8989e",
+    "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+    "created_objects": []
+  }
+]

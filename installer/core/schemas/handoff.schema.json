@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/handoff.schema.json",
+  "title": "JStack cross-OS handoff",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "graph_model_id",
+    "control_state",
+    "journal_head_hash",
+    "release_manifest_hash",
+    "plan_hash",
+    "disk_guid",
+    "partition_phase",
+    "partition_fingerprint",
+    "intended_boot_target",
+    "nonce"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "graph_model_id": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "control_state": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "journal_head_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "release_manifest_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "plan_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "disk_guid": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "partition_phase": {
+      "enum": [
+        "source",
+        "windows_reserved",
+        "windows_handoff",
+        "installed"
+      ]
+    },
+    "partition_fingerprint": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "intended_boot_target": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "nonce": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    }
+  },
+  "additionalProperties": false
+}

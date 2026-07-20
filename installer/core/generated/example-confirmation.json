@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+  "display_digest": "a8e61ff8d53b14dc75eb5748cb08d7fccb6724177e78c1b42655e6f29c981458",
+  "confirmed_at_unix_ms": 1800000001000,
+  "authorization": "explicit_user_confirmation"
+}

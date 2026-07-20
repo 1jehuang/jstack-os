@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/release-requirements.schema.json",
+  "title": "JStack release planner requirements",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "release_id",
+    "release_manifest_hash",
+    "state_model_id",
+    "alignment_bytes",
+    "xbootldr_size_bytes",
+    "minimum_root_size_bytes",
+    "safety_margin_bytes",
+    "minimum_total_allocation_bytes",
+    "esp_loader_required_bytes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "release_id": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "release_manifest_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "state_model_id": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "alignment_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    },
+    "xbootldr_size_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    },
+    "minimum_root_size_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    },
+    "safety_margin_bytes": {
+      "$ref": "common.schema.json#/$defs/bytes"
+    },
+    "minimum_total_allocation_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    },
+    "esp_loader_required_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    }
+  },
+  "additionalProperties": false
+}

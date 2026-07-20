@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "release_id": "jstack-2026.07",
+  "release_manifest_hash": "abababababababababababababababababababababababababababababababab",
+  "state_model_id": "jstack-no-usb-dual-boot-v1",
+  "alignment_bytes": 1048576,
+  "xbootldr_size_bytes": 8589934592,
+  "minimum_root_size_bytes": 51539607552,
+  "safety_margin_bytes": 2147483648,
+  "minimum_total_allocation_bytes": 68719476736,
+  "esp_loader_required_bytes": 16777216
+}

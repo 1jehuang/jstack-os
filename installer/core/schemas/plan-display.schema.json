@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/plan-display.schema.json",
+  "title": "JStack exact plan confirmation display",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_hash",
+    "disk_guid",
+    "windows_partition_guid",
+    "windows_original_size_bytes",
+    "windows_target_size_bytes",
+    "allocation_interval",
+    "created_partitions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "plan_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "disk_guid": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "windows_partition_guid": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "windows_original_size_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    },
+    "windows_target_size_bytes": {
+      "$ref": "common.schema.json#/$defs/positiveBytes"
+    },
+    "allocation_interval": {
+      "$ref": "common.schema.json#/$defs/byteInterval"
+    },
+    "created_partitions": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "common.schema.json#/$defs/plannedPartition"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/plannedPartition"
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+  "body": {
+    "source_inventory_hash": "1d11f924827b63e2616e99b0f76b395f5cb53b117eaccf7c73854e7cbcf11c2d",
+    "install_id": "b24853ed-c2d7-856d-a5b7-b965eb44e13c",
+    "partition_fingerprints": {
+      "source": "328cf5a64004ebe69a588b7e15c045e2528c61d8fbae9874a8edb48acd883475",
+      "windows_reserved": "c768f588c240da8c8b3020199950283538e4c7f23a967f89c05c486c2631c34a",
+      "windows_handoff": "ce6c229e55e5222672b53f64d6c4ba94b1dda7d1647e93fff5b54b6f19235138",
+      "installed": "bbe83e7ab26178eeb87740c3cea070274062a20354d9aa0034b16d0e0d255bf7"
+    },
+    "release_manifest_hash": "abababababababababababababababababababababababababababababababab",
+    "state_model_id": "jstack-no-usb-dual-boot-v1",
+    "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "alignment_bytes": 1048576,
+    "windows_resize": {
+      "partition_guid": "33333333-3333-4333-8333-333333333333",
+      "volume_id": "volume-c",
+      "original_size_bytes": 429496729600,
+      "target_size_bytes": 360777252864,
+      "released_bytes": 68719476736
+    },
+    "allocation_interval": {
+      "start_bytes": 361331949568,
+      "end_bytes": 430051426304
+    },
+    "before_layout": [
+      {
+        "partition_guid": "11111111-1111-4111-8111-111111111111",
+        "type_guid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        "offset_bytes": 1048576,
+        "size_bytes": 536870912,
+        "role": "esp",
+        "filesystem": "fat32",
+        "volume_id": null,
+        "name": "EFI"
+      },
+      {
+        "partition_guid": "22222222-2222-4222-8222-222222222222",
+        "type_guid": "e3c9e316-0b5c-4db8-817d-f92df00215ae",
+        "offset_bytes": 537919488,
+        "size_bytes": 16777216,
+        "role": "msr",
+        "filesystem": null,
+        "volume_id": null,
+        "name": null
+      },
+      {
+        "partition_guid": "33333333-3333-4333-8333-333333333333",
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "offset_bytes": 554696704,
+        "size_bytes": 429496729600,
+        "role": "windows",
+        "filesystem": "ntfs",
+        "volume_id": "volume-c",
+        "name": "Windows"
+      },
+      {
+        "partition_guid": "44444444-4444-4444-8444-444444444444",
+        "type_guid": "de94bba4-06d1-4d40-a16a-bfd50179d6ac",
+        "offset_bytes": 430051426304,
+        "size_bytes": 1073741824,
+        "role": "recovery",
+        "filesystem": "ntfs",
+        "volume_id": "winre",
+        "name": "Windows RE"
+      }
+    ],
+    "after_layout": [
+      {
+        "partition_guid": "11111111-1111-4111-8111-111111111111",
+        "type_guid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        "offset_bytes": 1048576,
+        "size_bytes": 536870912,
+        "role": "esp",
+        "filesystem": "fat32",
+        "volume_id": null,
+        "name": "EFI"
+      },
+      {
+        "partition_guid": "22222222-2222-4222-8222-222222222222",
+        "type_guid": "e3c9e316-0b5c-4db8-817d-f92df00215ae",
+        "offset_bytes": 537919488,
+        "size_bytes": 16777216,
+        "role": "msr",
+        "filesystem": null,
+        "volume_id": null,
+        "name": null
+      },
+      {
+        "partition_guid": "33333333-3333-4333-8333-333333333333",
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "offset_bytes": 554696704,
+        "size_bytes": 360777252864,
+        "role": "windows",
+        "filesystem": "ntfs",
+        "volume_id": "volume-c",
+        "name": "Windows"
+      },
+      {
+        "partition_guid": "b7134309-fefd-8fa3-bce5-ade21cd06342",
+        "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
+        "offset_bytes": 361331949568,
+        "size_bytes": 8589934592,
+        "role": "xbootldr",
+        "filesystem": "fat32",
+        "volume_id": null,
+        "name": "JSTACK-BOOT"
+      },
+      {
+        "partition_guid": "94210098-9662-8cc1-8bf8-15abbd57ba26",
+        "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+        "offset_bytes": 369921884160,
+        "size_bytes": 57982058496,
+        "role": "jstack_root",
+        "filesystem": "btrfs",
+        "volume_id": null,
+        "name": "JSTACK-ROOT"
+      },
+      {
+        "partition_guid": "44444444-4444-4444-8444-444444444444",
+        "type_guid": "de94bba4-06d1-4d40-a16a-bfd50179d6ac",
+        "offset_bytes": 430051426304,
+        "size_bytes": 1073741824,
+        "role": "recovery",
+        "filesystem": "ntfs",
+        "volume_id": "winre",
+        "name": "Windows RE"
+      }
+    ],
+    "created_partitions": [
+      {
+        "partition_guid": "b7134309-fefd-8fa3-bce5-ade21cd06342",
+        "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
+        "offset_bytes": 361331949568,
+        "size_bytes": 8589934592,
+        "role": "xbootldr",
+        "filesystem": "fat32",
+        "name": "JSTACK-BOOT"
+      },
+      {
+        "partition_guid": "94210098-9662-8cc1-8bf8-15abbd57ba26",
+        "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+        "offset_bytes": 369921884160,
+        "size_bytes": 57982058496,
+        "role": "jstack_root",
+        "filesystem": "btrfs",
+        "name": "JSTACK-ROOT"
+      }
+    ],
+    "rollback_objects": [
+      {
+        "kind": "partition",
+        "stable_id": "b7134309-fefd-8fa3-bce5-ade21cd06342"
+      },
+      {
+        "kind": "partition",
+        "stable_id": "94210098-9662-8cc1-8bf8-15abbd57ba26"
+      },
+      {
+        "kind": "esp_path",
+        "stable_id": "esp:11111111-1111-4111-8111-111111111111;path:\\EFI\\JStack\\Installations\\b24853ed-c2d7-856d-a5b7-b965eb44e13c"
+      },
+      {
+        "kind": "windows_finalizer",
+        "stable_id": "task:\\JStack\\InstallerFinalizer-b24853ed-c2d7-856d-a5b7-b965eb44e13c"
+      }
+    ]
+  }
+}

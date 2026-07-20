@@ -1,5 +1,6 @@
 *.pkg.tar.zst
-pkg/
-src/
+/packages/*/pkg/
+/packages/*/src/
 __pycache__/
 *.pyc
+/installer/core/target/

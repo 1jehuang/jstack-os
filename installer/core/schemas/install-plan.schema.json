@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/install-plan.schema.json",
+  "title": "JStack immutable install plan",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_hash",
+    "body"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "plan_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "source_inventory_hash",
+        "install_id",
+        "partition_fingerprints",
+        "release_manifest_hash",
+        "state_model_id",
+        "disk_guid",
+        "alignment_bytes",
+        "windows_resize",
+        "allocation_interval",
+        "before_layout",
+        "after_layout",
+        "created_partitions",
+        "rollback_objects"
+      ],
+      "properties": {
+        "source_inventory_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "install_id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "partition_fingerprints": {
+          "type": "object",
+          "required": [
+            "source",
+            "windows_reserved",
+            "windows_handoff",
+            "installed"
+          ],
+          "properties": {
+            "source": {
+              "$ref": "common.schema.json#/$defs/hash256"
+            },
+            "windows_reserved": {
+              "$ref": "common.schema.json#/$defs/hash256"
+            },
+            "windows_handoff": {
+              "$ref": "common.schema.json#/$defs/hash256"
+            },
+            "installed": {
+              "$ref": "common.schema.json#/$defs/hash256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "release_manifest_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "state_model_id": {
+          "$ref": "common.schema.json#/$defs/nonempty"
+        },
+        "disk_guid": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "alignment_bytes": {
+          "$ref": "common.schema.json#/$defs/positiveBytes"
+        },
+        "windows_resize": {
+          "type": "object",
+          "required": [
+            "partition_guid",
+            "volume_id",
+            "original_size_bytes",
+            "target_size_bytes",
+            "released_bytes"
+          ],
+          "properties": {
+            "partition_guid": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "volume_id": {
+              "$ref": "common.schema.json#/$defs/nonempty"
+            },
+            "original_size_bytes": {
+              "$ref": "common.schema.json#/$defs/positiveBytes"
+            },
+            "target_size_bytes": {
+              "$ref": "common.schema.json#/$defs/positiveBytes"
+            },
+            "released_bytes": {
+              "$ref": "common.schema.json#/$defs/positiveBytes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "allocation_interval": {
+          "$ref": "common.schema.json#/$defs/byteInterval"
+        },
+        "before_layout": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/partitionLayout"
+          },
+          "minItems": 3
+        },
+        "after_layout": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/partitionLayout"
+          },
+          "minItems": 5
+        },
+        "created_partitions": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "common.schema.json#/$defs/plannedPartition"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/plannedPartition"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "rollback_objects": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/rollbackObject"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

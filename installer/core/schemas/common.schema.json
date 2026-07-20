@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/common.schema.json",
+  "title": "JStack installer common contract definitions",
+  "$defs": {
+    "hash256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nonempty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveBytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "partitionRole": {
+      "enum": [
+        "esp",
+        "msr",
+        "windows",
+        "recovery",
+        "other",
+        "xbootldr",
+        "jstack_root"
+      ]
+    },
+    "filesystem": {
+      "enum": [
+        "fat32",
+        "ntfs",
+        "btrfs",
+        "unknown"
+      ]
+    },
+    "partitionInventory": {
+      "type": "object",
+      "required": [
+        "partition_guid",
+        "type_guid",
+        "offset_bytes",
+        "size_bytes",
+        "role",
+        "filesystem",
+        "filesystem_free_bytes",
+        "volume_id",
+        "name"
+      ],
+      "properties": {
+        "partition_guid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "type_guid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "offset_bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/positiveBytes"
+        },
+        "role": {
+          "$ref": "#/$defs/partitionRole"
+        },
+        "filesystem": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/filesystem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "filesystem_free_bytes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/bytes"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "volume_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "partitionLayout": {
+      "type": "object",
+      "required": [
+        "partition_guid",
+        "type_guid",
+        "offset_bytes",
+        "size_bytes",
+        "role",
+        "filesystem",
+        "volume_id",
+        "name"
+      ],
+      "properties": {
+        "partition_guid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "type_guid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "offset_bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/positiveBytes"
+        },
+        "role": {
+          "$ref": "#/$defs/partitionRole"
+        },
+        "filesystem": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/filesystem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "volume_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "plannedPartition": {
+      "type": "object",
+      "required": [
+        "partition_guid",
+        "type_guid",
+        "offset_bytes",
+        "size_bytes",
+        "role",
+        "filesystem",
+        "name"
+      ],
+      "properties": {
+        "partition_guid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "type_guid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "offset_bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/positiveBytes"
+        },
+        "role": {
+          "enum": [
+            "xbootldr",
+            "jstack_root"
+          ]
+        },
+        "filesystem": {
+          "enum": [
+            "fat32",
+            "btrfs"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/nonempty"
+        }
+      },
+      "additionalProperties": false
+    },
+    "byteInterval": {
+      "type": "object",
+      "required": [
+        "start_bytes",
+        "end_bytes"
+      ],
+      "properties": {
+        "start_bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "end_bytes": {
+          "$ref": "#/$defs/positiveBytes"
+        }
+      },
+      "additionalProperties": false
+    },
+    "rollbackObject": {
+      "type": "object",
+      "required": [
+        "kind",
+        "stable_id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "partition",
+            "esp_path",
+            "boot_entry",
+            "windows_finalizer"
+          ]
+        },
+        "stable_id": {
+          "$ref": "#/$defs/nonempty"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

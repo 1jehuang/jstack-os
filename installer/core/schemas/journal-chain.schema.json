@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/journal-chain.schema.json",
+  "title": "JStack append-only journal chain",
+  "type": "array",
+  "items": {
+    "$ref": "journal-record.schema.json"
+  },
+  "minItems": 1
+}

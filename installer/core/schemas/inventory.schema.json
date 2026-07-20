@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/inventory.schema.json",
+  "title": "JStack Windows inventory",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "collected_at_unix_ms",
+    "host",
+    "readiness",
+    "system_disk"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "collected_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "host": {
+      "type": "object",
+      "required": [
+        "windows_version",
+        "architecture",
+        "firmware",
+        "secure_boot"
+      ],
+      "properties": {
+        "windows_version": {
+          "$ref": "common.schema.json#/$defs/nonempty"
+        },
+        "architecture": {
+          "const": "x86_64"
+        },
+        "firmware": {
+          "const": "uefi"
+        },
+        "secure_boot": {
+          "enum": [
+            "disabled",
+            "enabled_trusted",
+            "enabled_untrusted"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "readiness": {
+      "type": "object",
+      "required": [
+        "elevated",
+        "firmware_variables_writable",
+        "basic_gpt_disk",
+        "single_system_disk",
+        "windows_servicing_idle",
+        "storage_health_acceptable",
+        "power_safe",
+        "bitlocker_recovery_material_confirmed"
+      ],
+      "properties": {
+        "elevated": {
+          "type": "boolean"
+        },
+        "firmware_variables_writable": {
+          "type": "boolean"
+        },
+        "basic_gpt_disk": {
+          "type": "boolean"
+        },
+        "single_system_disk": {
+          "type": "boolean"
+        },
+        "windows_servicing_idle": {
+          "type": "boolean"
+        },
+        "storage_health_acceptable": {
+          "type": "boolean"
+        },
+        "power_safe": {
+          "type": "boolean"
+        },
+        "bitlocker_recovery_material_confirmed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "system_disk": {
+      "type": "object",
+      "required": [
+        "disk_guid",
+        "size_bytes",
+        "logical_sector_bytes",
+        "physical_sector_bytes",
+        "partitions",
+        "windows"
+      ],
+      "properties": {
+        "disk_guid": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "size_bytes": {
+          "$ref": "common.schema.json#/$defs/positiveBytes"
+        },
+        "logical_sector_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "physical_sector_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "partitions": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/partitionInventory"
+          },
+          "minItems": 3
+        },
+        "windows": {
+          "type": "object",
+          "required": [
+            "partition_guid",
+            "volume_id",
+            "current_size_bytes",
+            "supported_min_size_bytes",
+            "supported_max_size_bytes",
+            "bitlocker"
+          ],
+          "properties": {
+            "partition_guid": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "volume_id": {
+              "$ref": "common.schema.json#/$defs/nonempty"
+            },
+            "current_size_bytes": {
+              "$ref": "common.schema.json#/$defs/positiveBytes"
+            },
+            "supported_min_size_bytes": {
+              "$ref": "common.schema.json#/$defs/positiveBytes"
+            },
+            "supported_max_size_bytes": {
+              "$ref": "common.schema.json#/$defs/positiveBytes"
+            },
+            "bitlocker": {
+              "enum": [
+                "disabled",
+                "protected"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

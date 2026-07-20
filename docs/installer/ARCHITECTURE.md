@@ -34,11 +34,16 @@ flowchart LR
 - Downloads and verifies a signed release manifest and every content hash.
 - Creates the planned XBOOTLDR partition in newly freed space.
 - Copies the offline image, UKI, transition journal, and signed manifest.
-- Places only namespaced JStack loader files on the existing Windows ESP.
+- Places only install-instance-namespaced JStack loader files on the existing
+  Windows ESP.
 - Registers a Windows finalizer before the first reboot.
 - Installs that finalizer as a boot-start dispatcher gated by signed handoff
   state, so an unexpected Windows resume enters recovery rather than finalizing.
 - Arms a one-time UEFI boot entry and reboots.
+
+The partition decision itself is delegated to the shared side-effect-free Rust
+planner described in [`PLANNER.md`](PLANNER.md). Windows supplies supported
+resize bounds and executes the returned exact plan; it does not recompute it.
 
 ### XBOOTLDR and payload
 
@@ -54,7 +59,8 @@ version, disk plan, and supported installer version.
 ### RAM installer
 
 - Verifies the handoff and signed journal before using any disk identifier.
-- Re-inventories the disk and requires the plan fingerprint to match.
+- Re-inventories the disk and requires the reconstructable Windows-handoff GPT
+  fingerprint to match before creating root.
 - Creates only partitions inside the confirmed unallocated interval.
 - Deploys and verifies the JStack image without modifying Windows filesystems.
 - Installs JStack boot artifacts on XBOOTLDR.
