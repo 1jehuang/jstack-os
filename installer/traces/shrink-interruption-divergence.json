@@ -1,0 +1,19 @@
+{
+  "id": "shrink_interruption_divergence",
+  "description": "An interrupted shrink whose observed disk matches neither precondition nor postcondition stops all automatic writes.",
+  "steps": [
+    "begin_preflight",
+    "accept_preflight_and_plan",
+    "begin_payload_staging",
+    "accept_verified_payload",
+    "show_exact_plan",
+    "confirm_exact_plan",
+    "prepare_without_bitlocker",
+    {
+      "transition": "reserve_windows_space",
+      "outcome": "interrupted_divergent"
+    },
+    "stop_on_rollback_divergence"
+  ],
+  "expected_terminal": "terminal.manual_recovery"
+}

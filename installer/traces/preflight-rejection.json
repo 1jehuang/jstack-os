@@ -1,0 +1,9 @@
+{
+  "id": "preflight_rejection",
+  "description": "Unsupported layouts stop without mutation.",
+  "steps": [
+    "begin_preflight",
+    "reject_unsupported_platform"
+  ],
+  "expected_terminal": "terminal.unsupported"
+}

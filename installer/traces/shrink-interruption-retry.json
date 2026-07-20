@@ -1,0 +1,27 @@
+{
+  "id": "shrink_interruption_retry",
+  "description": "Power loss with the NTFS precondition still present retries the exact confirmed shrink, then rolls back cleanly on request.",
+  "steps": [
+    "begin_preflight",
+    "accept_preflight_and_plan",
+    "begin_payload_staging",
+    "accept_verified_payload",
+    "show_exact_plan",
+    "confirm_exact_plan",
+    "prepare_without_bitlocker",
+    {
+      "transition": "reserve_windows_space",
+      "outcome": "interrupted_precondition"
+    },
+    "reserve_windows_space",
+    "request_rollback_from_windows_space_reserved",
+    "dispatch_rollback_windows",
+    "execute_windows_rollback",
+    "rollback_remove_esp_files",
+    "rollback_delete_partitions",
+    "rollback_expand_windows",
+    "rollback_restore_security",
+    "rollback_unregister_finalizer"
+  ],
+  "expected_terminal": "terminal.rolled_back"
+}

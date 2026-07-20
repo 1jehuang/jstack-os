@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer-trace-v1.json",
+  "title": "JStack installer scenario trace",
+  "type": "object",
+  "required": [
+    "id",
+    "description",
+    "steps",
+    "expected_terminal"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "object",
+            "required": [
+              "transition",
+              "outcome"
+            ],
+            "properties": {
+              "transition": {
+                "type": "string",
+                "minLength": 1
+              },
+              "outcome": {
+                "enum": [
+                  "success",
+                  "failure",
+                  "interrupted_precondition",
+                  "interrupted_postcondition",
+                  "interrupted_divergent"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "expected_terminal": {
+      "enum": [
+        "terminal.completed",
+        "terminal.cancelled",
+        "terminal.unsupported",
+        "terminal.rolled_back",
+        "terminal.manual_recovery"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

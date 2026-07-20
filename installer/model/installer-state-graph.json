@@ -1,0 +1,3305 @@
+{
+  "schema_version": 1,
+  "model_id": "jstack-no-usb-dual-boot-v1",
+  "initial_state": "windows.bootstrap_started",
+  "scope": {
+    "host_os": [
+      "windows_10_x86_64",
+      "windows_11_x86_64"
+    ],
+    "firmware": "uefi",
+    "partition_table": "gpt",
+    "disk_layout": "single_basic_system_disk",
+    "install_mode": "dual_boot",
+    "windows_filesystem": "ntfs",
+    "jstack_filesystem": "btrfs",
+    "boot_partition": "xbootldr",
+    "minimum_total_allocation_gib": 64,
+    "unsupported": [
+      "legacy_bios",
+      "mbr",
+      "dynamic_disk",
+      "storage_spaces",
+      "raid_system_disk",
+      "replace_disk",
+      "ambiguous_multi_disk"
+    ]
+  },
+  "actors": [
+    "windows_bootstrap",
+    "firmware",
+    "linux_installer",
+    "windows_finalizer",
+    "jstack_first_boot",
+    "recovery_controller"
+  ],
+  "actor_platforms": {
+    "windows_bootstrap": [
+      "windows",
+      "shared"
+    ],
+    "firmware": [
+      "firmware",
+      "shared"
+    ],
+    "linux_installer": [
+      "linux",
+      "shared"
+    ],
+    "windows_finalizer": [
+      "windows",
+      "shared"
+    ],
+    "jstack_first_boot": [
+      "jstack",
+      "linux",
+      "shared"
+    ],
+    "recovery_controller": [
+      "windows",
+      "linux",
+      "recovery",
+      "shared"
+    ]
+  },
+  "guards": [
+    {
+      "id": "running_as_admin",
+      "description": "Windows process has an elevated administrator token.",
+      "platform": "windows"
+    },
+    {
+      "id": "supported_windows",
+      "description": "Windows 10 or 11 x86-64 is running.",
+      "platform": "windows"
+    },
+    {
+      "id": "uefi_boot",
+      "description": "Windows booted in UEFI mode and runtime variables are writable.",
+      "platform": "windows"
+    },
+    {
+      "id": "gpt_basic_disk",
+      "description": "The system disk is GPT and not dynamic, pooled, or RAID-backed.",
+      "platform": "windows"
+    },
+    {
+      "id": "single_system_disk",
+      "description": "Windows, its ESP, and the target free interval resolve to one unambiguous disk.",
+      "platform": "windows"
+    },
+    {
+      "id": "windows_ntfs_supported",
+      "description": "The Windows system volume is NTFS and reports a supported shrink range.",
+      "platform": "windows"
+    },
+    {
+      "id": "windows_recovery_preserved",
+      "description": "The plan leaves Windows MSR and recovery partitions unchanged.",
+      "platform": "shared"
+    },
+    {
+      "id": "power_safe",
+      "description": "AC is connected or battery policy allows a reboot-spanning install.",
+      "platform": "windows"
+    },
+    {
+      "id": "windows_servicing_idle",
+      "description": "No pending Windows servicing restart, feature update, storage repair, or other reboot owner can compete with installer handoffs.",
+      "platform": "windows"
+    },
+    {
+      "id": "storage_health_acceptable",
+      "description": "The system disk and NTFS volume report no dirty state, repair requirement, or failing health condition.",
+      "platform": "windows"
+    },
+    {
+      "id": "enough_shrinkable_space",
+      "description": "Supported NTFS shrink space covers XBOOTLDR, root minimum, and safety margin.",
+      "platform": "windows"
+    },
+    {
+      "id": "esp_has_loader_space",
+      "description": "The existing ESP has enough space for the namespaced signed loader.",
+      "platform": "windows"
+    },
+    {
+      "id": "boot_chain_trusted",
+      "description": "Secure Boot is off or every loader and UKI signature chains to accepted trust.",
+      "platform": "shared"
+    },
+    {
+      "id": "installer_rearm_not_attempted",
+      "description": "The signed journal proves that no installer BootNext rearm has already been attempted.",
+      "platform": "windows"
+    },
+    {
+      "id": "jstack_rearm_not_attempted",
+      "description": "The signed journal proves no installed-JStack BootNext rearm has already been attempted.",
+      "platform": "windows"
+    },
+    {
+      "id": "jstack_rearm_exhausted",
+      "description": "The signed journal proves the single installed-JStack BootNext rearm was already attempted.",
+      "platform": "windows"
+    },
+    {
+      "id": "installer_rearm_exhausted",
+      "description": "The signed journal proves that the single permitted installer BootNext rearm was already attempted.",
+      "platform": "windows"
+    },
+    {
+      "id": "release_manifest_valid",
+      "description": "The release manifest signature, channel, version, and expiry validate.",
+      "platform": "shared"
+    },
+    {
+      "id": "payload_hashes_valid",
+      "description": "Every staged payload chunk matches the signed manifest.",
+      "platform": "shared"
+    },
+    {
+      "id": "plan_fingerprint_current",
+      "description": "Current disk GUIDs, offsets, sizes, and types match the planned fingerprint.",
+      "platform": "shared"
+    },
+    {
+      "id": "confirmed_plan_current",
+      "description": "The current plan hash exactly matches the user-confirmed plan hash.",
+      "platform": "shared"
+    },
+    {
+      "id": "bitlocker_enabled",
+      "description": "BitLocker protection is enabled on the Windows system volume.",
+      "platform": "windows"
+    },
+    {
+      "id": "bitlocker_disabled",
+      "description": "BitLocker protection is disabled or not applicable.",
+      "platform": "windows"
+    },
+    {
+      "id": "bitlocker_recovery_key_confirmed",
+      "description": "The user confirmed access to valid BitLocker recovery material.",
+      "platform": "windows"
+    },
+    {
+      "id": "finalizer_not_armed",
+      "description": "The registered Windows finalizer has no signed Linux completion token and must dispatch bootstrap recovery instead.",
+      "platform": "windows"
+    },
+    {
+      "id": "finalizer_registered",
+      "description": "A signed Windows finalizer is registered before cross-OS reboot.",
+      "platform": "shared"
+    },
+    {
+      "id": "planned_interval_current",
+      "description": "All proposed writes remain inside the confirmed unallocated interval.",
+      "platform": "shared"
+    },
+    {
+      "id": "xbootldr_partition_matches_plan",
+      "description": "The XBOOTLDR GUID, type, offset, and size match the plan before formatting.",
+      "platform": "shared"
+    },
+    {
+      "id": "xbootldr_matches_plan",
+      "description": "The XBOOTLDR GUID, type, offset, size, and filesystem match the plan.",
+      "platform": "shared"
+    },
+    {
+      "id": "handoff_signature_valid",
+      "description": "The cross-OS handoff and journal sequence chain validate.",
+      "platform": "linux"
+    },
+    {
+      "id": "windows_boot_entry_present",
+      "description": "The original Windows boot entry and namespaced ESP files remain intact.",
+      "platform": "shared"
+    },
+    {
+      "id": "installed_system_valid",
+      "description": "Root image, fstab, users, network, Niri, boot artifacts, and recovery units validate.",
+      "platform": "linux"
+    },
+    {
+      "id": "bitlocker_restored_or_not_applicable",
+      "description": "BitLocker protection is active again or was never enabled.",
+      "platform": "shared"
+    },
+    {
+      "id": "jstack_boot_entry_valid",
+      "description": "The signed JStack boot entry resolves to the installed release.",
+      "platform": "shared"
+    },
+    {
+      "id": "current_platform_windows",
+      "description": "Recovery controller is executing under Windows.",
+      "platform": "recovery"
+    },
+    {
+      "id": "current_platform_linux",
+      "description": "Recovery controller is executing under the RAM installer.",
+      "platform": "recovery"
+    },
+    {
+      "id": "rollback_permitted",
+      "description": "A confirmed mutation exists and recorded JStack resources remain identifiable.",
+      "platform": "shared"
+    },
+    {
+      "id": "rollback_identity_current",
+      "description": "Every rollback target matches an object created by the journaled plan.",
+      "platform": "shared"
+    }
+  ],
+  "actions": [
+    {
+      "id": "collect_inventory",
+      "description": "Collect hardware, firmware, power, BitLocker, disk, partition, and boot inventory.",
+      "platform": "windows",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "compute_partition_plan",
+      "description": "Compute an immutable plan using supported shrink bounds and stable GUIDs.",
+      "platform": "shared",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "download_release_manifest",
+      "description": "Download the signed release and channel manifest.",
+      "platform": "windows",
+      "risk": "external_io",
+      "idempotency": "content_addressed",
+      "recovery": "retry"
+    },
+    {
+      "id": "download_payload",
+      "description": "Download content-addressed installer, UKI, image, and recovery chunks.",
+      "platform": "windows",
+      "risk": "external_io",
+      "idempotency": "content_addressed",
+      "recovery": "retry"
+    },
+    {
+      "id": "verify_payload",
+      "description": "Verify signatures, hashes, sizes, graph compatibility, and expiry.",
+      "platform": "shared",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "present_exact_plan",
+      "description": "Display exact disk identity and before/after layout.",
+      "platform": "windows",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "record_plan_confirmation",
+      "description": "Record explicit confirmation bound to the exact plan hash.",
+      "platform": "windows",
+      "risk": "user_authorization",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "register_windows_finalizer",
+      "description": "Register the signed reboot finalizer and recovery entry.",
+      "platform": "windows",
+      "risk": "filesystem_mutation",
+      "idempotency": "idempotent",
+      "recovery": "compensate",
+      "parameters": {
+        "startup_trigger": "boot",
+        "requires_signed_handoff_token": true
+      }
+    },
+    {
+      "id": "suspend_bitlocker",
+      "description": "Suspend BitLocker protectors with RebootCount 0 only after recovery material and the gated startup dispatcher are durable; explicit finalization or rollback restores protection.",
+      "platform": "windows",
+      "risk": "security_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate",
+      "parameters": {
+        "reboot_count": 0
+      }
+    },
+    {
+      "id": "shrink_windows_ntfs",
+      "description": "Shrink the Windows partition and NTFS filesystem through the Windows Storage API.",
+      "platform": "windows",
+      "risk": "disk_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile_then_compensate"
+    },
+    {
+      "id": "create_xbootldr_partition",
+      "description": "Create the planned XBOOTLDR GPT partition inside confirmed free space.",
+      "platform": "windows",
+      "risk": "disk_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "format_xbootldr_fat32",
+      "description": "Format XBOOTLDR as FAT32 with the planned label and GUID.",
+      "platform": "windows",
+      "risk": "filesystem_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "copy_payload_to_xbootldr",
+      "description": "Copy and re-verify content-addressed payload chunks and handoff data.",
+      "platform": "windows",
+      "risk": "filesystem_mutation",
+      "idempotency": "content_addressed",
+      "recovery": "retry"
+    },
+    {
+      "id": "stage_namespaced_esp_loader",
+      "description": "Write only signed JStack loader files under the namespaced ESP path.",
+      "platform": "windows",
+      "risk": "boot_mutation",
+      "idempotency": "content_addressed",
+      "recovery": "compensate"
+    },
+    {
+      "id": "create_installer_boot_entry",
+      "description": "Create a UEFI boot entry for the signed JStack installer loader.",
+      "platform": "windows",
+      "risk": "boot_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "set_installer_bootnext",
+      "description": "Set BootNext to the verified installer boot entry.",
+      "platform": "windows",
+      "risk": "boot_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "request_reboot",
+      "description": "Request an orderly reboot after the next durable state and resume token are flushed.",
+      "platform": "shared",
+      "risk": "reboot",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile"
+    },
+    {
+      "id": "verify_handoff",
+      "description": "Verify signed handoff, journal chain, release manifest, and actor transition.",
+      "platform": "linux",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "reinventory_and_revalidate_plan",
+      "description": "Re-inventory GPT and require the confirmed plan fingerprint to match.",
+      "platform": "linux",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "create_root_partition",
+      "description": "Create only the planned JStack root partition inside confirmed free space.",
+      "platform": "linux",
+      "risk": "disk_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "format_root_btrfs",
+      "description": "Create the planned Btrfs filesystem and subvolume layout.",
+      "platform": "linux",
+      "risk": "filesystem_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "deploy_root_image",
+      "description": "Deploy and content-verify the offline JStack root image.",
+      "platform": "linux",
+      "risk": "filesystem_mutation",
+      "idempotency": "content_addressed",
+      "recovery": "retry"
+    },
+    {
+      "id": "configure_installed_system",
+      "description": "Configure users, locale, Niri, networking, firmware, recovery, and first boot.",
+      "platform": "linux",
+      "risk": "filesystem_mutation",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "install_jstack_boot_artifacts",
+      "description": "Install signed UKIs and boot metadata on XBOOTLDR.",
+      "platform": "linux",
+      "risk": "boot_mutation",
+      "idempotency": "content_addressed",
+      "recovery": "compensate"
+    },
+    {
+      "id": "verify_installation",
+      "description": "Mount and verify root, boot artifacts, manifests, and required services.",
+      "platform": "linux",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "arm_windows_finalizer",
+      "description": "Set Windows as the next boot and record finalizer mode.",
+      "platform": "linux",
+      "risk": "boot_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "verify_windows_after_install",
+      "description": "Confirm Windows boot, volume identity, and planned JStack partitions.",
+      "platform": "windows",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "restore_bitlocker",
+      "description": "Restore BitLocker protection when it was suspended.",
+      "platform": "windows",
+      "risk": "security_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "retry"
+    },
+    {
+      "id": "cleanup_windows_bootstrap",
+      "description": "Remove transient Windows bootstrap state while preserving recovery metadata.",
+      "platform": "windows",
+      "risk": "filesystem_mutation",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "set_jstack_bootnext",
+      "description": "Set BootNext to the verified installed JStack boot entry.",
+      "platform": "windows",
+      "risk": "boot_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "compensate"
+    },
+    {
+      "id": "verify_jstack_first_boot",
+      "description": "Verify root, boot, Niri session, networking, and recovery services.",
+      "platform": "jstack",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "arm_windows_rollback",
+      "description": "Set Windows as next boot and mark the signed journal for rollback mode.",
+      "platform": "linux",
+      "risk": "boot_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile"
+    },
+    {
+      "id": "remove_jstack_boot_entries",
+      "description": "Remove only boot entries created by this installation plan.",
+      "platform": "windows",
+      "risk": "boot_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "retry"
+    },
+    {
+      "id": "remove_namespaced_esp_files",
+      "description": "Remove only ESP paths recorded as created by this plan.",
+      "platform": "windows",
+      "risk": "filesystem_mutation",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    },
+    {
+      "id": "delete_jstack_partitions",
+      "description": "Delete only root and XBOOTLDR partitions whose GUIDs match the plan.",
+      "platform": "windows",
+      "risk": "disk_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile"
+    },
+    {
+      "id": "expand_windows_ntfs",
+      "description": "Expand Windows into adjacent recovered space through the Windows Storage API.",
+      "platform": "windows",
+      "risk": "disk_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile"
+    },
+    {
+      "id": "unregister_windows_finalizer",
+      "description": "Remove the signed finalizer task and rollback registration.",
+      "platform": "windows",
+      "risk": "filesystem_mutation",
+      "idempotency": "idempotent",
+      "recovery": "retry"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "confirmed_plan_gate",
+      "description": "Mutations require the exact confirmed plan hash.",
+      "enforced_by": [
+        "confirmed_plan_current"
+      ]
+    },
+    {
+      "id": "stable_disk_identity",
+      "description": "Disk identity and layout are revalidated before mutations.",
+      "enforced_by": [
+        "plan_fingerprint_current",
+        "planned_interval_current"
+      ]
+    },
+    {
+      "id": "windows_owns_ntfs",
+      "description": "Only Windows Storage APIs shrink or expand NTFS.",
+      "enforced_by": [
+        "shrink_windows_ntfs",
+        "expand_windows_ntfs"
+      ]
+    },
+    {
+      "id": "preserve_windows_boot",
+      "description": "Windows boot and recovery resources are never replaced.",
+      "enforced_by": [
+        "windows_boot_entry_present",
+        "remove_namespaced_esp_files"
+      ]
+    },
+    {
+      "id": "trust_before_boot_mutation",
+      "description": "BootNext is armed only for a validated trust chain.",
+      "enforced_by": [
+        "boot_chain_trusted",
+        "release_manifest_valid",
+        "payload_hashes_valid"
+      ]
+    },
+    {
+      "id": "bitlocker_recoverable",
+      "description": "Recovery material and finalizer exist before suspension.",
+      "enforced_by": [
+        "bitlocker_recovery_key_confirmed",
+        "finalizer_registered"
+      ]
+    },
+    {
+      "id": "journaled_mutations",
+      "description": "Every mutation has intent, pre/postconditions, and recovery policy.",
+      "enforced_by": [
+        "validator:mutation_journal"
+      ]
+    },
+    {
+      "id": "stop_on_divergence",
+      "description": "Unexpected disk identity enters manual recovery without writes.",
+      "enforced_by": [
+        "validator:divergence_stop"
+      ]
+    },
+    {
+      "id": "end_to_end_success",
+      "description": "Success requires Windows finalization and JStack first boot.",
+      "enforced_by": [
+        "bitlocker_restored_or_not_applicable",
+        "jstack_boot_entry_valid"
+      ]
+    },
+    {
+      "id": "dual_boot_only_v1",
+      "description": "No transition erases Windows or enters replace-disk mode.",
+      "enforced_by": [
+        "validator:no_replace_disk"
+      ]
+    },
+    {
+      "id": "actor_platform_authority",
+      "description": "Each action executes only under an actor authorized for that platform.",
+      "enforced_by": [
+        "validator:actor_platform_authority"
+      ]
+    },
+    {
+      "id": "windows_servicing_quiescent",
+      "description": "No competing Windows servicing or repair reboot is pending when installation begins.",
+      "enforced_by": [
+        "windows_servicing_idle"
+      ]
+    },
+    {
+      "id": "bounded_installer_rearm",
+      "description": "Firmware handoff to the installer may be rearmed at most once before rollback.",
+      "enforced_by": [
+        "installer_rearm_not_attempted",
+        "installer_rearm_exhausted",
+        "validator:bounded_installer_rearm"
+      ]
+    },
+    {
+      "id": "rollback_created_objects_only",
+      "description": "Rollback mutates only objects whose stable identities were recorded by the confirmed plan.",
+      "enforced_by": [
+        "rollback_permitted",
+        "rollback_identity_current"
+      ]
+    },
+    {
+      "id": "one_mutation_per_transition",
+      "description": "Each transition contains at most one mutating action so partial progress has a named durable checkpoint.",
+      "enforced_by": [
+        "validator:single_mutation_transition"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "windows.bootstrap_started",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Signed bootstrap has started without persistent mutations.",
+      "ui_view": "welcome"
+    },
+    {
+      "id": "windows.preflight",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Hardware, security, power, storage, and boot inventory is being evaluated.",
+      "ui_view": "preflight"
+    },
+    {
+      "id": "windows.bitlocker_finalizer_registered",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The Windows recovery finalizer exists before BitLocker suspension.",
+      "ui_view": "preparing_security"
+    },
+    {
+      "id": "windows.xbootldr_partition_created",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The planned XBOOTLDR partition exists but has not yet been formatted.",
+      "ui_view": "partitioning"
+    },
+    {
+      "id": "windows.installer_loader_files_staged",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Namespaced signed loader files are staged on the ESP before entry creation.",
+      "ui_view": "boot_setup"
+    },
+    {
+      "id": "windows.installer_rearm_armed",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The single permitted installer BootNext rearm is recorded and armed.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "linux.windows_finalizer_armed",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "Windows finalization is armed before the reboot request is issued.",
+      "ui_view": "finalizing"
+    },
+    {
+      "id": "windows.bootstrap_cleaned",
+      "phase": "finalizer",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Temporary Windows bootstrap state is removed after security restoration.",
+      "ui_view": "finalizing"
+    },
+    {
+      "id": "windows.rollback_boot_entries_removed",
+      "phase": "recovery",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Only journaled JStack boot entries have been removed.",
+      "ui_view": "rollback"
+    },
+    {
+      "id": "windows.rollback_esp_cleaned",
+      "phase": "recovery",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Only journaled namespaced JStack ESP files have been removed.",
+      "ui_view": "rollback"
+    },
+    {
+      "id": "windows.rollback_partitions_deleted",
+      "phase": "recovery",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Only journaled JStack partitions have been deleted.",
+      "ui_view": "rollback"
+    },
+    {
+      "id": "windows.rollback_ntfs_restored",
+      "phase": "recovery",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Windows NTFS has been expanded into the verified contiguous interval.",
+      "ui_view": "rollback"
+    },
+    {
+      "id": "windows.rollback_security_restored",
+      "phase": "recovery",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "The original BitLocker protection state has been restored during rollback.",
+      "ui_view": "rollback"
+    },
+    {
+      "id": "windows.jstack_rearm",
+      "phase": "finalizer",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Windows resumed instead of installed JStack and may perform one bounded rearm.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "windows.jstack_rearm_armed",
+      "phase": "finalizer",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "The single installed-JStack BootNext rearm is recorded and armed.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "terminal.unsupported",
+      "phase": "terminal",
+      "actor": "windows_bootstrap",
+      "kind": "terminal",
+      "description": "A v1 platform guard failed before mutation.",
+      "ui_view": "unsupported",
+      "terminal_outcome": "unsupported"
+    },
+    {
+      "id": "windows.plan_computed",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "An immutable dual-boot plan and fingerprint are available.",
+      "ui_view": "plan_summary"
+    },
+    {
+      "id": "windows.payload_staging",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Signed release metadata and offline payload are downloading.",
+      "ui_view": "download"
+    },
+    {
+      "id": "windows.payload_verified",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "All staged artifacts verify against the signed manifest.",
+      "ui_view": "payload_ready"
+    },
+    {
+      "id": "windows.payload_invalid",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Payload verification failed without persistent system mutation.",
+      "ui_view": "payload_error"
+    },
+    {
+      "id": "windows.awaiting_confirmation",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The exact partition and boot plan awaits explicit confirmation.",
+      "ui_view": "confirm_plan"
+    },
+    {
+      "id": "terminal.cancelled",
+      "phase": "terminal",
+      "actor": "windows_bootstrap",
+      "kind": "terminal",
+      "description": "User cancelled before the first persistent mutation.",
+      "ui_view": "cancelled",
+      "terminal_outcome": "safe_abort"
+    },
+    {
+      "id": "windows.plan_confirmed",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The exact current plan hash is explicitly authorized.",
+      "ui_view": "confirmed"
+    },
+    {
+      "id": "windows.bitlocker_prepared",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Finalizer is registered and BitLocker is suspended or not applicable.",
+      "ui_view": "security_ready"
+    },
+    {
+      "id": "windows.space_reserved",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Windows NTFS is safely shrunk and confirmed free space exists.",
+      "ui_view": "partition_progress"
+    },
+    {
+      "id": "windows.xbootldr_ready",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The planned FAT32 XBOOTLDR partition exists and verifies.",
+      "ui_view": "partition_progress"
+    },
+    {
+      "id": "windows.payload_staged",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The offline payload and replicated journal verify on XBOOTLDR.",
+      "ui_view": "staging_progress"
+    },
+    {
+      "id": "windows.installer_loader_staged",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Signed namespaced loader files and installer boot entry exist.",
+      "ui_view": "boot_staging"
+    },
+    {
+      "id": "windows.bootnext_armed",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "UEFI BootNext points at the verified installer entry.",
+      "ui_view": "reboot_ready"
+    },
+    {
+      "id": "windows.reboot_to_installer_pending",
+      "phase": "handoff",
+      "actor": "firmware",
+      "kind": "checkpoint",
+      "description": "Durable resume state is committed and reboot to installer is pending.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "windows.installer_rearm",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Windows resumed instead of the installer and may safely re-arm BootNext.",
+      "ui_view": "retry_boot"
+    },
+    {
+      "id": "linux.installer_booted",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "The signed RAM installer has started from the staged handoff.",
+      "ui_view": "installer_start"
+    },
+    {
+      "id": "linux.handoff_verified",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "Handoff signature, graph version, journal, and payload validate.",
+      "ui_view": "verify_handoff"
+    },
+    {
+      "id": "linux.plan_revalidated",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "Fresh GPT inventory exactly matches the confirmed Windows plan.",
+      "ui_view": "verify_disk"
+    },
+    {
+      "id": "linux.root_partition_ready",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "The planned JStack root partition exists inside the confirmed interval.",
+      "ui_view": "install_progress"
+    },
+    {
+      "id": "linux.root_filesystem_ready",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "Btrfs and required subvolumes are ready.",
+      "ui_view": "install_progress"
+    },
+    {
+      "id": "linux.image_deployed",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "The offline JStack image is deployed and content verified.",
+      "ui_view": "install_progress"
+    },
+    {
+      "id": "linux.system_configured",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "Users, Niri, network, firmware, and recovery services are configured.",
+      "ui_view": "configure_progress"
+    },
+    {
+      "id": "linux.bootloader_ready",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "Installed signed JStack boot artifacts verify on XBOOTLDR.",
+      "ui_view": "boot_progress"
+    },
+    {
+      "id": "linux.install_verified",
+      "phase": "linux",
+      "actor": "linux_installer",
+      "kind": "checkpoint",
+      "description": "The installed system passes offline verification.",
+      "ui_view": "verify_install"
+    },
+    {
+      "id": "linux.reboot_to_windows_pending",
+      "phase": "handoff",
+      "actor": "firmware",
+      "kind": "checkpoint",
+      "description": "Windows finalizer is armed as the next boot.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "windows.finalizer_running",
+      "phase": "finalizer",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Windows has booted after installation and is finalizing security.",
+      "ui_view": "finalizing"
+    },
+    {
+      "id": "windows.security_restored",
+      "phase": "finalizer",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Windows boot is verified and BitLocker is restored or not applicable.",
+      "ui_view": "finalizing"
+    },
+    {
+      "id": "windows.jstack_boot_armed",
+      "phase": "finalizer",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "The installed JStack boot entry is verified and armed.",
+      "ui_view": "reboot_ready"
+    },
+    {
+      "id": "windows.reboot_to_jstack_pending",
+      "phase": "handoff",
+      "actor": "firmware",
+      "kind": "checkpoint",
+      "description": "Durable finalizer state is committed and JStack reboot is pending.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "jstack.first_boot",
+      "phase": "first_boot",
+      "actor": "jstack_first_boot",
+      "kind": "checkpoint",
+      "description": "JStack is running its first-boot end-to-end verification.",
+      "ui_view": "first_boot"
+    },
+    {
+      "id": "terminal.completed",
+      "phase": "terminal",
+      "actor": "jstack_first_boot",
+      "kind": "terminal",
+      "description": "Windows finalization and JStack first-boot verification passed.",
+      "ui_view": "complete",
+      "terminal_outcome": "success"
+    },
+    {
+      "id": "recovery.rollback_required",
+      "phase": "recovery",
+      "actor": "recovery_controller",
+      "kind": "checkpoint",
+      "description": "A confirmed mutation must be rolled back from the safest platform.",
+      "ui_view": "recovery"
+    },
+    {
+      "id": "linux.rollback_to_windows_pending",
+      "phase": "recovery",
+      "actor": "firmware",
+      "kind": "checkpoint",
+      "description": "Windows is armed to perform supported rollback operations.",
+      "ui_view": "rebooting"
+    },
+    {
+      "id": "windows.rollback_running",
+      "phase": "recovery",
+      "actor": "windows_finalizer",
+      "kind": "checkpoint",
+      "description": "Windows is removing only resources created by the confirmed plan.",
+      "ui_view": "rollback"
+    },
+    {
+      "id": "terminal.rolled_back",
+      "phase": "terminal",
+      "actor": "windows_finalizer",
+      "kind": "terminal",
+      "description": "JStack changes were removed and Windows security was restored.",
+      "ui_view": "rolled_back",
+      "terminal_outcome": "rolled_back"
+    },
+    {
+      "id": "terminal.manual_recovery",
+      "phase": "terminal",
+      "actor": "recovery_controller",
+      "kind": "terminal",
+      "description": "Observed state diverged and automatic writes stopped.",
+      "ui_view": "manual_recovery",
+      "terminal_outcome": "manual_recovery"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "begin_preflight",
+      "from": "windows.bootstrap_started",
+      "to": "windows.preflight",
+      "event": "start",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [
+        "collect_inventory"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Start immutable system inventory."
+    },
+    {
+      "id": "reject_unsupported_platform",
+      "from": "windows.preflight",
+      "to": "terminal.unsupported",
+      "event": "preflight_rejected",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Stop safely when any v1 platform guard fails."
+    },
+    {
+      "id": "accept_preflight_and_plan",
+      "from": "windows.preflight",
+      "to": "windows.plan_computed",
+      "event": "preflight_passed",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "running_as_admin",
+        "supported_windows",
+        "uefi_boot",
+        "gpt_basic_disk",
+        "single_system_disk",
+        "windows_ntfs_supported",
+        "windows_recovery_preserved",
+        "power_safe",
+        "windows_servicing_idle",
+        "storage_health_acceptable",
+        "enough_shrinkable_space",
+        "esp_has_loader_space",
+        "boot_chain_trusted"
+      ],
+      "actions": [
+        "compute_partition_plan"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Compute the only supported dual-boot plan."
+    },
+    {
+      "id": "begin_payload_staging",
+      "from": "windows.plan_computed",
+      "to": "windows.payload_staging",
+      "event": "stage_payload",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [
+        "download_release_manifest",
+        "download_payload"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Download release metadata and offline payload.",
+      "failure_to": "windows.payload_invalid"
+    },
+    {
+      "id": "accept_verified_payload",
+      "from": "windows.payload_staging",
+      "to": "windows.payload_verified",
+      "event": "payload_verified",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "release_manifest_valid",
+        "payload_hashes_valid",
+        "boot_chain_trusted"
+      ],
+      "actions": [
+        "verify_payload"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Accept only a signed and content-verified payload.",
+      "failure_to": "windows.payload_invalid"
+    },
+    {
+      "id": "mark_payload_invalid",
+      "from": "windows.payload_staging",
+      "to": "windows.payload_invalid",
+      "event": "payload_verification_failed",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Expose retry or safe cancellation after verification failure."
+    },
+    {
+      "id": "retry_payload_download",
+      "from": "windows.payload_invalid",
+      "to": "windows.payload_staging",
+      "event": "retry",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Retry content-addressed download without mutation."
+    },
+    {
+      "id": "cancel_invalid_payload",
+      "from": "windows.payload_invalid",
+      "to": "terminal.cancelled",
+      "event": "cancel",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Cancel after payload failure without mutation."
+    },
+    {
+      "id": "show_exact_plan",
+      "from": "windows.payload_verified",
+      "to": "windows.awaiting_confirmation",
+      "event": "review_plan",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [
+        "present_exact_plan"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Present the exact signed plan immediately before mutation."
+    },
+    {
+      "id": "cancel_before_mutation",
+      "from": "windows.awaiting_confirmation",
+      "to": "terminal.cancelled",
+      "event": "cancel",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Cancel with no persistent system mutation."
+    },
+    {
+      "id": "confirm_exact_plan",
+      "from": "windows.awaiting_confirmation",
+      "to": "windows.plan_confirmed",
+      "event": "confirm",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "plan_fingerprint_current"
+      ],
+      "actions": [
+        "record_plan_confirmation"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Bind explicit authorization to the current plan hash."
+    },
+    {
+      "id": "prepare_bitlocker",
+      "from": "windows.plan_confirmed",
+      "to": "windows.bitlocker_finalizer_registered",
+      "event": "prepare_security",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "bitlocker_enabled",
+        "bitlocker_recovery_key_confirmed"
+      ],
+      "actions": [
+        "register_windows_finalizer"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "finalizer_not_registered"
+      ],
+      "postconditions": [
+        "finalizer_registered"
+      ],
+      "description": "Register the Windows recovery finalizer before changing BitLocker protection.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "suspend_bitlocker_after_finalizer",
+      "from": "windows.bitlocker_finalizer_registered",
+      "to": "windows.bitlocker_prepared",
+      "event": "suspend_protection",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "bitlocker_enabled",
+        "bitlocker_recovery_key_confirmed",
+        "finalizer_registered"
+      ],
+      "actions": [
+        "suspend_bitlocker"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "finalizer_registered",
+        "bitlocker_protected"
+      ],
+      "postconditions": [
+        "finalizer_registered",
+        "bitlocker_suspended"
+      ],
+      "description": "Suspend BitLocker only after the recovery finalizer is durable.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "prepare_without_bitlocker",
+      "from": "windows.plan_confirmed",
+      "to": "windows.bitlocker_prepared",
+      "event": "prepare_security",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "bitlocker_disabled"
+      ],
+      "actions": [
+        "register_windows_finalizer"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "finalizer_not_registered"
+      ],
+      "postconditions": [
+        "finalizer_registered"
+      ],
+      "description": "Register finalizer when BitLocker is not applicable.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "reserve_windows_space",
+      "from": "windows.bitlocker_prepared",
+      "to": "windows.space_reserved",
+      "event": "shrink_windows",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "windows_ntfs_supported",
+        "finalizer_registered"
+      ],
+      "actions": [
+        "shrink_windows_ntfs"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "windows_partition_at_original_size"
+      ],
+      "postconditions": [
+        "windows_partition_at_planned_size",
+        "planned_interval_unallocated"
+      ],
+      "description": "Shrink NTFS through supported Windows APIs.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "create_xbootldr",
+      "from": "windows.space_reserved",
+      "to": "windows.xbootldr_partition_created",
+      "event": "create_xbootldr",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "planned_interval_current"
+      ],
+      "actions": [
+        "create_xbootldr_partition"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "xbootldr_interval_unallocated"
+      ],
+      "postconditions": [
+        "xbootldr_partition_matches_plan"
+      ],
+      "description": "Create only the planned XBOOTLDR partition inside the confirmed interval.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "format_xbootldr",
+      "from": "windows.xbootldr_partition_created",
+      "to": "windows.xbootldr_ready",
+      "event": "format_xbootldr",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "planned_interval_current",
+        "xbootldr_partition_matches_plan"
+      ],
+      "actions": [
+        "format_xbootldr_fat32"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "xbootldr_partition_matches_plan",
+        "xbootldr_unformatted"
+      ],
+      "postconditions": [
+        "xbootldr_matches_plan",
+        "xbootldr_fat32_empty"
+      ],
+      "description": "Format the already-identified XBOOTLDR partition as FAT32.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "copy_verified_payload",
+      "from": "windows.xbootldr_ready",
+      "to": "windows.payload_staged",
+      "event": "copy_payload",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "xbootldr_matches_plan",
+        "payload_hashes_valid"
+      ],
+      "actions": [
+        "copy_payload_to_xbootldr"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "xbootldr_mounted",
+        "payload_source_verified"
+      ],
+      "postconditions": [
+        "xbootldr_payload_verified",
+        "journal_replica_current"
+      ],
+      "description": "Copy and re-verify payload and replicated journal.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "stage_installer_loader",
+      "from": "windows.payload_staged",
+      "to": "windows.installer_loader_files_staged",
+      "event": "stage_loader",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "stage_namespaced_esp_loader"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "jstack_esp_namespace_absent_or_owned"
+      ],
+      "postconditions": [
+        "namespaced_loader_hash_matches_manifest"
+      ],
+      "description": "Stage only the verified namespaced loader files on the existing ESP.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "create_installer_entry",
+      "from": "windows.installer_loader_files_staged",
+      "to": "windows.installer_loader_staged",
+      "event": "create_boot_entry",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "create_installer_boot_entry"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "namespaced_loader_hash_matches_manifest",
+        "installer_boot_entry_absent"
+      ],
+      "postconditions": [
+        "installer_boot_entry_present",
+        "windows_boot_entry_present"
+      ],
+      "description": "Create the installer boot entry only after loader files verify.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "arm_installer_bootnext",
+      "from": "windows.installer_loader_staged",
+      "to": "windows.bootnext_armed",
+      "event": "arm_bootnext",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "payload_hashes_valid",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "set_installer_bootnext"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "bootnext_not_installer"
+      ],
+      "postconditions": [
+        "bootnext_is_installer"
+      ],
+      "description": "Arm only the verified installer entry.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "reboot_to_installer",
+      "from": "windows.bootnext_armed",
+      "to": "windows.reboot_to_installer_pending",
+      "event": "reboot",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current"
+      ],
+      "actions": [
+        "request_reboot"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true,
+        "advance_before_handoff": true
+      },
+      "preconditions": [
+        "bootnext_is_installer",
+        "journal_replicas_current"
+      ],
+      "postconditions": [
+        "reboot_requested"
+      ],
+      "description": "Commit resume state before rebooting to the RAM installer.",
+      "failure_to": "windows.installer_rearm",
+      "handoff": {
+        "next_actor": "linux_installer",
+        "resume_token": "installer-handoff-v1",
+        "journal_replicas": [
+          "windows_system_volume",
+          "xbootldr"
+        ]
+      }
+    },
+    {
+      "id": "installer_boot_observed",
+      "from": "windows.reboot_to_installer_pending",
+      "to": "linux.installer_booted",
+      "event": "installer_booted",
+      "actor": "firmware",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Firmware loaded the signed installer path."
+    },
+    {
+      "id": "windows_resumed_instead",
+      "from": "windows.reboot_to_installer_pending",
+      "to": "windows.installer_rearm",
+      "event": "windows_resumed",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "finalizer_not_armed"
+      ],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Windows resumed without disk mutation; allow bounded re-arm."
+    },
+    {
+      "id": "arm_installer_reboot_retry",
+      "from": "windows.installer_rearm",
+      "to": "windows.installer_rearm_armed",
+      "event": "arm_retry",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "payload_hashes_valid",
+        "installer_rearm_not_attempted",
+        "finalizer_not_armed"
+      ],
+      "actions": [
+        "set_installer_bootnext"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "installer_boot_entry_present",
+        "installer_rearm_attempts_zero"
+      ],
+      "postconditions": [
+        "bootnext_is_installer",
+        "installer_rearm_attempt_recorded"
+      ],
+      "description": "Record and arm the single permitted installer BootNext retry.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "rearm_installer_boot",
+      "from": "windows.installer_rearm_armed",
+      "to": "windows.reboot_to_installer_pending",
+      "event": "retry_boot",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current"
+      ],
+      "actions": [
+        "request_reboot"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true,
+        "advance_before_handoff": true
+      },
+      "preconditions": [
+        "bootnext_is_installer",
+        "installer_rearm_attempt_recorded",
+        "journal_replicas_current"
+      ],
+      "postconditions": [
+        "reboot_requested"
+      ],
+      "description": "Reboot only after the bounded rearm is durably committed.",
+      "failure_to": "recovery.rollback_required",
+      "handoff": {
+        "next_actor": "linux_installer",
+        "resume_token": "installer-handoff-v1",
+        "journal_replicas": [
+          "windows_system_volume",
+          "xbootldr"
+        ]
+      }
+    },
+    {
+      "id": "exhaust_installer_rearm",
+      "from": "windows.installer_rearm",
+      "to": "recovery.rollback_required",
+      "event": "retry_budget_exhausted",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "installer_rearm_exhausted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Stop retrying firmware handoff after the single safe BootNext rearm."
+    },
+    {
+      "id": "reject_invalid_linux_handoff",
+      "from": "linux.installer_booted",
+      "to": "recovery.rollback_required",
+      "event": "handoff_invalid",
+      "actor": "linux_installer",
+      "guards": [],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Reject an invalid or stale cross-OS handoff without disk writes."
+    },
+    {
+      "id": "verify_linux_handoff",
+      "from": "linux.installer_booted",
+      "to": "linux.handoff_verified",
+      "event": "verify_handoff",
+      "actor": "linux_installer",
+      "guards": [
+        "handoff_signature_valid",
+        "release_manifest_valid",
+        "payload_hashes_valid"
+      ],
+      "actions": [
+        "verify_handoff"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Verify signed cross-OS state before disk access."
+    },
+    {
+      "id": "revalidate_linux_plan",
+      "from": "linux.handoff_verified",
+      "to": "linux.plan_revalidated",
+      "event": "revalidate_plan",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "planned_interval_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "reinventory_and_revalidate_plan"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Require fresh GPT inventory to match the confirmed plan."
+    },
+    {
+      "id": "reject_drifted_plan",
+      "from": "linux.handoff_verified",
+      "to": "recovery.rollback_required",
+      "event": "plan_drifted",
+      "actor": "linux_installer",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Rollback rather than write when the disk fingerprint drifted."
+    },
+    {
+      "id": "create_linux_root",
+      "from": "linux.plan_revalidated",
+      "to": "linux.root_partition_ready",
+      "event": "create_root",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "planned_interval_current"
+      ],
+      "actions": [
+        "create_root_partition"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "root_interval_unallocated"
+      ],
+      "postconditions": [
+        "root_partition_matches_plan"
+      ],
+      "description": "Create root only inside confirmed unallocated space.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "format_linux_root",
+      "from": "linux.root_partition_ready",
+      "to": "linux.root_filesystem_ready",
+      "event": "format_root",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current"
+      ],
+      "actions": [
+        "format_root_btrfs"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "root_partition_matches_plan"
+      ],
+      "postconditions": [
+        "root_btrfs_matches_plan"
+      ],
+      "description": "Create Btrfs and planned subvolumes.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "deploy_jstack_image",
+      "from": "linux.root_filesystem_ready",
+      "to": "linux.image_deployed",
+      "event": "deploy_image",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "payload_hashes_valid"
+      ],
+      "actions": [
+        "deploy_root_image"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "root_btrfs_matches_plan"
+      ],
+      "postconditions": [
+        "deployed_image_hash_matches"
+      ],
+      "description": "Deploy the content-addressed offline image.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "configure_jstack_system",
+      "from": "linux.image_deployed",
+      "to": "linux.system_configured",
+      "event": "configure_system",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current"
+      ],
+      "actions": [
+        "configure_installed_system"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "deployed_image_hash_matches"
+      ],
+      "postconditions": [
+        "installed_configuration_valid"
+      ],
+      "description": "Configure JStack defaults and recovery services idempotently.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "install_jstack_boot",
+      "from": "linux.system_configured",
+      "to": "linux.bootloader_ready",
+      "event": "install_boot",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "xbootldr_matches_plan"
+      ],
+      "actions": [
+        "install_jstack_boot_artifacts"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "installed_configuration_valid"
+      ],
+      "postconditions": [
+        "jstack_boot_entry_valid",
+        "windows_boot_entry_present"
+      ],
+      "description": "Install signed installed-system boot artifacts.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "reject_invalid_offline_install",
+      "from": "linux.bootloader_ready",
+      "to": "recovery.rollback_required",
+      "event": "install_validation_failed",
+      "actor": "linux_installer",
+      "guards": [],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Rollback rather than reboot when offline installation verification fails."
+    },
+    {
+      "id": "verify_offline_install",
+      "from": "linux.bootloader_ready",
+      "to": "linux.install_verified",
+      "event": "verify_install",
+      "actor": "linux_installer",
+      "guards": [
+        "installed_system_valid",
+        "jstack_boot_entry_valid",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "verify_installation"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Verify the complete offline installation before leaving RAM."
+    },
+    {
+      "id": "arm_windows_finalizer",
+      "from": "linux.install_verified",
+      "to": "linux.windows_finalizer_armed",
+      "event": "arm_finalizer",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "windows_boot_entry_present",
+        "finalizer_registered"
+      ],
+      "actions": [
+        "arm_windows_finalizer"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "finalizer_registered",
+        "windows_boot_entry_present"
+      ],
+      "postconditions": [
+        "windows_finalizer_armed"
+      ],
+      "description": "Arm the registered Windows finalizer before requesting reboot.",
+      "failure_to": "recovery.rollback_required"
+    },
+    {
+      "id": "arm_windows_finalize",
+      "from": "linux.windows_finalizer_armed",
+      "to": "linux.reboot_to_windows_pending",
+      "event": "finalize_in_windows",
+      "actor": "linux_installer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "windows_boot_entry_present",
+        "finalizer_registered"
+      ],
+      "actions": [
+        "request_reboot"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true,
+        "advance_before_handoff": true
+      },
+      "preconditions": [
+        "windows_finalizer_armed",
+        "journal_replicas_current"
+      ],
+      "postconditions": [
+        "reboot_requested"
+      ],
+      "description": "Reboot to Windows only after finalization is durably armed.",
+      "failure_to": "recovery.rollback_required",
+      "handoff": {
+        "next_actor": "windows_finalizer",
+        "resume_token": "windows-finalizer-v1",
+        "journal_replicas": [
+          "xbootldr",
+          "windows_system_volume"
+        ]
+      }
+    },
+    {
+      "id": "reject_missing_windows_finalizer",
+      "from": "linux.reboot_to_windows_pending",
+      "to": "recovery.rollback_required",
+      "event": "finalizer_missing_or_invalid",
+      "actor": "recovery_controller",
+      "guards": [
+        "current_platform_windows",
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Enter Windows rollback if the armed finalizer does not validate or start."
+    },
+    {
+      "id": "windows_finalizer_booted",
+      "from": "linux.reboot_to_windows_pending",
+      "to": "windows.finalizer_running",
+      "event": "windows_booted",
+      "actor": "windows_finalizer",
+      "guards": [
+        "finalizer_registered",
+        "windows_boot_entry_present"
+      ],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Windows resumed the signed finalizer."
+    },
+    {
+      "id": "restore_windows_security",
+      "from": "windows.finalizer_running",
+      "to": "windows.security_restored",
+      "event": "restore_security",
+      "actor": "windows_finalizer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "verify_windows_after_install",
+        "restore_bitlocker"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "finalizer_registered"
+      ],
+      "postconditions": [
+        "windows_boot_verified",
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "description": "Verify Windows and restore the original BitLocker protection state.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "cleanup_windows_bootstrap",
+      "from": "windows.security_restored",
+      "to": "windows.bootstrap_cleaned",
+      "event": "cleanup_bootstrap",
+      "actor": "windows_finalizer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "windows_boot_entry_present",
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "actions": [
+        "cleanup_windows_bootstrap"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "temporary_bootstrap_state_present",
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "postconditions": [
+        "temporary_bootstrap_state_removed",
+        "recovery_metadata_retained"
+      ],
+      "description": "Remove temporary bootstrap state only after Windows security is restored.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "arm_installed_jstack",
+      "from": "windows.bootstrap_cleaned",
+      "to": "windows.jstack_boot_armed",
+      "event": "arm_jstack",
+      "actor": "windows_finalizer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "bitlocker_restored_or_not_applicable",
+        "jstack_boot_entry_valid",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "set_jstack_bootnext"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "jstack_boot_entry_valid"
+      ],
+      "postconditions": [
+        "bootnext_is_jstack"
+      ],
+      "description": "Arm only the verified installed JStack entry.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "reboot_to_installed_jstack",
+      "from": "windows.jstack_boot_armed",
+      "to": "windows.reboot_to_jstack_pending",
+      "event": "reboot",
+      "actor": "windows_finalizer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "actions": [
+        "request_reboot"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true,
+        "advance_before_handoff": true
+      },
+      "preconditions": [
+        "bootnext_is_jstack"
+      ],
+      "postconditions": [
+        "reboot_requested"
+      ],
+      "description": "Commit finalizer completion before rebooting JStack.",
+      "failure_to": "terminal.manual_recovery",
+      "handoff": {
+        "next_actor": "jstack_first_boot",
+        "resume_token": "jstack-first-boot-v1",
+        "journal_replicas": [
+          "windows_system_volume",
+          "xbootldr"
+        ]
+      }
+    },
+    {
+      "id": "jstack_boot_observed",
+      "from": "windows.reboot_to_jstack_pending",
+      "to": "jstack.first_boot",
+      "event": "jstack_booted",
+      "actor": "jstack_first_boot",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Installed JStack started from the verified boot entry."
+    },
+    {
+      "id": "reject_failed_first_boot",
+      "from": "jstack.first_boot",
+      "to": "recovery.rollback_required",
+      "event": "first_boot_validation_failed",
+      "actor": "jstack_first_boot",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Do not declare success when installed-JStack verification fails; request rollback."
+    },
+    {
+      "id": "complete_after_first_boot",
+      "from": "jstack.first_boot",
+      "to": "terminal.completed",
+      "event": "first_boot_verified",
+      "actor": "jstack_first_boot",
+      "guards": [
+        "jstack_boot_entry_valid",
+        "bitlocker_restored_or_not_applicable",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "verify_jstack_first_boot"
+      ],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Record success only after end-to-end first-boot checks."
+    },
+    {
+      "id": "dispatch_rollback_windows",
+      "from": "recovery.rollback_required",
+      "to": "windows.rollback_running",
+      "event": "rollback_here",
+      "actor": "recovery_controller",
+      "guards": [
+        "current_platform_windows",
+        "rollback_permitted",
+        "rollback_identity_current"
+      ],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Run rollback directly when already under Windows."
+    },
+    {
+      "id": "dispatch_rollback_linux",
+      "from": "recovery.rollback_required",
+      "to": "linux.rollback_to_windows_pending",
+      "event": "rollback_via_windows",
+      "actor": "recovery_controller",
+      "guards": [
+        "current_platform_linux",
+        "rollback_permitted",
+        "rollback_identity_current"
+      ],
+      "actions": [
+        "arm_windows_rollback"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "windows_boot_entry_present"
+      ],
+      "postconditions": [
+        "bootnext_is_windows",
+        "rollback_mode_recorded"
+      ],
+      "description": "Arm Windows because only Windows may expand NTFS and restore BitLocker.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "reboot_to_windows_rollback",
+      "from": "linux.rollback_to_windows_pending",
+      "to": "windows.rollback_running",
+      "event": "reboot",
+      "actor": "linux_installer",
+      "guards": [
+        "windows_boot_entry_present",
+        "rollback_permitted",
+        "rollback_identity_current"
+      ],
+      "actions": [
+        "request_reboot"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true,
+        "advance_before_handoff": true
+      },
+      "preconditions": [
+        "bootnext_is_windows",
+        "rollback_mode_recorded"
+      ],
+      "postconditions": [
+        "reboot_requested"
+      ],
+      "description": "Commit rollback handoff before rebooting Windows.",
+      "failure_to": "terminal.manual_recovery",
+      "handoff": {
+        "next_actor": "windows_finalizer",
+        "resume_token": "windows-rollback-v1",
+        "journal_replicas": [
+          "xbootldr",
+          "windows_system_volume"
+        ]
+      }
+    },
+    {
+      "id": "execute_windows_rollback",
+      "from": "windows.rollback_running",
+      "to": "windows.rollback_boot_entries_removed",
+      "event": "remove_boot_entries",
+      "actor": "windows_finalizer",
+      "guards": [
+        "rollback_permitted",
+        "rollback_identity_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "remove_jstack_boot_entries"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "rollback_objects_match_journal",
+        "windows_boot_entry_present"
+      ],
+      "postconditions": [
+        "jstack_boot_entries_absent",
+        "windows_boot_entry_present"
+      ],
+      "description": "Remove only journaled JStack boot entries.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "rollback_remove_esp_files",
+      "from": "windows.rollback_boot_entries_removed",
+      "to": "windows.rollback_esp_cleaned",
+      "event": "remove_esp_files",
+      "actor": "windows_finalizer",
+      "guards": [
+        "rollback_permitted",
+        "rollback_identity_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "remove_namespaced_esp_files"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "jstack_boot_entries_absent",
+        "namespaced_esp_paths_match_journal"
+      ],
+      "postconditions": [
+        "namespaced_esp_paths_absent",
+        "windows_boot_entry_present"
+      ],
+      "description": "Remove only journaled namespaced ESP files.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "rollback_delete_partitions",
+      "from": "windows.rollback_esp_cleaned",
+      "to": "windows.rollback_partitions_deleted",
+      "event": "delete_partitions",
+      "actor": "windows_finalizer",
+      "guards": [
+        "rollback_permitted",
+        "rollback_identity_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "delete_jstack_partitions"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "namespaced_esp_paths_absent",
+        "jstack_partitions_match_journal"
+      ],
+      "postconditions": [
+        "jstack_partitions_absent",
+        "planned_interval_unallocated"
+      ],
+      "description": "Delete only journaled JStack partitions.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "rollback_expand_windows",
+      "from": "windows.rollback_partitions_deleted",
+      "to": "windows.rollback_ntfs_restored",
+      "event": "expand_windows",
+      "actor": "windows_finalizer",
+      "guards": [
+        "rollback_permitted",
+        "rollback_identity_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "expand_windows_ntfs"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "planned_interval_unallocated",
+        "windows_partition_resize_supported"
+      ],
+      "postconditions": [
+        "windows_partition_restored",
+        "windows_ntfs_restored"
+      ],
+      "description": "Expand NTFS only after the complete planned interval is verified contiguous.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "rollback_restore_security",
+      "from": "windows.rollback_ntfs_restored",
+      "to": "windows.rollback_security_restored",
+      "event": "restore_security",
+      "actor": "windows_finalizer",
+      "guards": [
+        "rollback_permitted",
+        "rollback_identity_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "restore_bitlocker"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "windows_ntfs_restored",
+        "original_bitlocker_state_recorded"
+      ],
+      "postconditions": [
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "description": "Restore the original BitLocker protection state.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "rollback_unregister_finalizer",
+      "from": "windows.rollback_security_restored",
+      "to": "terminal.rolled_back",
+      "event": "unregister_finalizer",
+      "actor": "windows_finalizer",
+      "guards": [
+        "rollback_permitted",
+        "rollback_identity_current",
+        "windows_boot_entry_present"
+      ],
+      "actions": [
+        "unregister_windows_finalizer"
+      ],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "bitlocker_restored_or_not_applicable",
+        "finalizer_registered_or_absent"
+      ],
+      "postconditions": [
+        "windows_finalizer_absent",
+        "rollback_terminal_durable"
+      ],
+      "description": "Unregister the finalizer only after disk and security restoration.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "stop_on_rollback_divergence",
+      "from": "recovery.rollback_required",
+      "to": "terminal.manual_recovery",
+      "event": "identity_diverged",
+      "actor": "recovery_controller",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Stop all automatic writes when rollback identity is ambiguous."
+    },
+    {
+      "id": "request_rollback_from_windows_bitlocker_prepared",
+      "from": "windows.bitlocker_prepared",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_space_reserved",
+      "from": "windows.space_reserved",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_xbootldr_ready",
+      "from": "windows.xbootldr_ready",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_payload_staged",
+      "from": "windows.payload_staged",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_installer_loader_staged",
+      "from": "windows.installer_loader_staged",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_bootnext_armed",
+      "from": "windows.bootnext_armed",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_installer_rearm",
+      "from": "windows.installer_rearm",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_installer_booted",
+      "from": "linux.installer_booted",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_handoff_verified",
+      "from": "linux.handoff_verified",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_plan_revalidated",
+      "from": "linux.plan_revalidated",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_root_partition_ready",
+      "from": "linux.root_partition_ready",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_root_filesystem_ready",
+      "from": "linux.root_filesystem_ready",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_image_deployed",
+      "from": "linux.image_deployed",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_system_configured",
+      "from": "linux.system_configured",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_bootloader_ready",
+      "from": "linux.bootloader_ready",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_install_verified",
+      "from": "linux.install_verified",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_bitlocker_finalizer_registered",
+      "from": "windows.bitlocker_finalizer_registered",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_xbootldr_partition_created",
+      "from": "windows.xbootldr_partition_created",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_installer_loader_files_staged",
+      "from": "windows.installer_loader_files_staged",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_installer_rearm_armed",
+      "from": "windows.installer_rearm_armed",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "request_rollback_from_linux_windows_finalizer_armed",
+      "from": "linux.windows_finalizer_armed",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert post-confirmation cancellation or recoverable failure into rollback."
+    },
+    {
+      "id": "windows_resumed_instead_of_jstack",
+      "from": "windows.reboot_to_jstack_pending",
+      "to": "windows.jstack_rearm",
+      "event": "windows_resumed",
+      "actor": "windows_finalizer",
+      "guards": [
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Windows resumed without mutation; allow one verified installed-JStack rearm."
+    },
+    {
+      "id": "arm_jstack_reboot_retry",
+      "from": "windows.jstack_rearm",
+      "to": "windows.jstack_rearm_armed",
+      "event": "arm_retry",
+      "actor": "windows_finalizer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "boot_chain_trusted",
+        "bitlocker_restored_or_not_applicable",
+        "jstack_boot_entry_valid",
+        "windows_boot_entry_present",
+        "jstack_rearm_not_attempted"
+      ],
+      "actions": [
+        "set_jstack_bootnext"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "jstack_boot_entry_valid",
+        "jstack_rearm_attempts_zero"
+      ],
+      "postconditions": [
+        "bootnext_is_jstack",
+        "jstack_rearm_attempt_recorded"
+      ],
+      "description": "Record and arm the single permitted installed-JStack BootNext retry.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "reboot_rearmed_jstack",
+      "from": "windows.jstack_rearm_armed",
+      "to": "windows.reboot_to_jstack_pending",
+      "event": "reboot",
+      "actor": "windows_finalizer",
+      "guards": [
+        "confirmed_plan_current",
+        "plan_fingerprint_current",
+        "bitlocker_restored_or_not_applicable"
+      ],
+      "actions": [
+        "request_reboot"
+      ],
+      "authorization": [
+        "confirmed_plan"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true,
+        "advance_before_handoff": true
+      },
+      "preconditions": [
+        "bootnext_is_jstack",
+        "jstack_rearm_attempt_recorded",
+        "journal_replicas_current"
+      ],
+      "postconditions": [
+        "reboot_requested"
+      ],
+      "description": "Reboot only after the installed-JStack rearm is durably committed.",
+      "failure_to": "terminal.manual_recovery",
+      "handoff": {
+        "next_actor": "jstack_first_boot",
+        "resume_token": "jstack-first-boot-v1",
+        "journal_replicas": [
+          "windows_system_volume",
+          "xbootldr"
+        ]
+      }
+    },
+    {
+      "id": "exhaust_jstack_rearm",
+      "from": "windows.jstack_rearm",
+      "to": "recovery.rollback_required",
+      "event": "retry_budget_exhausted",
+      "actor": "windows_finalizer",
+      "guards": [
+        "jstack_rearm_exhausted",
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Rollback after the single installed-JStack BootNext retry is exhausted."
+    },
+    {
+      "id": "request_rollback_from_windows_jstack_rearm",
+      "from": "windows.jstack_rearm",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert a post-confirmation cancellation into rollback."
+    },
+    {
+      "id": "request_rollback_from_windows_jstack_rearm_armed",
+      "from": "windows.jstack_rearm_armed",
+      "to": "recovery.rollback_required",
+      "event": "rollback_requested",
+      "actor": "recovery_controller",
+      "guards": [
+        "rollback_permitted"
+      ],
+      "actions": [],
+      "authorization": [
+        "rollback_authorized"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Convert a post-confirmation cancellation into rollback."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "finalizer_security_failure",
+  "description": "A Windows security restoration failure stops before arming JStack and requires manual recovery.",
+  "steps": [
+    "begin_preflight",
+    "accept_preflight_and_plan",
+    "begin_payload_staging",
+    "accept_verified_payload",
+    "show_exact_plan",
+    "confirm_exact_plan",
+    "prepare_bitlocker",
+    "suspend_bitlocker_after_finalizer",
+    "reserve_windows_space",
+    "create_xbootldr",
+    "format_xbootldr",
+    "copy_verified_payload",
+    "stage_installer_loader",
+    "create_installer_entry",
+    "arm_installer_bootnext",
+    "reboot_to_installer",
+    "installer_boot_observed",
+    "verify_linux_handoff",
+    "revalidate_linux_plan",
+    "create_linux_root",
+    "format_linux_root",
+    "deploy_jstack_image",
+    "configure_jstack_system",
+    "install_jstack_boot",
+    "verify_offline_install",
+    "arm_windows_finalizer",
+    "arm_windows_finalize",
+    "windows_finalizer_booted",
+    {
+      "transition": "restore_windows_security",
+      "outcome": "failure"
+    }
+  ],
+  "expected_terminal": "terminal.manual_recovery"
+}

@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer-state-graph-v1.json",
+  "title": "JStack installer state graph",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "model_id",
+    "initial_state",
+    "actors",
+    "actor_platforms",
+    "guards",
+    "actions",
+    "invariants",
+    "states",
+    "transitions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "model_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "initial_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "actor_platforms": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "enum": [
+            "windows",
+            "linux",
+            "firmware",
+            "jstack",
+            "recovery",
+            "shared"
+          ]
+        },
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    },
+    "guards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/catalogItem"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/invariant"
+      }
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/state"
+      },
+      "minItems": 1
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/transition"
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "required": [
+        "host_os",
+        "firmware",
+        "partition_table",
+        "disk_layout",
+        "install_mode",
+        "windows_filesystem",
+        "jstack_filesystem",
+        "boot_partition",
+        "minimum_total_allocation_gib",
+        "unsupported"
+      ],
+      "properties": {
+        "host_os": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "firmware": {
+          "const": "uefi"
+        },
+        "partition_table": {
+          "const": "gpt"
+        },
+        "disk_layout": {
+          "const": "single_basic_system_disk"
+        },
+        "install_mode": {
+          "const": "dual_boot"
+        },
+        "windows_filesystem": {
+          "const": "ntfs"
+        },
+        "jstack_filesystem": {
+          "const": "btrfs"
+        },
+        "boot_partition": {
+          "const": "xbootldr"
+        },
+        "minimum_total_allocation_gib": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unsupported": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "catalogItem": {
+      "type": "object",
+      "required": [
+        "id",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "required": [
+        "id",
+        "description",
+        "platform",
+        "risk",
+        "idempotency",
+        "recovery"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": [
+            "read_only",
+            "external_io",
+            "user_authorization",
+            "filesystem_mutation",
+            "security_mutation",
+            "disk_mutation",
+            "boot_mutation",
+            "reboot"
+          ]
+        },
+        "idempotency": {
+          "enum": [
+            "idempotent",
+            "content_addressed",
+            "reconcile_required"
+          ]
+        },
+        "recovery": {
+          "enum": [
+            "retry",
+            "reconcile",
+            "compensate",
+            "reconcile_then_compensate"
+          ]
+        },
+        "parameters": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "invariant": {
+      "type": "object",
+      "required": [
+        "id",
+        "description",
+        "enforced_by"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enforced_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "required": [
+        "id",
+        "phase",
+        "actor",
+        "kind",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "checkpoint",
+            "terminal"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ui_view": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "terminal_outcome": {
+          "enum": [
+            "success",
+            "safe_abort",
+            "unsupported",
+            "rolled_back",
+            "manual_recovery"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": [
+        "id",
+        "from",
+        "to",
+        "event",
+        "actor",
+        "guards",
+        "actions",
+        "authorization",
+        "journal",
+        "preconditions",
+        "postconditions",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor": {
+          "type": "string"
+        },
+        "guards": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authorization": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "journal": {
+          "type": "object",
+          "required": [
+            "intent_before_actions",
+            "commit_after_postconditions"
+          ],
+          "properties": {
+            "intent_before_actions": {
+              "type": "boolean"
+            },
+            "commit_after_postconditions": {
+              "type": "boolean"
+            },
+            "advance_before_handoff": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "postconditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "failure_to": {
+          "type": "string"
+        },
+        "handoff": {
+          "type": "object",
+          "required": [
+            "next_actor",
+            "resume_token",
+            "journal_replicas"
+          ],
+          "properties": {
+            "next_actor": {
+              "type": "string"
+            },
+            "resume_token": {
+              "type": "string"
+            },
+            "journal_replicas": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

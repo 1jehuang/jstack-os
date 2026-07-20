@@ -1,0 +1,15 @@
+{
+  "id": "payload_corruption_retry",
+  "description": "Corrupt payload retries without mutation and then proceeds.",
+  "steps": [
+    "begin_preflight",
+    "accept_preflight_and_plan",
+    "begin_payload_staging",
+    "mark_payload_invalid",
+    "retry_payload_download",
+    "accept_verified_payload",
+    "show_exact_plan",
+    "cancel_before_mutation"
+  ],
+  "expected_terminal": "terminal.cancelled"
+}

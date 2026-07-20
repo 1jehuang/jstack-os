@@ -1,0 +1,26 @@
+{
+  "id": "post_shrink_failure_rollback",
+  "description": "A failure creating XBOOTLDR enters Windows rollback.",
+  "steps": [
+    "begin_preflight",
+    "accept_preflight_and_plan",
+    "begin_payload_staging",
+    "accept_verified_payload",
+    "show_exact_plan",
+    "confirm_exact_plan",
+    "prepare_without_bitlocker",
+    "reserve_windows_space",
+    {
+      "transition": "create_xbootldr",
+      "outcome": "failure"
+    },
+    "dispatch_rollback_windows",
+    "execute_windows_rollback",
+    "rollback_remove_esp_files",
+    "rollback_delete_partitions",
+    "rollback_expand_windows",
+    "rollback_restore_security",
+    "rollback_unregister_finalizer"
+  ],
+  "expected_terminal": "terminal.rolled_back"
+}
