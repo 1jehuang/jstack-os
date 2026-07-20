@@ -47,6 +47,7 @@ examples:
 	$(PYTHON) tools/generate_integrity_examples.py \
 		--plan generated/example-plan.json \
 		--display generated/example-plan-display.json \
+		--staging-evidence ../staging/fixtures/staging-evidence.json \
 		--output "$$temporary"; \
 	for name in example-confirmation.json example-journal-record.json example-journal-chain.json example-handoff.json; do \
 		diff -u "generated/$$name" "$$temporary/$$name" || exit 1; \

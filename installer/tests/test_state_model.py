@@ -143,6 +143,78 @@ class StateModelTests(unittest.TestCase):
             errors,
         )
 
+    def test_validator_cannot_relabel_staging_mutations_as_read_only(self) -> None:
+        for action_id in (
+            "reconcile_staging_store",
+            "persist_release_acceptance",
+            "stage_payload_quarantine",
+            "promote_verified_payload",
+        ):
+            with self.subTest(action=action_id):
+                unsafe = clone_model(self.model)
+                action = next(
+                    action for action in unsafe["actions"] if action["id"] == action_id
+                )
+                action["risk"] = "read_only"
+                transition = next(
+                    transition
+                    for transition in unsafe["transitions"]
+                    if action_id in transition["actions"]
+                )
+                transition["authorization"] = []
+                transition["preconditions"] = []
+                transition["postconditions"] = []
+                transition.pop("failure_to", None)
+                transition["journal"] = {
+                    "intent_before_actions": False,
+                    "commit_after_postconditions": False,
+                }
+
+                errors = validate_model(unsafe)
+                self.assertIn(
+                    f"safety-critical action {action_id} risk must be staging_mutation",
+                    errors,
+                )
+
+    def test_validator_rejects_read_only_aliases_in_staging_transitions(self) -> None:
+        bindings = {
+            "begin_preflight": "reconcile_staging_store",
+            "persist_release_acceptance": "persist_release_acceptance",
+            "begin_payload_staging": "stage_payload_quarantine",
+            "accept_verified_payload": "promote_verified_payload",
+        }
+        for transition_id, action_id in bindings.items():
+            with self.subTest(transition=transition_id):
+                unsafe = clone_model(self.model)
+                original = next(
+                    action for action in unsafe["actions"] if action["id"] == action_id
+                )
+                alias = dict(original)
+                alias["id"] = f"{action_id}_alias"
+                alias["risk"] = "read_only"
+                unsafe["actions"].append(alias)
+
+                transition = next(
+                    transition
+                    for transition in unsafe["transitions"]
+                    if transition["id"] == transition_id
+                )
+                transition["actions"] = [alias["id"]]
+                transition["authorization"] = []
+                transition["preconditions"] = []
+                transition["postconditions"] = []
+                transition.pop("failure_to", None)
+                transition["journal"] = {
+                    "intent_before_actions": False,
+                    "commit_after_postconditions": False,
+                }
+
+                errors = validate_model(unsafe)
+                self.assertIn(
+                    f"safety-critical transition {transition_id} actions must be exactly {action_id}",
+                    errors,
+                )
+
     def test_validator_rejects_staging_failure_that_can_reach_success(self) -> None:
         unsafe = clone_model(self.model)
         transition = next(

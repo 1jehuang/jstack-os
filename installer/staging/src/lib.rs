@@ -9,8 +9,7 @@ use fs4::FileExt;
 use jstack_installer_core::canonical::CanonicalError;
 use jstack_installer_core::{
     ArtifactDescriptor, ArtifactRole, Hash256, PendingReleaseManifest, ReleaseAcceptanceState,
-    ReleaseChannel, ReleaseError, VerifiedArtifact, VerifiedReleaseManifest, canonical_json,
-    canonical_sha256,
+    ReleaseChannel, ReleaseError, VerifiedReleaseManifest, canonical_json, canonical_sha256,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -180,21 +179,19 @@ impl StagedArtifact {
         &self.manifest_digest
     }
 
-    pub fn copy_verified<W: Write>(
+    pub fn verify_integrity(
         &mut self,
         release: &VerifiedReleaseManifest,
-        destination: &mut W,
-    ) -> Result<VerifiedArtifact, StagingError> {
+    ) -> Result<(), StagingError> {
         if release.manifest_digest() != &self.manifest_digest
             || release.artifact_descriptor(self.descriptor.role)? != &self.descriptor
         {
             return Err(StagingError::InvalidStagingEvidence);
         }
         self.file.seek(SeekFrom::Start(0))?;
-        let verified =
-            release.copy_verified_artifact(self.descriptor.role, &mut self.file, destination)?;
+        release.verify_artifact(self.descriptor.role, &mut self.file)?;
         self.file.seek(SeekFrom::Start(0))?;
-        Ok(verified)
+        Ok(())
     }
 }
 
@@ -833,6 +830,7 @@ fn validate_acceptance_append(
     if next.channel != previous.channel
         || next.state_model_sha256 != previous.state_model_sha256
         || next.highest_sequence < previous.highest_sequence
+        || next.issued_at_unix_secs < previous.issued_at_unix_secs
         || next.trusted_time_unix_secs < previous.trusted_time_unix_secs
         || (next.highest_sequence == previous.highest_sequence
             && (next.manifest_digest != previous.manifest_digest
@@ -1336,6 +1334,20 @@ mod tests {
     }
 
     #[test]
+    fn acceptance_log_rejects_backdated_higher_sequence() {
+        let previous = pending(None, NOW).required_acceptance().clone();
+        let mut backdated = previous.clone();
+        backdated.highest_sequence += 1;
+        backdated.issued_at_unix_secs -= 1;
+        backdated.trusted_time_unix_secs += 1;
+
+        assert!(matches!(
+            validate_acceptance_append(Some(&previous), &backdated),
+            Err(StagingError::AcceptanceCorrupt)
+        ));
+    }
+
+    #[test]
     fn every_acceptance_kill_point_recovers_without_rollback() {
         let points = [
             FaultPoint::AcceptanceAfterLock,
@@ -1431,10 +1443,11 @@ mod tests {
             StageProgress::Complete(staged) => staged,
             StageProgress::Incomplete { .. } => panic!("artifact should be complete"),
         };
+        staged.verify_integrity(&release).unwrap();
+        staged.file.seek(SeekFrom::Start(0)).unwrap();
         let mut copied = Vec::new();
-        let verified = staged.copy_verified(&release, &mut copied).unwrap();
+        staged.file.read_to_end(&mut copied).unwrap();
         assert_eq!(copied, bytes);
-        assert_eq!(verified.sha256(), staged.sha256());
     }
 
     #[test]

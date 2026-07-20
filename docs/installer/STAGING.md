@@ -41,7 +41,9 @@ Cross-OS handoffs bind the staging-evidence hash.
 
 ## Point-of-use rule
 
-A prior hash result is not authority to reopen and copy a path. `StagedArtifact` retains an open file and is not serializable or cloneable. Every XBOOTLDR copy, ESP placement, and Linux deployment must hash the exact source stream while writing to an uncommitted destination. The destination may be committed only after `copy_verified` returns a `VerifiedArtifact`. On error, the destination is untrusted and must be discarded or reconciled by its journaled transition.
+A prior hash result is not authority to reopen and copy a path. `StagedArtifact` retains an open file and is not serializable or cloneable. The staging and core crates intentionally expose no generic `Write` copy API because such an API cannot enforce that bytes written before final verification remain uncommitted. Until a production adapter supplies a destination-specific transaction, staged bytes cannot be consumed through the public API.
+
+Every future XBOOTLDR copy, ESP placement, and Linux deployment adapter must hash the exact source stream while writing to an exclusively created temporary destination, flush it, and make it reachable from boot or deployment state only after verification succeeds. An error or crash must leave only a journal-reconcilable temporary object that cannot be selected as a boot or deployment target. These destination transactions and their power-loss tests are mandatory before real mutation paths become reachable.
 
 ## Crash reconciliation
 

@@ -30,6 +30,10 @@ EXPECTED_TERMINAL_OUTCOMES = {
 }
 
 REQUIRED_ACTION_RISKS = {
+    "reconcile_staging_store": "staging_mutation",
+    "persist_release_acceptance": "staging_mutation",
+    "stage_payload_quarantine": "staging_mutation",
+    "promote_verified_payload": "staging_mutation",
     "register_windows_finalizer": "filesystem_mutation",
     "suspend_bitlocker": "security_mutation",
     "shrink_windows_ntfs": "disk_mutation",
@@ -55,6 +59,13 @@ REQUIRED_ACTION_RISKS = {
     "delete_jstack_partitions": "disk_mutation",
     "expand_windows_ntfs": "disk_mutation",
     "unregister_windows_finalizer": "filesystem_mutation",
+}
+
+REQUIRED_TRANSITION_ACTIONS = {
+    "begin_preflight": ["reconcile_staging_store"],
+    "persist_release_acceptance": ["persist_release_acceptance"],
+    "begin_payload_staging": ["stage_payload_quarantine"],
+    "accept_verified_payload": ["promote_verified_payload"],
 }
 
 EXPECTED_HANDOFF_ACTORS = {
@@ -279,6 +290,16 @@ def validate_model(model: dict[str, Any]) -> list[str]:
         elif action.get("risk") != expected_risk:
             errors.append(
                 f"safety-critical action {action_id} risk must be {expected_risk}"
+            )
+
+    for transition_id, expected_actions in REQUIRED_TRANSITION_ACTIONS.items():
+        transition = transitions.get(transition_id)
+        if not transition:
+            errors.append(f"required safety-critical transition is missing: {transition_id}")
+        elif transition.get("actions") != expected_actions:
+            errors.append(
+                f"safety-critical transition {transition_id} actions must be exactly "
+                + ", ".join(expected_actions)
             )
 
     if set(actor_platforms) != actors:

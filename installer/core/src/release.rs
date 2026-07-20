@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Read, Write};
+use std::io::Read;
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -228,18 +228,7 @@ impl VerifiedReleaseManifest {
         reader: &mut R,
     ) -> Result<VerifiedArtifact, ReleaseError> {
         let descriptor = self.artifact_descriptor(role)?;
-        verify_artifact_stream(descriptor, reader, &mut std::io::sink())?;
-        Ok(self.verified_artifact(descriptor))
-    }
-
-    pub fn copy_verified_artifact<R: Read, W: Write>(
-        &self,
-        role: ArtifactRole,
-        reader: &mut R,
-        destination: &mut W,
-    ) -> Result<VerifiedArtifact, ReleaseError> {
-        let descriptor = self.artifact_descriptor(role)?;
-        verify_artifact_stream(descriptor, reader, destination)?;
+        verify_artifact_stream(descriptor, reader)?;
         Ok(self.verified_artifact(descriptor))
     }
 
@@ -698,7 +687,9 @@ fn validate_ratchet(
                 return Err(ReleaseError::Expired);
             }
             if let Some(previous) = previous {
-                if body.release_sequence < previous.highest_sequence {
+                if body.release_sequence < previous.highest_sequence
+                    || body.issued_at_unix_secs < previous.issued_at_unix_secs
+                {
                     return Err(ReleaseError::Downgrade);
                 }
                 if body.release_sequence == previous.highest_sequence
@@ -736,10 +727,9 @@ fn validate_ratchet(
     })
 }
 
-fn verify_artifact_stream<R: Read, W: Write>(
+fn verify_artifact_stream<R: Read>(
     descriptor: &ArtifactDescriptor,
     reader: &mut R,
-    destination: &mut W,
 ) -> Result<(), ReleaseError> {
     let mut whole = Sha256::new();
     let mut remaining_total = descriptor.size_bytes;
@@ -760,12 +750,6 @@ fn verify_artifact_stream<R: Read, W: Write>(
             if read == 0 {
                 return Err(ReleaseError::ArtifactTruncated(descriptor.role));
             }
-            destination
-                .write_all(&buffer[..read])
-                .map_err(|error| ReleaseError::ArtifactIo {
-                    role: descriptor.role,
-                    message: error.to_string(),
-                })?;
             chunk.update(&buffer[..read]);
             whole.update(&buffer[..read]);
             remaining_chunk -= read as u64;
@@ -1039,6 +1023,18 @@ mod tests {
         assert!(matches!(
             verify_release_manifest(
                 &envelope(downgrade, &keys),
+                &downgrade_policy,
+                ReleaseVerificationMode::Acquire
+            ),
+            Err(ReleaseError::Downgrade)
+        ));
+
+        let mut backdated = body();
+        backdated.release_sequence += 1;
+        backdated.issued_at_unix_secs -= 1;
+        assert!(matches!(
+            verify_release_manifest(
+                &envelope(backdated, &keys),
                 &downgrade_policy,
                 ReleaseVerificationMode::Acquire
             ),

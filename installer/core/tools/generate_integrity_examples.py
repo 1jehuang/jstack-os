@@ -33,12 +33,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--display", type=Path, required=True)
+    parser.add_argument("--staging-evidence", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
     plan = load(args.plan)
     display = load(args.display)
+    staging_evidence = load(args.staging_evidence)
     confirmation = {
         "schema_version": 1,
         "plan_hash": plan["plan_hash"],
@@ -135,7 +137,7 @@ def main() -> int:
         "control_state": state,
         "journal_head_hash": digest(state_advanced),
         "release_manifest_hash": plan["body"]["release_manifest_hash"],
-        "staging_evidence_hash": "e" * 64,
+        "staging_evidence_hash": digest(staging_evidence),
         "plan_hash": plan["plan_hash"],
         "disk_guid": plan["body"]["disk_guid"],
         "partition_phase": "windows_handoff",

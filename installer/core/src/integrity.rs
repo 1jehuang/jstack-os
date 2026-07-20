@@ -631,6 +631,10 @@ mod tests {
             serde_json::from_str(include_str!("../generated/example-journal-chain.json")).unwrap();
         let handoff: Handoff =
             serde_json::from_str(include_str!("../generated/example-handoff.json")).unwrap();
+        let staging_evidence: serde_json::Value =
+            serde_json::from_str(include_str!("../../staging/fixtures/staging-evidence.json"))
+                .unwrap();
+        let staging_evidence_hash = canonical_sha256(&staging_evidence).unwrap();
 
         validate_plan_hash(&plan).unwrap();
         validate_confirmation(&plan, &display, &confirmation).unwrap();
@@ -641,9 +645,11 @@ mod tests {
             &journal,
             "windows.reboot_to_installer_pending",
             "installer",
-            &handoff.staging_evidence_hash,
+            &staging_evidence_hash,
             PartitionFingerprintPhase::WindowsHandoff,
         )
         .unwrap();
+
+        assert_eq!(handoff.staging_evidence_hash, staging_evidence_hash);
     }
 }
