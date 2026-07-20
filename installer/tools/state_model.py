@@ -144,6 +144,11 @@ def transition_is_system_mutating(
     )
 
 
+def valid_failure_target(transition: dict[str, Any]) -> str | None:
+    failure = transition.get("failure_to")
+    return failure if isinstance(failure, str) and failure else None
+
+
 def reconcile_interruption(
     transition: dict[str, Any],
     actions: dict[str, dict[str, Any]],
@@ -158,7 +163,7 @@ def reconcile_interruption(
     if observed == "postcondition":
         return transition["to"]
     if observed == "divergent":
-        failure = transition.get("failure_to")
+        failure = valid_failure_target(transition)
         if not failure:
             raise AssertionError(
                 f"mutation {transition['id']} has divergent state without failure_to"
@@ -177,7 +182,7 @@ def normal_adjacency(model: dict[str, Any]) -> dict[str, set[str]]:
 def all_adjacency(model: dict[str, Any]) -> dict[str, set[str]]:
     adjacency = normal_adjacency(model)
     for transition in model["transitions"]:
-        if failure := transition.get("failure_to"):
+        if failure := valid_failure_target(transition):
             adjacency[transition["from"]].add(failure)
     return adjacency
 
@@ -222,7 +227,7 @@ def dominators(model: dict[str, Any]) -> dict[str, set[str]]:
     predecessors: dict[str, set[str]] = defaultdict(set)
     for transition in model["transitions"]:
         predecessors[transition["to"]].add(transition["from"])
-        if failure := transition.get("failure_to"):
+        if failure := valid_failure_target(transition):
             predecessors[failure].add(transition["from"])
 
     dom = {state: set(states) for state in states}
@@ -528,7 +533,7 @@ def validate_model(model: dict[str, Any]) -> list[str]:
     for transition_id, transition in transitions.items():
         if not transition_is_mutating(transition, actions):
             continue
-        failure_target = transition.get("failure_to")
+        failure_target = valid_failure_target(transition)
         if not failure_target:
             continue
         if transition_is_system_mutating(transition, actions):
@@ -722,7 +727,7 @@ def simulate_trace(model: dict[str, Any], trace: dict[str, Any]) -> str:
         if outcome == "success":
             current = transition["to"]
         elif outcome == "failure":
-            failure = transition.get("failure_to")
+            failure = valid_failure_target(transition)
             if not failure:
                 raise AssertionError(
                     f"trace {trace['id']} injects failure into {transition_id} without failure_to"

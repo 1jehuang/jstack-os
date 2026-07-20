@@ -114,21 +114,45 @@ class StateModelTests(unittest.TestCase):
                 trace = {"id": f"generated-{transition['id']}-failure", "steps": steps}
                 self.assertEqual(simulate_trace(self.model, trace), failure)
 
-    def test_validator_rejects_empty_failure_target(self) -> None:
+    def test_validator_rejects_invalid_failure_targets(self) -> None:
+        model_schema = load_json(ROOT / "model" / "schema.json")
+        cases = (
+            ("", "failure_to must be a non-empty state id", True),
+            (None, "failure_to must be a non-empty state id", True),
+            ([], "failure_to must be a non-empty state id", True),
+            (
+                "definitely_absent.failure_target",
+                "has unknown failure target definitely_absent.failure_target",
+                False,
+            ),
+        )
+        for value, expected_error, schema_rejects in cases:
+            with self.subTest(value=value):
+                unsafe = clone_model(self.model)
+                transition = next(
+                    transition
+                    for transition in unsafe["transitions"]
+                    if transition["id"] == "mark_release_acquisition_failed"
+                )
+                transition["failure_to"] = value
+
+                self.assertTrue(
+                    any(expected_error in error for error in validate_model(unsafe))
+                )
+                schema_errors = validate_against_schema(unsafe, model_schema)
+                self.assertEqual(bool(schema_errors), schema_rejects)
+
         unsafe = clone_model(self.model)
         transition = next(
             transition
             for transition in unsafe["transitions"]
-            if transition["id"] == "mark_release_acquisition_failed"
+            if transition["id"] == "begin_preflight"
         )
-        transition["failure_to"] = ""
-
+        transition.pop("failure_to")
         self.assertIn(
-            "transition mark_release_acquisition_failed failure_to must be a non-empty state id",
+            "mutating transition begin_preflight lacks failure_to",
             validate_model(unsafe),
         )
-        model_schema = load_json(ROOT / "model" / "schema.json")
-        self.assertTrue(validate_against_schema(unsafe, model_schema))
 
     def test_every_mutation_has_deterministic_interruption_semantics(self) -> None:
         actions = index_by_id(self.model["actions"])
