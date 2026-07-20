@@ -10,8 +10,9 @@ parallel workflows.
 
 ## Milestone 1 commands
 
-The checks require Python 3.11 or newer, `python-jsonschema`, and Python
-`cryptography` for the independent Ed25519 known-answer vectors.
+The checks require Python 3.11 or newer, `python-jsonschema`, Python
+`cryptography` for the independent Ed25519 known-answer vectors, and PowerShell
+(`pwsh` or `powershell`) for collector AST validation and mocked execution.
 
 ```sh
 cd installer

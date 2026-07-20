@@ -158,7 +158,9 @@ def main() -> int:
         errors.append("collector may not use direct process-launch classes")
 
     powershell = shutil.which("pwsh") or shutil.which("powershell")
-    if powershell:
+    if not powershell:
+        errors.append("PowerShell is required for collector AST validation")
+    else:
         parser = (
             "$tokens=$null; $errors=$null; "
             "$ast=[System.Management.Automation.Language.Parser]::ParseFile("

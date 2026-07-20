@@ -12,7 +12,7 @@ observation.
 | A0 | Architecture or state-model requirement only. No runtime adapter exists. |
 | A1 | Pure implementation checked by schemas, deterministic vectors, and unit or property tests. |
 | A2 | Runtime contract checked with adversarial mocks and deterministic crash, tamper, or reconciliation injection. |
-| A3 | All supported targets compile on the minimum Rust toolchain and platform-specific command surfaces pass static allowlist checks. |
+| A3 | `cargo check` passes for all supported Rust targets on the minimum toolchain, and platform-specific command surfaces pass static allowlist checks. |
 | A4 | Production adapter passes destructive tests in a disposable Windows or Linux UEFI VM, including forced power loss and disk-full behavior. |
 | A5 | Signed release candidate passes the supported physical-hardware matrix. |
 
@@ -31,13 +31,14 @@ The complete `make check` gate passes under Rust 1.85. It currently includes 29
 state-model tests, 52 core tests, 16 staging tests, strict Clippy, schema and
 canonical fixture validation, independent Ed25519 and artifact vectors, the
 PowerShell collector audit and mocked execution, Linux builds, and
-`x86_64-pc-windows-msvc` cross-compilation.
+`cargo check --target x86_64-pc-windows-msvc` for both Rust crates. This is a
+compile check, not an MSVC-linked Windows build.
 
 | Area | Current level | Evidence demonstrated now | Required production level | Open boundary |
 | --- | --- | --- | --- | --- |
 | State graph structure and authorization | A2 | Every modeled mutation requires intent-before-action, postcondition-before-commit, a failure edge, allowed actor authority, and deterministic abstract interruption reconciliation. Adversarial tests reject authorization, risk, guard, handoff, success-gate, and multi-mutation weakening. | A2 plus runtime conformance | The production runtime must consume graph IDs and must not implement a parallel workflow. |
 | Release trust and canonical envelope | A3 | Threshold Ed25519 verification, byte-canonical signed bodies, immutable policy, expiry/resource bounds, equivocation rejection, and acceptance-state anti-rollback pass Rust and independent Python vectors. | A4 for durable platform integration, A5 for release signing operations | Provision production roots and protect the rollback floor with the chosen platform mechanism. |
-| Read-only Windows inventory | A3 | Raw and normalized schemas, strict deserialization, fail-closed normalization, stable identity rules, a 25-command read-only PowerShell allowlist, mocked collector execution, and Windows compilation pass. | A4 | Capture real Windows 10 and 11 results across the supported and rejected layout matrix. |
+| Read-only Windows inventory | A3 | Raw and normalized schemas, strict deserialization, fail-closed normalization, stable identity rules, a 25-command read-only PowerShell allowlist, mocked collector execution, and Windows-target `cargo check` pass. | A4 | Capture real Windows 10 and 11 results across the supported and rejected layout matrix. |
 | Pure partition planner | A3 | Deterministic plan, confirmation display, signed requirement binding, stable disk fingerprints, ambiguous-layout rejection, and generated shrink-boundary cases pass. | A4 when bound to live observation and mutation | Reobserve the actual disk immediately before each production action and prove the adapter executes only the returned plan. |
 | Acceptance write-ahead log | A3 | Monotonic compare-and-swap, exact readback, torn-tail recovery, committed-corruption hard stop, and every modeled write/flush/commit fault point pass. | A4, then A5 rollback hardening | Prove NTFS ACL, sharing, flush, and local-filesystem behavior in Windows; prove Linux directory durability; add the production rollback anchor. |
 | Artifact quarantine and promotion | A3 | Bounded reads, closed role-derived names, chunk resume, exact size/chunk/whole/EOF verification, no-clobber promotion, tamper rejection, and every write/sync/promote fault point pass. | A4 | Exercise production Windows and Linux filesystems under power loss, disk full, sharing violations, reparse/symlink attacks, and post-verification replacement attempts. |

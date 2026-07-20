@@ -51,8 +51,11 @@ def main() -> int:
 
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if not powershell:
-        print("skipped mocked collector execution: PowerShell is unavailable")
-        return 0
+        print(
+            "ERROR: PowerShell is required for mocked collector execution",
+            file=sys.stderr,
+        )
+        return 1
 
     env = {
         **os.environ,
