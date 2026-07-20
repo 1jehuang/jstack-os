@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "collected_at_unix_ms": 1800000000000,
+  "host": {
+    "windows_version": "Microsoft Windows NT 10.0.26100.0",
+    "architecture": "x86_64",
+    "firmware": "uefi",
+    "secure_boot": "enabled_untrusted"
+  },
+  "readiness": {
+    "elevated": true,
+    "firmware_variables_writable": false,
+    "basic_gpt_disk": true,
+    "single_system_disk": true,
+    "windows_servicing_idle": true,
+    "storage_health_acceptable": true,
+    "power_safe": true,
+    "bitlocker_recovery_material_confirmed": false
+  },
+  "system_disk": {
+    "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "size_bytes": 431126216704,
+    "logical_sector_bytes": 512,
+    "physical_sector_bytes": 4096,
+    "partitions": [
+      {
+        "partition_guid": "11111111-1111-4111-8111-111111111111",
+        "type_guid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        "offset_bytes": 1048576,
+        "size_bytes": 536870912,
+        "role": "esp",
+        "filesystem": "fat32",
+        "filesystem_free_bytes": 209715200,
+        "volume_id": "volume-esp",
+        "name": "EFI"
+      },
+      {
+        "partition_guid": "22222222-2222-4222-8222-222222222222",
+        "type_guid": "e3c9e316-0b5c-4db8-817d-f92df00215ae",
+        "offset_bytes": 537919488,
+        "size_bytes": 16777216,
+        "role": "msr",
+        "filesystem": null,
+        "filesystem_free_bytes": null,
+        "volume_id": null,
+        "name": null
+      },
+      {
+        "partition_guid": "33333333-3333-4333-8333-333333333333",
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "offset_bytes": 554696704,
+        "size_bytes": 429496729600,
+        "role": "windows",
+        "filesystem": "ntfs",
+        "filesystem_free_bytes": null,
+        "volume_id": "volume-c",
+        "name": "Windows"
+      },
+      {
+        "partition_guid": "44444444-4444-4444-8444-444444444444",
+        "type_guid": "de94bba4-06d1-4d40-a16a-bfd50179d6ac",
+        "offset_bytes": 430051426304,
+        "size_bytes": 1073741824,
+        "role": "recovery",
+        "filesystem": "ntfs",
+        "filesystem_free_bytes": null,
+        "volume_id": "winre",
+        "name": "Windows RE"
+      }
+    ],
+    "windows": {
+      "partition_guid": "33333333-3333-4333-8333-333333333333",
+      "volume_id": "volume-c",
+      "current_size_bytes": 429496729600,
+      "supported_min_size_bytes": 268435456000,
+      "supported_max_size_bytes": 429496729600,
+      "bitlocker": "protected"
+    }
+  }
+}

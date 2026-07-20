@@ -33,17 +33,19 @@ def main() -> int:
         except Exception as error:  # schema diagnostics need the original detail
             errors.append(f"schema {name}: {error}")
 
-    documents = {
-        "inventory.schema.json": ROOT / "fixtures" / "windows-11-basic-gpt.json",
-        "release-requirements.schema.json": ROOT / "fixtures" / "release-requirements.json",
-        "install-plan.schema.json": ROOT / "generated" / "example-plan.json",
-        "plan-display.schema.json": ROOT / "generated" / "example-plan-display.json",
-        "confirmation.schema.json": ROOT / "generated" / "example-confirmation.json",
-        "journal-record.schema.json": ROOT / "generated" / "example-journal-record.json",
-        "journal-chain.schema.json": ROOT / "generated" / "example-journal-chain.json",
-        "handoff.schema.json": ROOT / "generated" / "example-handoff.json",
-    }
-    for schema_name, path in documents.items():
+    documents = [
+        ("windows-storage-snapshot.schema.json", ROOT / "fixtures" / "windows-storage-snapshot.json"),
+        ("inventory.schema.json", ROOT / "fixtures" / "windows-11-basic-gpt.json"),
+        ("inventory.schema.json", ROOT / "generated" / "example-observed-inventory.json"),
+        ("release-requirements.schema.json", ROOT / "fixtures" / "release-requirements.json"),
+        ("install-plan.schema.json", ROOT / "generated" / "example-plan.json"),
+        ("plan-display.schema.json", ROOT / "generated" / "example-plan-display.json"),
+        ("confirmation.schema.json", ROOT / "generated" / "example-confirmation.json"),
+        ("journal-record.schema.json", ROOT / "generated" / "example-journal-record.json"),
+        ("journal-chain.schema.json", ROOT / "generated" / "example-journal-chain.json"),
+        ("handoff.schema.json", ROOT / "generated" / "example-handoff.json"),
+    ]
+    for schema_name, path in documents:
         schema = schemas[schema_name]
         validator = validator_for(schema)(
             schema, registry=registry, format_checker=FormatChecker()

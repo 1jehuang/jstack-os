@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/windows-storage-snapshot.schema.json",
+  "title": "JStack read-only Windows storage snapshot",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "collected_at_unix_ms",
+    "windows_version",
+    "architecture",
+    "firmware",
+    "secure_boot_enabled",
+    "elevated",
+    "firmware_environment_readable",
+    "windows_servicing_idle",
+    "system_drive",
+    "power",
+    "disks"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "collected_at_unix_ms": { "type": "integer", "minimum": 0 },
+    "windows_version": { "$ref": "common.schema.json#/$defs/nonempty" },
+    "architecture": { "$ref": "common.schema.json#/$defs/nonempty" },
+    "firmware": { "enum": ["uefi", "legacy", "unknown"] },
+    "secure_boot_enabled": { "type": ["boolean", "null"] },
+    "elevated": { "type": "boolean" },
+    "firmware_environment_readable": { "type": "boolean" },
+    "windows_servicing_idle": { "type": "boolean" },
+    "system_drive": { "type": "string", "pattern": "^[A-Za-z]:$" },
+    "power": { "$ref": "#/$defs/power" },
+    "disks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/disk" },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "guidText": {
+      "type": "string",
+      "pattern": "^\\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\}?$"
+    },
+    "power": {
+      "type": "object",
+      "required": ["battery_present", "on_ac_power", "charge_percent"],
+      "properties": {
+        "battery_present": { "type": "boolean" },
+        "on_ac_power": { "type": ["boolean", "null"] },
+        "charge_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "disk": {
+      "type": "object",
+      "required": [
+        "number",
+        "guid",
+        "partition_style",
+        "size_bytes",
+        "logical_sector_bytes",
+        "physical_sector_bytes",
+        "health_status",
+        "operational_status",
+        "partitions"
+      ],
+      "properties": {
+        "number": { "type": "integer", "minimum": 0 },
+        "guid": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/guidText" }
+          ]
+        },
+        "partition_style": { "$ref": "common.schema.json#/$defs/nonempty" },
+        "size_bytes": { "$ref": "common.schema.json#/$defs/positiveBytes" },
+        "logical_sector_bytes": { "type": "integer", "minimum": 1 },
+        "physical_sector_bytes": { "type": "integer", "minimum": 1 },
+        "health_status": { "$ref": "common.schema.json#/$defs/nonempty" },
+        "operational_status": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty" },
+          "minItems": 1
+        },
+        "partitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/partition" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "partition": {
+      "type": "object",
+      "required": [
+        "number",
+        "guid",
+        "type_guid",
+        "offset_bytes",
+        "size_bytes",
+        "is_boot",
+        "is_system",
+        "drive_letter",
+        "name",
+        "volume",
+        "resize",
+        "bitlocker"
+      ],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "guid": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/guidText" }
+          ]
+        },
+        "type_guid": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/guidText" }
+          ]
+        },
+        "offset_bytes": { "type": "integer", "minimum": 0 },
+        "size_bytes": { "$ref": "common.schema.json#/$defs/positiveBytes" },
+        "is_boot": { "type": "boolean" },
+        "is_system": { "type": "boolean" },
+        "drive_letter": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[A-Za-z]$" }
+          ]
+        },
+        "name": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "common.schema.json#/$defs/nonempty" }
+          ]
+        },
+        "volume": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/volume" }
+          ]
+        },
+        "resize": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/resize" }
+          ]
+        },
+        "bitlocker": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/bitlocker" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "volume": {
+      "type": "object",
+      "required": ["unique_id", "filesystem", "size_bytes", "size_remaining_bytes", "health_status"],
+      "properties": {
+        "unique_id": { "$ref": "common.schema.json#/$defs/nonempty" },
+        "filesystem": { "$ref": "common.schema.json#/$defs/nonempty" },
+        "size_bytes": { "$ref": "common.schema.json#/$defs/positiveBytes" },
+        "size_remaining_bytes": { "type": "integer", "minimum": 0 },
+        "health_status": { "$ref": "common.schema.json#/$defs/nonempty" }
+      },
+      "additionalProperties": false
+    },
+    "resize": {
+      "type": "object",
+      "required": ["minimum_bytes", "maximum_bytes"],
+      "properties": {
+        "minimum_bytes": { "$ref": "common.schema.json#/$defs/positiveBytes" },
+        "maximum_bytes": { "$ref": "common.schema.json#/$defs/positiveBytes" }
+      },
+      "additionalProperties": false
+    },
+    "bitlocker": {
+      "type": "object",
+      "required": ["protection_status", "volume_status", "recovery_password_protector_present"],
+      "properties": {
+        "protection_status": { "$ref": "common.schema.json#/$defs/nonempty" },
+        "volume_status": { "$ref": "common.schema.json#/$defs/nonempty" },
+        "recovery_password_protector_present": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

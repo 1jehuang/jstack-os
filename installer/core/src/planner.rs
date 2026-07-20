@@ -6,13 +6,6 @@ use uuid::Uuid;
 use crate::canonical::{CanonicalError, canonical_sha256};
 use crate::model::*;
 
-const XBOOTLDR_TYPE_GUID: &str = "bc13c2ff-59e6-4262-a352-b275fd6f7172";
-const LINUX_ROOT_X86_64_TYPE_GUID: &str = "4f68bce3-e8cd-4db1-96e7-fbcaf984b709";
-const ESP_TYPE_GUID: &str = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
-const MSR_TYPE_GUID: &str = "e3c9e316-0b5c-4db8-817d-f92df00215ae";
-const WINDOWS_BASIC_DATA_TYPE_GUID: &str = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7";
-const WINDOWS_RECOVERY_TYPE_GUID: &str = "de94bba4-06d1-4d40-a16a-bfd50179d6ac";
-
 #[derive(Serialize)]
 struct StableDiskFingerprint {
     disk_guid: Uuid,

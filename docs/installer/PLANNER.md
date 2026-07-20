@@ -73,16 +73,19 @@ cannot independently choose offsets, sizes, GUIDs, or rollback targets.
 
 ## Current validation
 
-- 21 Rust tests, including 86 generated shrink-boundary cases.
+- 38 Rust tests, including 86 generated shrink-boundary cases and adversarial
+  Windows snapshot normalization.
 - Strict Clippy with warnings denied.
 - Linux tests and Windows MSVC compile checking.
-- Nine Draft 2020-12 schemas and eight validated example documents.
+- Ten Draft 2020-12 schemas and ten validated contract documents.
 - Deterministic generated plan, user display, confirmation, full journal chain,
-  and handoff fixtures.
+  handoff, and observed-inventory fixtures.
+- Exact read-only PowerShell command allowlisting plus an end-to-end mocked
+  Windows collection and Rust normalization run.
 
 ## Not implemented yet
 
-- Windows inventory collection and Storage API execution.
+- Windows storage mutation execution and readiness-evidence merging.
 - Signatures or MACs over manifests, journals, confirmations, and handoffs.
 - A production release manifest with artifact signatures and chunk hashes.
 - Linux execution adapters or real VM power-loss injection.

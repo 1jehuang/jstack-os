@@ -6,6 +6,11 @@ unsupported inventories, computes the only permitted v1 dual-boot plan, and
 binds plans, confirmations, journal records, and handoffs with canonical hashes.
 It never opens or writes a disk.
 
+The shared library forbids unsafe Rust. The Windows-only inventory launcher denies
+unsafe code except for one bounded `GetSystemDirectoryW` call used to locate the
+actual running OS system directory without trusting process environment or
+`PATH`.
+
 ## Commands
 
 ```sh
@@ -15,11 +20,14 @@ cargo run --offline --bin jstack-plan -- \
   fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json
 cargo run --offline --bin jstack-plan -- --display \
   fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json
+cargo run --offline --bin jstack-inventory -- \
+  --from-snapshot fixtures/windows-storage-snapshot.json
 ```
 
 `make check` runs Rust formatting, unit and generated-boundary tests, strict
 Clippy, an `x86_64-pc-windows-msvc` compile check, deterministic fixture
-regeneration, and Draft 2020-12 schema validation.
+regeneration, Draft 2020-12 schema validation, a static read-only PowerShell
+allowlist, and an end-to-end mocked Windows collection run.
 
 ## Canonical JSON v1
 
@@ -51,5 +59,9 @@ cross-language number and escaping differences. SHA-256 is lowercase hex.
 - Journal records enforce intent, commit, and state-advance ordering. Cross-OS
   handoff requires a fully validated chain ending in a state hash that matches
   the handoff control state.
+- `jstack-inventory` observes Windows through an exact read-only command
+  allowlist and normalizes the result in pure Rust. Secure Boot artifact trust
+  and BitLocker recovery-material possession deliberately remain unconfirmed.
 
-See `docs/installer/PLANNER.md` for the algorithm and remaining validation work.
+See `docs/installer/PLANNER.md` for the algorithm and
+`docs/installer/WINDOWS_INVENTORY.md` for the Windows observation boundary.

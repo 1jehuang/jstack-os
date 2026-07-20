@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "collected_at_unix_ms": 1800000000000,
+  "windows_version": "Microsoft Windows NT 10.0.26100.0",
+  "architecture": "AMD64",
+  "firmware": "uefi",
+  "secure_boot_enabled": true,
+  "elevated": true,
+  "firmware_environment_readable": true,
+  "windows_servicing_idle": true,
+  "system_drive": "C:",
+  "power": {
+    "battery_present": true,
+    "on_ac_power": true,
+    "charge_percent": 80
+  },
+  "disks": [
+    {
+      "number": 0,
+      "guid": "{aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}",
+      "partition_style": "GPT",
+      "size_bytes": 431126216704,
+      "logical_sector_bytes": 512,
+      "physical_sector_bytes": 4096,
+      "health_status": "Healthy",
+      "operational_status": [
+        "Online"
+      ],
+      "partitions": [
+        {
+          "number": 1,
+          "guid": "{11111111-1111-4111-8111-111111111111}",
+          "type_guid": "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}",
+          "offset_bytes": 1048576,
+          "size_bytes": 536870912,
+          "is_boot": false,
+          "is_system": true,
+          "drive_letter": null,
+          "name": "EFI",
+          "volume": {
+            "unique_id": "volume-esp",
+            "filesystem": "FAT32",
+            "size_bytes": 536870912,
+            "size_remaining_bytes": 209715200,
+            "health_status": "Healthy"
+          },
+          "resize": null,
+          "bitlocker": null
+        },
+        {
+          "number": 2,
+          "guid": "{22222222-2222-4222-8222-222222222222}",
+          "type_guid": "{e3c9e316-0b5c-4db8-817d-f92df00215ae}",
+          "offset_bytes": 537919488,
+          "size_bytes": 16777216,
+          "is_boot": false,
+          "is_system": false,
+          "drive_letter": null,
+          "name": null,
+          "volume": null,
+          "resize": null,
+          "bitlocker": null
+        },
+        {
+          "number": 3,
+          "guid": "{33333333-3333-4333-8333-333333333333}",
+          "type_guid": "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}",
+          "offset_bytes": 554696704,
+          "size_bytes": 429496729600,
+          "is_boot": true,
+          "is_system": false,
+          "drive_letter": "C",
+          "name": "Windows",
+          "volume": {
+            "unique_id": "volume-c",
+            "filesystem": "NTFS",
+            "size_bytes": 429496729600,
+            "size_remaining_bytes": 180000000000,
+            "health_status": "Healthy"
+          },
+          "resize": {
+            "minimum_bytes": 268435456000,
+            "maximum_bytes": 429496729600
+          },
+          "bitlocker": {
+            "protection_status": "On",
+            "volume_status": "FullyEncrypted",
+            "recovery_password_protector_present": true
+          }
+        },
+        {
+          "number": 4,
+          "guid": "{44444444-4444-4444-8444-444444444444}",
+          "type_guid": "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}",
+          "offset_bytes": 430051426304,
+          "size_bytes": 1073741824,
+          "is_boot": false,
+          "is_system": false,
+          "drive_letter": null,
+          "name": "Windows RE",
+          "volume": {
+            "unique_id": "winre",
+            "filesystem": "NTFS",
+            "size_bytes": 1073741824,
+            "size_remaining_bytes": 536870912,
+            "health_status": "Healthy"
+          },
+          "resize": null,
+          "bitlocker": null
+        }
+      ]
+    },
+    {
+      "number": 1,
+      "guid": null,
+      "partition_style": "MBR",
+      "size_bytes": 68719476736,
+      "logical_sector_bytes": 512,
+      "physical_sector_bytes": 4096,
+      "health_status": "Healthy",
+      "operational_status": [
+        "Online"
+      ],
+      "partitions": [
+        {
+          "number": 1,
+          "guid": null,
+          "type_guid": null,
+          "offset_bytes": 1048576,
+          "size_bytes": 33554432,
+          "is_boot": false,
+          "is_system": false,
+          "drive_letter": "D",
+          "name": "Unrelated MBR data",
+          "volume": null,
+          "resize": null,
+          "bitlocker": null
+        }
+      ]
+    }
+  ]
+}

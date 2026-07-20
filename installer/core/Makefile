@@ -1,9 +1,9 @@
 PYTHON ?= python3
 CARGO ?= cargo
 
-.PHONY: check fmt test clippy windows-check plan examples schemas
+.PHONY: check fmt test clippy windows-check plan inventory examples schemas collector
 
-check: fmt test clippy windows-check plan examples schemas
+check: fmt test clippy windows-check plan inventory examples schemas collector
 
 fmt:
 	$(CARGO) fmt --all -- --check
@@ -26,7 +26,13 @@ plan:
 	$(CARGO) run --offline --quiet --bin jstack-plan -- --display \
 		fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json \
 		> "$$temporary"; \
-	diff -u generated/example-plan-display.json "$$temporary"
+		diff -u generated/example-plan-display.json "$$temporary"
+
+inventory:
+	@temporary=$$(mktemp); trap 'rm -f "$$temporary"' EXIT; \
+	$(CARGO) run --offline --quiet --bin jstack-inventory -- \
+		--from-snapshot fixtures/windows-storage-snapshot.json > "$$temporary"; \
+	diff -u generated/example-observed-inventory.json "$$temporary"
 
 examples:
 	@temporary=$$(mktemp -d); trap 'rm -rf "$$temporary"' EXIT; \
@@ -40,3 +46,7 @@ examples:
 
 schemas:
 	$(PYTHON) tools/validate_contracts.py
+
+collector:
+	$(PYTHON) tools/validate_windows_collector.py
+	$(PYTHON) tools/test_windows_collector_mock.py

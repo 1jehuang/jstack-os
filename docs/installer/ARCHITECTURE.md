@@ -15,7 +15,8 @@ mutation.
 
 ```mermaid
 flowchart LR
-    W[Signed Windows bootstrap] --> P[Shared planner and state model]
+    W[Signed Windows bootstrap] --> I[Read-only Windows inventory]
+    I --> P[Shared planner and state model]
     P --> J[Replicated append-only journal]
     W --> X[XBOOTLDR offline payload]
     W --> E[Namespaced loader on Windows ESP]
@@ -28,7 +29,9 @@ flowchart LR
 
 ### Windows bootstrap
 
-- Collects an immutable hardware and storage inventory.
+- Collects an immutable hardware and storage inventory through the statically
+  allowlisted read-only adapter described in
+  [`WINDOWS_INVENTORY.md`](WINDOWS_INVENTORY.md).
 - Rejects unsupported layouts rather than inferring destructive intent.
 - Uses `Get-PartitionSupportedSize` and `Resize-Partition` for NTFS shrink.
 - Downloads and verifies a signed release manifest and every content hash.
