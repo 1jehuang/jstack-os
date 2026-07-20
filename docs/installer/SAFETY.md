@@ -35,6 +35,12 @@
     repair, or other reboot owner rejects preflight.
 15. **One mutation per transition**: every destructive action has its own named
     checkpoint, intent, postcondition, and failure route.
+16. **Signed inputs before planning**: every planner sizing value comes from a
+    byte-canonical threshold-signed manifest accepted under immutable local
+    policy and an anti-rollback ratchet.
+17. **Verified bytes at point of use**: artifact roles have compiled
+    destinations, and every privileged copy, deployment, or boot rehashes exact
+    length, logical chunks, and whole content.
 
 ## Threat boundaries
 
@@ -54,6 +60,13 @@
 - Signed loader and installer UKI
 - RAM installer
 - Release signing keys and channel manifest
+
+The local-state attacker boundary is explicit: the release verifier detects
+network, mirror, cache, downgrade, equivocation, and ordinary clock-rollback
+attacks. An attacker who can replace the signed bootstrap, its embedded roots,
+or its durable acceptance state is inside the privileged trusted computing base.
+Authenticode and Secure Boot are therefore mandatory platform gates, not
+substitutes for manifest verification.
 
 ## Unsupported v1 layouts
 

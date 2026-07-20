@@ -4,9 +4,9 @@ Generated from `installer/model/installer-state-graph.json`. Do not edit manuall
 
 | Transition | From | To | Actor | Max risk | Guards | Failure target |
 |---|---|---|---|---|---|---|
-| `begin_preflight` | `windows.bootstrap_started` | `windows.preflight` | `windows_bootstrap` | `read_only` | - | - |
+| `begin_preflight` | `windows.bootstrap_started` | `windows.preflight` | `windows_bootstrap` | `external_io` | - | - |
 | `reject_unsupported_platform` | `windows.preflight` | `terminal.unsupported` | `windows_bootstrap` | `read_only` | - | - |
-| `accept_preflight_and_plan` | `windows.preflight` | `windows.plan_computed` | `windows_bootstrap` | `read_only` | `running_as_admin`, `supported_windows`, `uefi_boot`, `gpt_basic_disk`, `single_system_disk`, `windows_ntfs_supported`, `windows_recovery_preserved`, `power_safe`, `windows_servicing_idle`, `storage_health_acceptable`, `enough_shrinkable_space`, `esp_has_loader_space`, `boot_chain_trusted` | - |
+| `accept_preflight_and_plan` | `windows.preflight` | `windows.plan_computed` | `windows_bootstrap` | `read_only` | `running_as_admin`, `supported_windows`, `uefi_boot`, `gpt_basic_disk`, `single_system_disk`, `windows_ntfs_supported`, `windows_recovery_preserved`, `power_safe`, `windows_servicing_idle`, `storage_health_acceptable`, `enough_shrinkable_space`, `esp_has_loader_space`, `release_manifest_valid`, `boot_chain_trusted` | - |
 | `begin_payload_staging` | `windows.plan_computed` | `windows.payload_staging` | `windows_bootstrap` | `external_io` | - | `windows.payload_invalid` |
 | `accept_verified_payload` | `windows.payload_staging` | `windows.payload_verified` | `windows_bootstrap` | `read_only` | `release_manifest_valid`, `payload_hashes_valid`, `boot_chain_trusted` | `windows.payload_invalid` |
 | `mark_payload_invalid` | `windows.payload_staging` | `windows.payload_invalid` | `windows_bootstrap` | `read_only` | - | - |

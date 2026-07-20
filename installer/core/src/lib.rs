@@ -4,10 +4,12 @@ pub mod canonical;
 pub mod integrity;
 pub mod model;
 pub mod planner;
+pub mod release;
 pub mod windows_inventory;
 
 pub use canonical::{canonical_json, canonical_sha256};
 pub use integrity::*;
 pub use model::*;
 pub use planner::{PlanError, create_install_plan, partition_fingerprint};
+pub use release::*;
 pub use windows_inventory::*;

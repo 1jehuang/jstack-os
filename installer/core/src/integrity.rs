@@ -5,6 +5,7 @@ use crate::canonical::{CanonicalError, canonical_sha256};
 use crate::model::*;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlanDisplay {
     pub schema_version: u32,
     pub plan_hash: Hash256,
@@ -403,7 +404,8 @@ mod tests {
     #[test]
     fn confirmation_binds_exact_plan_and_display() {
         let (inventory, requirements) = fixture();
-        let plan = crate::create_install_plan(&inventory, &requirements).unwrap();
+        let plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
         let display = PlanDisplay::from(&plan);
         let confirmation = create_confirmation(&plan, &display, 42).unwrap();
         validate_confirmation(&plan, &display, &confirmation).unwrap();
@@ -435,7 +437,8 @@ mod tests {
     #[test]
     fn plan_body_tampering_is_detected() {
         let (inventory, requirements) = fixture();
-        let mut plan = crate::create_install_plan(&inventory, &requirements).unwrap();
+        let mut plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
         plan.body.created_partitions[1].size_bytes -= 1;
         assert!(matches!(
             validate_plan_hash(&plan),
@@ -446,7 +449,8 @@ mod tests {
     #[test]
     fn journal_chain_and_handoff_are_hash_bound() {
         let (inventory, requirements) = fixture();
-        let plan = crate::create_install_plan(&inventory, &requirements).unwrap();
+        let plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
         let mut journal = vec![];
         let esp_path = plan
             .body
@@ -531,7 +535,8 @@ mod tests {
     #[test]
     fn journal_rejects_invalid_phase_or_mismatched_transition() {
         let (inventory, requirements) = fixture();
-        let plan = crate::create_install_plan(&inventory, &requirements).unwrap();
+        let plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
         let committed = JournalRecord {
             schema_version: 1,
             sequence: 0,
@@ -566,7 +571,8 @@ mod tests {
     #[test]
     fn handoff_rejects_unowned_rollback_identity() {
         let (inventory, requirements) = fixture();
-        let plan = crate::create_install_plan(&inventory, &requirements).unwrap();
+        let plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
         let mut journal = vec![];
         append_transition(
             &mut journal,

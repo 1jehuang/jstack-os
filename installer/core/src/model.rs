@@ -68,6 +68,7 @@ impl<'de> Deserialize<'de> for Hash256 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Inventory {
     pub schema_version: u32,
     pub collected_at_unix_ms: u64,
@@ -77,6 +78,7 @@ pub struct Inventory {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HostInventory {
     pub windows_version: String,
     pub architecture: Architecture,
@@ -105,6 +107,7 @@ pub enum SecureBootState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlatformReadiness {
     pub elevated: bool,
     pub firmware_variables_writable: bool,
@@ -117,6 +120,7 @@ pub struct PlatformReadiness {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskInventory {
     pub disk_guid: Uuid,
     pub size_bytes: u64,
@@ -127,15 +131,20 @@ pub struct DiskInventory {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PartitionInventory {
     pub partition_guid: Uuid,
     pub type_guid: Uuid,
     pub offset_bytes: u64,
     pub size_bytes: u64,
     pub role: PartitionRole,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub filesystem: Option<Filesystem>,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub filesystem_free_bytes: Option<u64>,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub volume_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub name: Option<String>,
 }
 
@@ -161,6 +170,7 @@ pub enum Filesystem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WindowsVolume {
     pub partition_guid: Uuid,
     pub volume_id: String,
@@ -178,6 +188,7 @@ pub enum BitLockerState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReleaseRequirements {
     pub schema_version: u32,
     pub release_id: String,
@@ -192,6 +203,7 @@ pub struct ReleaseRequirements {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InstallPlan {
     pub schema_version: u32,
     pub plan_hash: Hash256,
@@ -199,6 +211,7 @@ pub struct InstallPlan {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InstallPlanBody {
     pub source_inventory_hash: Hash256,
     pub install_id: Uuid,
@@ -216,6 +229,7 @@ pub struct InstallPlanBody {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PartitionFingerprints {
     pub source: Hash256,
     pub windows_reserved: Hash256,
@@ -244,6 +258,7 @@ pub enum PartitionFingerprintPhase {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WindowsResizePlan {
     pub partition_guid: Uuid,
     pub volume_id: String,
@@ -253,6 +268,7 @@ pub struct WindowsResizePlan {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ByteInterval {
     pub start_bytes: u64,
     pub end_bytes: u64,
@@ -265,14 +281,18 @@ impl ByteInterval {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PartitionLayout {
     pub partition_guid: Uuid,
     pub type_guid: Uuid,
     pub offset_bytes: u64,
     pub size_bytes: u64,
     pub role: PartitionRole,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub filesystem: Option<Filesystem>,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub volume_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub name: Option<String>,
 }
 
@@ -292,6 +312,7 @@ impl From<&PartitionInventory> for PartitionLayout {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlannedPartition {
     pub partition_guid: Uuid,
     pub type_guid: Uuid,
@@ -318,6 +339,7 @@ impl From<&PlannedPartition> for PartitionLayout {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RollbackObject {
     pub kind: RollbackObjectKind,
     pub stable_id: String,
@@ -333,6 +355,7 @@ pub enum RollbackObjectKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Confirmation {
     pub schema_version: u32,
     pub plan_hash: Hash256,
@@ -342,14 +365,17 @@ pub struct Confirmation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct JournalRecord {
     pub schema_version: u32,
     pub sequence: u64,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub previous_record_hash: Option<Hash256>,
     pub actor: String,
     pub transition_id: String,
     pub record_type: JournalRecordType,
     pub precondition_hash: Hash256,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub postcondition_hash: Option<Hash256>,
     pub plan_hash: Hash256,
     pub created_objects: Vec<RollbackObject>,
@@ -364,6 +390,7 @@ pub enum JournalRecordType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Handoff {
     pub schema_version: u32,
     pub graph_model_id: String,
@@ -376,6 +403,14 @@ pub struct Handoff {
     pub partition_fingerprint: Hash256,
     pub intended_boot_target: String,
     pub nonce: String,
+}
+
+fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }
 
 #[cfg(test)]
@@ -396,5 +431,20 @@ mod tests {
             serde_json::from_str::<Hash256>(&valid).unwrap().as_str(),
             "ab".repeat(32)
         );
+    }
+
+    #[test]
+    fn persisted_contracts_reject_unknown_and_missing_nullable_fields() {
+        let inventory = include_str!("../fixtures/windows-11-basic-gpt.json");
+        let mut value: serde_json::Value = serde_json::from_str(inventory).unwrap();
+        value["unexpected"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<Inventory>(value).is_err());
+
+        let mut value: serde_json::Value = serde_json::from_str(inventory).unwrap();
+        value["system_disk"]["partitions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("name");
+        assert!(serde_json::from_value::<Inventory>(value).is_err());
     }
 }

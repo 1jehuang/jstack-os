@@ -1,29 +1,29 @@
 {
   "schema_version": 1,
-  "plan_hash": "a2659745bc0a7febaa03c333c8cd4a6aec4ea7ee8a09ecc23e89cdcae16b7908",
+  "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
   "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "windows_partition_guid": "33333333-3333-4333-8333-333333333333",
   "windows_original_size_bytes": 429496729600,
-  "windows_target_size_bytes": 360777252864,
+  "windows_target_size_bytes": 386547056640,
   "allocation_interval": {
-    "start_bytes": 361331949568,
+    "start_bytes": 387101753344,
     "end_bytes": 430051426304
   },
   "created_partitions": [
     {
-      "partition_guid": "b7134309-fefd-8fa3-bce5-ade21cd06342",
+      "partition_guid": "3e1c5205-748c-88de-bcc7-45338c6f0453",
       "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
-      "offset_bytes": 361331949568,
-      "size_bytes": 8589934592,
+      "offset_bytes": 387101753344,
+      "size_bytes": 4294967296,
       "role": "xbootldr",
       "filesystem": "fat32",
       "name": "JSTACK-BOOT"
     },
     {
-      "partition_guid": "94210098-9662-8cc1-8bf8-15abbd57ba26",
+      "partition_guid": "c837c2c3-f389-8214-aa06-b4394a328a33",
       "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
-      "offset_bytes": 369921884160,
-      "size_bytes": 57982058496,
+      "offset_bytes": 391396720640,
+      "size_bytes": 36507222016,
       "role": "jstack_root",
       "filesystem": "btrfs",
       "name": "JSTACK-ROOT"

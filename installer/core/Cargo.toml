@@ -18,7 +18,12 @@ path = "src/bin/jstack-plan.rs"
 name = "jstack-inventory"
 path = "src/bin/jstack-inventory.rs"
 
+[[bin]]
+name = "jstack-release-fixture"
+path = "src/bin/jstack-release-fixture.rs"
+
 [dependencies]
+ed25519-dalek = { version = "2.2.0", default-features = false, features = ["alloc", "zeroize"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.10.9"

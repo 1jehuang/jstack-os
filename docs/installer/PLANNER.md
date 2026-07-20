@@ -5,17 +5,22 @@
 The planner is a pure function:
 
 ```text
-Inventory × ReleaseRequirements → InstallPlan | PlanError
+Inventory × VerifiedReleaseManifest.verified_release_requirements() → InstallPlan | PlanError
 ```
 
 It has no platform APIs and cannot mutate storage. Windows and the RAM installer
 consume the same Rust library, contract schemas, canonical serializer, and hash
 rules. Platform adapters collect inventory and execute graph actions, but they
 cannot independently choose offsets, sizes, GUIDs, or rollback targets.
+`ReleaseRequirements` is available to a platform adapter only after the shared
+release verifier has validated the canonical Ed25519 quorum, compatibility
+bindings, time policy, and anti-rollback ratchet, and the exact acceptance state
+has been atomically persisted and read back.
 
 ## Planning algorithm
 
-1. Validate schema versions and all v1 readiness facts.
+1. Validate schema versions and all v1 readiness facts. Require planner inputs
+   derived from the already accepted signed manifest.
 2. Validate one basic GPT system disk, one FAT32 ESP, one NTFS Windows partition,
    stable GUID uniqueness, sector alignment, bounds, and non-overlap.
 3. Confirm BitLocker recovery material when protection is active and reject an
@@ -73,21 +78,26 @@ cannot independently choose offsets, sizes, GUIDs, or rollback targets.
 
 ## Current validation
 
-- 38 Rust tests, including 86 generated shrink-boundary cases and adversarial
+- Rust tests including 86 generated shrink-boundary cases, adversarial release
+  verification, and adversarial Windows snapshot normalization.
   Windows snapshot normalization.
 - Strict Clippy with warnings denied.
 - Linux tests and Windows MSVC compile checking.
-- Ten Draft 2020-12 schemas and ten validated contract documents.
+- Draft 2020-12 schemas and validated contract documents, including the canonical
+  signed release and durable acceptance state.
 - Deterministic generated plan, user display, confirmation, full journal chain,
   handoff, and observed-inventory fixtures.
 - Exact read-only PowerShell command allowlisting plus an end-to-end mocked
   Windows collection and Rust normalization run.
+- Deterministic Rust release fixtures plus independent Python Ed25519, framing,
+  acceptance, whole-file, and logical-chunk known-answer vectors.
 
 ## Not implemented yet
 
 - Windows storage mutation execution and readiness-evidence merging.
-- Signatures or MACs over manifests, journals, confirmations, and handoffs.
-- A production release manifest with artifact signatures and chunk hashes.
+- Signatures or MACs over journals, confirmations, and handoffs.
+- Production trust-root provisioning, atomic platform persistence, no-follow
+  staging, and release publishing infrastructure.
 - Linux execution adapters or real VM power-loss injection.
 - Upgrade, reinstall, multi-disk, or replace-disk planning.
 

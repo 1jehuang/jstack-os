@@ -4,7 +4,8 @@ This Rust crate is the side-effect-free implementation shared by the future
 Windows bootstrap and RAM installer. It parses versioned contracts, rejects
 unsupported inventories, computes the only permitted v1 dual-boot plan, and
 binds plans, confirmations, journal records, and handoffs with canonical hashes.
-It never opens or writes a disk.
+It also verifies canonical threshold-signed release metadata and exact streamed
+artifact bytes. It never opens or writes a disk.
 
 The shared library forbids unsafe Rust. The Windows-only inventory launcher denies
 unsafe code except for one bounded `GetSystemDirectoryW` call used to locate the
@@ -17,17 +18,25 @@ actual running OS system directory without trusting process environment or
 cd installer/core
 make check
 cargo run --offline --bin jstack-plan -- \
-  fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json
+  fixtures/windows-11-basic-gpt.json fixtures/signed-release-manifest.json
 cargo run --offline --bin jstack-plan -- --display \
-  fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json
+  fixtures/windows-11-basic-gpt.json fixtures/signed-release-manifest.json
 cargo run --offline --bin jstack-inventory -- \
   --from-snapshot fixtures/windows-storage-snapshot.json
+cargo run --offline --bin jstack-release-fixture -- manifest
 ```
+
+`jstack-plan` is a deterministic developer fixture command. Its two embedded
+public keys are test-only roots matching `jstack-release-fixture`; production
+bootstrap trust policy will be compiled by the release pipeline and cannot be
+selected from command-line or manifest data.
 
 `make check` runs Rust formatting, unit and generated-boundary tests, strict
 Clippy, an `x86_64-pc-windows-msvc` compile check, deterministic fixture
 regeneration, Draft 2020-12 schema validation, a static read-only PowerShell
 allowlist, and an end-to-end mocked Windows collection run.
+It also regenerates canonical signed release fixtures and checks independent
+Python Ed25519 and artifact known-answer vectors.
 
 ## Canonical JSON v1
 
@@ -62,6 +71,12 @@ cross-language number and escaping differences. SHA-256 is lowercase hex.
 - `jstack-inventory` observes Windows through an exact read-only command
   allowlist and normalizes the result in pure Rust. Secure Boot artifact trust
   and BitLocker recovery-material possession deliberately remain unconfirmed.
+- Release verification uses immutable local Ed25519 roots and threshold,
+  byte-identical canonical envelopes, state-model and protocol bindings,
+  expiry/skew/time-floor checks, a sequence-and-digest anti-rollback ratchet, and
+  exact logical-chunk plus whole-file hashes. Planner inputs and artifact access
+  remain opaque until the required acceptance state is persisted and read back.
 
 See `docs/installer/PLANNER.md` for the algorithm and
-`docs/installer/WINDOWS_INVENTORY.md` for the Windows observation boundary.
+`docs/installer/WINDOWS_INVENTORY.md` for the Windows observation boundary. See
+`docs/installer/RELEASE_TRUST.md` for the signed release contract.

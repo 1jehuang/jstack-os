@@ -432,34 +432,36 @@ fn validate_selected_disk(disk: &ObservedDisk) -> Result<(), InventoryAdapterErr
             return Err(invalid("partition is overlapping or outside its disk"));
         }
         previous_end = partition_end;
-        if let Some(volume) = &partition.volume
-            && (volume.size_bytes == 0
+        if let Some(volume) = &partition.volume {
+            if volume.size_bytes == 0
                 || volume.size_bytes > partition.size_bytes
-                || volume.size_remaining_bytes > volume.size_bytes)
-        {
-            return Err(invalid(
-                "volume geometry is inconsistent with its partition",
-            ));
-        }
-        if let Some(volume) = &partition.volume
-            && (volume.unique_id.trim().is_empty()
+                || volume.size_remaining_bytes > volume.size_bytes
+            {
+                return Err(invalid(
+                    "volume geometry is inconsistent with its partition",
+                ));
+            }
+            if volume.unique_id.trim().is_empty()
                 || volume.filesystem.trim().is_empty()
-                || volume.health_status.trim().is_empty())
-        {
-            return Err(invalid("volume identity or status is empty"));
+                || volume.health_status.trim().is_empty()
+            {
+                return Err(invalid("volume identity or status is empty"));
+            }
         }
-        if let Some(resize) = &partition.resize
-            && (resize.minimum_bytes == 0
+        if let Some(resize) = &partition.resize {
+            if resize.minimum_bytes == 0
                 || resize.maximum_bytes == 0
-                || resize.minimum_bytes > resize.maximum_bytes)
-        {
-            return Err(invalid("partition resize bounds are invalid"));
+                || resize.minimum_bytes > resize.maximum_bytes
+            {
+                return Err(invalid("partition resize bounds are invalid"));
+            }
         }
-        if let Some(bitlocker) = &partition.bitlocker
-            && (bitlocker.protection_status.trim().is_empty()
-                || bitlocker.volume_status.trim().is_empty())
-        {
-            return Err(invalid("BitLocker status is empty"));
+        if let Some(bitlocker) = &partition.bitlocker {
+            if bitlocker.protection_status.trim().is_empty()
+                || bitlocker.volume_status.trim().is_empty()
+            {
+                return Err(invalid("BitLocker status is empty"));
+            }
         }
     }
     Ok(())
@@ -538,7 +540,7 @@ fn invalid(message: impl Into<String>) -> InventoryAdapterError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ReleaseRequirements, create_install_plan};
+    use crate::ReleaseRequirements;
 
     fn snapshot() -> WindowsStorageSnapshot {
         serde_json::from_str(include_str!("../fixtures/windows-storage-snapshot.json"))
@@ -763,7 +765,7 @@ mod tests {
         let requirements: ReleaseRequirements =
             serde_json::from_str(include_str!("../fixtures/release-requirements.json"))
                 .expect("requirements fixture");
-        assert!(create_install_plan(&inventory, &requirements).is_err());
+        assert!(crate::planner::create_install_plan_unverified(&inventory, &requirements).is_err());
     }
 
     #[test]

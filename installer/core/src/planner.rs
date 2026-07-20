@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::canonical::{CanonicalError, canonical_sha256};
 use crate::model::*;
+use crate::release::VerifiedReleaseRequirements;
 
 #[derive(Serialize)]
 struct StableDiskFingerprint {
@@ -47,6 +48,13 @@ pub enum PlanError {
 }
 
 pub fn create_install_plan(
+    inventory: &Inventory,
+    verified_requirements: &VerifiedReleaseRequirements,
+) -> Result<InstallPlan, PlanError> {
+    create_install_plan_unverified(inventory, verified_requirements.as_requirements())
+}
+
+pub(crate) fn create_install_plan_unverified(
     inventory: &Inventory,
     requirements: &ReleaseRequirements,
 ) -> Result<InstallPlan, PlanError> {
@@ -724,8 +732,8 @@ mod tests {
     #[test]
     fn planner_is_deterministic_and_preserves_windows_resources() {
         let (inventory, requirements) = fixture();
-        let first = create_install_plan(&inventory, &requirements).unwrap();
-        let second = create_install_plan(&inventory, &requirements).unwrap();
+        let first = create_install_plan_unverified(&inventory, &requirements).unwrap();
+        let second = create_install_plan_unverified(&inventory, &requirements).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.body.created_partitions.len(), 2);
         assert!(first.body.windows_resize.released_bytes >= 64 * GIB);
@@ -773,7 +781,7 @@ mod tests {
     #[test]
     fn every_created_partition_is_aligned_and_inside_released_interval() {
         let (inventory, requirements) = fixture();
-        let plan = create_install_plan(&inventory, &requirements).unwrap();
+        let plan = create_install_plan_unverified(&inventory, &requirements).unwrap();
         for partition in &plan.body.created_partitions {
             assert_eq!(partition.offset_bytes % requirements.alignment_bytes, 0);
             assert_eq!(partition.size_bytes % requirements.alignment_bytes, 0);
@@ -792,7 +800,7 @@ mod tests {
         for extra_gib in 64..=149 {
             inventory.system_disk.windows.supported_min_size_bytes =
                 inventory.system_disk.windows.current_size_bytes - extra_gib * GIB;
-            let plan = create_install_plan(&inventory, &requirements).unwrap();
+            let plan = create_install_plan_unverified(&inventory, &requirements).unwrap();
             assert!(
                 plan.body.windows_resize.released_bytes
                     >= requirements.minimum_total_allocation_bytes
@@ -810,7 +818,7 @@ mod tests {
         inventory.system_disk.windows.supported_min_size_bytes =
             inventory.system_disk.windows.current_size_bytes - 63 * GIB;
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::InsufficientSpace { .. })
         ));
     }
@@ -820,7 +828,7 @@ mod tests {
         let (mut inventory, requirements) = fixture();
         inventory.system_disk.partitions[1].offset_bytes = MIB;
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::InvalidInventory("partitions overlap"))
         ));
     }
@@ -830,7 +838,7 @@ mod tests {
         let (mut inventory, requirements) = fixture();
         inventory.readiness.bitlocker_recovery_material_confirmed = false;
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::UnsupportedPlatform(
                 "BitLocker recovery material is not confirmed"
             ))
@@ -840,11 +848,11 @@ mod tests {
     #[test]
     fn transient_inventory_fields_do_not_change_partition_guids() {
         let (inventory, requirements) = fixture();
-        let first = create_install_plan(&inventory, &requirements).unwrap();
+        let first = create_install_plan_unverified(&inventory, &requirements).unwrap();
         let mut recollected = inventory.clone();
         recollected.collected_at_unix_ms += 60_000;
         recollected.system_disk.partitions[2].name = Some("Renamed Windows".into());
-        let second = create_install_plan(&recollected, &requirements).unwrap();
+        let second = create_install_plan_unverified(&recollected, &requirements).unwrap();
         assert_eq!(
             first.body.partition_fingerprints.source,
             second.body.partition_fingerprints.source
@@ -863,7 +871,7 @@ mod tests {
     #[test]
     fn every_phase_fingerprint_is_reconstructable_from_observed_gpt() {
         let (inventory, requirements) = fixture();
-        let plan = create_install_plan(&inventory, &requirements).unwrap();
+        let plan = create_install_plan_unverified(&inventory, &requirements).unwrap();
 
         let observed = |layout: &[PartitionLayout]| {
             let mut inventory = inventory.clone();
@@ -921,7 +929,7 @@ mod tests {
         inventory.system_disk.partitions[0].type_guid =
             Uuid::parse_str(WINDOWS_BASIC_DATA_TYPE_GUID).unwrap();
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::InvalidInventory(
                 "partition role does not match its GPT type GUID"
             ))
@@ -933,7 +941,7 @@ mod tests {
         let (mut inventory, requirements) = fixture();
         inventory.system_disk.partitions[1].role = PartitionRole::Other;
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::InvalidInventory("exactly one MSR is required"))
         ));
     }
@@ -944,7 +952,7 @@ mod tests {
         inventory.system_disk.partitions[0].filesystem_free_bytes =
             Some(inventory.system_disk.partitions[0].size_bytes + 1);
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::InvalidInventory(
                 "filesystem free space exceeds partition size"
             ))
@@ -957,7 +965,7 @@ mod tests {
         inventory.system_disk.partitions[0].filesystem_free_bytes =
             Some(requirements.esp_loader_required_bytes - 1);
         assert!(matches!(
-            create_install_plan(&inventory, &requirements),
+            create_install_plan_unverified(&inventory, &requirements),
             Err(PlanError::UnsupportedPlatform(
                 "ESP lacks required FAT32 loader capacity"
             ))

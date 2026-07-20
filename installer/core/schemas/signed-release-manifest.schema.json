@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/signed-release-manifest.schema.json",
+  "title": "Canonical threshold-signed JStack release manifest",
+  "type": "object",
+  "required": [
+    "signed",
+    "signatures"
+  ],
+  "properties": {
+    "signed": {
+      "$ref": "#/$defs/body"
+    },
+    "signatures": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/signature"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9._-]+$"
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "product",
+        "release_id",
+        "release_version",
+        "release_sequence",
+        "channel",
+        "architecture",
+        "issued_at_unix_secs",
+        "expires_at_unix_secs",
+        "state_model_id",
+        "state_model_sha256",
+        "installer_protocol_min",
+        "installer_protocol_max",
+        "planner",
+        "artifacts"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "product": {
+          "const": "jstack-os"
+        },
+        "release_id": {
+          "$ref": "#/$defs/token"
+        },
+        "release_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9._-]+$"
+        },
+        "release_sequence": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "channel": {
+          "enum": [
+            "stable",
+            "beta"
+          ]
+        },
+        "architecture": {
+          "const": "x86_64"
+        },
+        "issued_at_unix_secs": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "expires_at_unix_secs": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "state_model_id": {
+          "$ref": "#/$defs/token"
+        },
+        "state_model_sha256": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "installer_protocol_min": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "installer_protocol_max": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "planner": {
+          "$ref": "#/$defs/planner"
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "properties": {
+                    "role": {
+                      "const": "esp_loader"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "properties": {
+                    "role": {
+                      "const": "installer_uki"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "properties": {
+                    "role": {
+                      "const": "offline_system_image"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "properties": {
+                    "role": {
+                      "const": "recovery_uki"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "items": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "planner": {
+      "type": "object",
+      "required": [
+        "alignment_bytes",
+        "xbootldr_size_bytes",
+        "minimum_root_size_bytes",
+        "safety_margin_bytes",
+        "minimum_total_allocation_bytes",
+        "esp_loader_required_bytes"
+      ],
+      "properties": {
+        "alignment_bytes": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "xbootldr_size_bytes": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "minimum_root_size_bytes": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "safety_margin_bytes": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "minimum_total_allocation_bytes": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "esp_loader_required_bytes": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "role",
+        "size_bytes",
+        "sha256",
+        "chunk_size_bytes",
+        "chunk_sha256"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "esp_loader",
+            "installer_uki",
+            "offline_system_image",
+            "recovery_uki"
+          ]
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "chunk_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "chunk_sha256": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hash256"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "key_id",
+        "signature_hex"
+      ],
+      "properties": {
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "signature_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

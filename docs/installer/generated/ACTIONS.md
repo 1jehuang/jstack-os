@@ -7,8 +7,9 @@ Generated from `installer/model/installer-state-graph.json`. Do not edit manuall
 | `collect_inventory` | `windows` | `read_only` | `idempotent` | `retry` | Collect hardware, firmware, power, BitLocker, disk, partition, and boot inventory. |
 | `compute_partition_plan` | `shared` | `read_only` | `idempotent` | `retry` | Compute an immutable plan using supported shrink bounds and stable GUIDs. |
 | `download_release_manifest` | `windows` | `external_io` | `content_addressed` | `retry` | Download the signed release and channel manifest. |
+| `verify_release_manifest` | `shared` | `read_only` | `idempotent` | `retry` | Verify canonical metadata, immutable trust policy, signature quorum, compatibility bindings, and the durable anti-rollback acceptance ratchet. |
 | `download_payload` | `windows` | `external_io` | `content_addressed` | `retry` | Download content-addressed installer, UKI, image, and recovery chunks. |
-| `verify_payload` | `shared` | `read_only` | `idempotent` | `retry` | Verify signatures, hashes, sizes, graph compatibility, and expiry. |
+| `verify_payload` | `shared` | `read_only` | `idempotent` | `retry` | Verify exact artifact sizes, logical chunk hashes, whole hashes, and EOF against the accepted manifest. |
 | `present_exact_plan` | `windows` | `read_only` | `idempotent` | `retry` | Display exact disk identity and before/after layout. |
 | `record_plan_confirmation` | `windows` | `user_authorization` | `idempotent` | `retry` | Record explicit confirmation bound to the exact plan hash. |
 | `register_windows_finalizer` | `windows` | `filesystem_mutation` | `idempotent` | `compensate` | Register the signed reboot finalizer and recovery entry. |

@@ -38,6 +38,8 @@ def main() -> int:
         ("inventory.schema.json", ROOT / "fixtures" / "windows-11-basic-gpt.json"),
         ("inventory.schema.json", ROOT / "generated" / "example-observed-inventory.json"),
         ("release-requirements.schema.json", ROOT / "fixtures" / "release-requirements.json"),
+        ("signed-release-manifest.schema.json", ROOT / "fixtures" / "signed-release-manifest.json"),
+        ("release-acceptance-state.schema.json", ROOT / "fixtures" / "release-acceptance-state.json"),
         ("install-plan.schema.json", ROOT / "generated" / "example-plan.json"),
         ("plan-display.schema.json", ROOT / "generated" / "example-plan-display.json"),
         ("confirmation.schema.json", ROOT / "generated" / "example-confirmation.json"),

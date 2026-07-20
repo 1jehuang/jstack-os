@@ -33,8 +33,11 @@ flowchart LR
   allowlisted read-only adapter described in
   [`WINDOWS_INVENTORY.md`](WINDOWS_INVENTORY.md).
 - Rejects unsupported layouts rather than inferring destructive intent.
+- Downloads, verifies, and durably accepts the canonical signed release manifest
+  before any signed sizing value is supplied to the planner.
 - Uses `Get-PartitionSupportedSize` and `Resize-Partition` for NTFS shrink.
-- Downloads and verifies a signed release manifest and every content hash.
+- Downloads and verifies every content-addressed artifact against that accepted
+  manifest.
 - Creates the planned XBOOTLDR partition in newly freed space.
 - Copies the offline image, UKI, transition journal, and signed manifest.
 - Places only install-instance-namespaced JStack loader files on the existing
@@ -59,9 +62,15 @@ The offline system image is content-addressed and split into FAT32-compatible
 chunks when necessary. The manifest binds chunk hashes, graph version, release
 version, disk plan, and supported installer version.
 
+The exact signature, anti-rollback, expiry, resource-limit, and streamed artifact
+rules are defined in [`RELEASE_TRUST.md`](RELEASE_TRUST.md). Manifest roles never
+select privileged destination paths.
+
 ### RAM installer
 
 - Verifies the handoff and signed journal before using any disk identifier.
+- Independently verifies the canonical signed release with the same compiled
+  roots and rehashes every artifact at its privileged point of use.
 - Re-inventories the disk and requires the reconstructable Windows-handoff GPT
   fingerprint to match before creating root.
 - Creates only partitions inside the confirmed unallocated interval.

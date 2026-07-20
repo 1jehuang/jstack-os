@@ -1,9 +1,9 @@
 PYTHON ?= python3
 CARGO ?= cargo
 
-.PHONY: check fmt test clippy windows-check plan inventory examples schemas collector
+.PHONY: check fmt test clippy windows-check plan inventory release examples schemas collector
 
-check: fmt test clippy windows-check plan inventory examples schemas collector
+check: fmt test clippy windows-check plan inventory release examples schemas collector
 
 fmt:
 	$(CARGO) fmt --all -- --check
@@ -20,11 +20,11 @@ windows-check:
 plan:
 	@temporary=$$(mktemp); trap 'rm -f "$$temporary"' EXIT; \
 	$(CARGO) run --offline --quiet --bin jstack-plan -- \
-		fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json \
+		fixtures/windows-11-basic-gpt.json fixtures/signed-release-manifest.json \
 		> "$$temporary"; \
 	diff -u generated/example-plan.json "$$temporary"; \
 	$(CARGO) run --offline --quiet --bin jstack-plan -- --display \
-		fixtures/windows-11-basic-gpt.json fixtures/release-requirements.json \
+		fixtures/windows-11-basic-gpt.json fixtures/signed-release-manifest.json \
 		> "$$temporary"; \
 		diff -u generated/example-plan-display.json "$$temporary"
 
@@ -32,7 +32,15 @@ inventory:
 	@temporary=$$(mktemp); trap 'rm -f "$$temporary"' EXIT; \
 	$(CARGO) run --offline --quiet --bin jstack-inventory -- \
 		--from-snapshot fixtures/windows-storage-snapshot.json > "$$temporary"; \
-	diff -u generated/example-observed-inventory.json "$$temporary"
+		diff -u generated/example-observed-inventory.json "$$temporary"
+
+release:
+	@temporary=$$(mktemp); trap 'rm -f "$$temporary"' EXIT; \
+	$(CARGO) run --offline --quiet --bin jstack-release-fixture -- manifest > "$$temporary"; \
+	cmp fixtures/signed-release-manifest.json "$$temporary"; \
+	$(CARGO) run --offline --quiet --bin jstack-release-fixture -- acceptance > "$$temporary"; \
+	cmp fixtures/release-acceptance-state.json "$$temporary"; \
+	$(PYTHON) tools/validate_release_vectors.py
 
 examples:
 	@temporary=$$(mktemp -d); trap 'rm -rf "$$temporary"' EXIT; \
