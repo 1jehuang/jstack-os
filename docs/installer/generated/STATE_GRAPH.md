@@ -53,6 +53,9 @@ stateDiagram-v2
     }
     state "windows" as phase_windows {
         state "windows.bootstrap_started" as windows_bootstrap_started
+        state "windows.staging_reconciled" as windows_staging_reconciled
+        state "windows.release_acquisition_failed" as windows_release_acquisition_failed
+        state "windows.release_manifest_verified" as windows_release_manifest_verified
         state "windows.preflight" as windows_preflight
         state "windows.bitlocker_finalizer_registered" as windows_bitlocker_finalizer_registered
         state "windows.xbootldr_partition_created" as windows_xbootldr_partition_created
@@ -72,7 +75,16 @@ stateDiagram-v2
         state "windows.bootnext_armed" as windows_bootnext_armed
         state "windows.installer_rearm" as windows_installer_rearm
     }
-    windows_bootstrap_started --> windows_preflight: begin_preflight
+    windows_bootstrap_started --> windows_staging_reconciled: begin_preflight
+    windows_bootstrap_started --> terminal_manual_recovery: failure(begin_preflight)
+    windows_staging_reconciled --> windows_release_manifest_verified: acquire_release_manifest
+    windows_staging_reconciled --> windows_release_acquisition_failed: failure(acquire_release_manifest)
+    windows_staging_reconciled --> windows_release_acquisition_failed: mark_release_acquisition_failed
+    windows_release_acquisition_failed --> windows_staging_reconciled: retry_release_acquisition
+    windows_release_acquisition_failed --> terminal_cancelled: cancel_release_acquisition
+    windows_release_manifest_verified --> windows_preflight: persist_release_acceptance
+    windows_release_manifest_verified --> terminal_manual_recovery: failure(persist_release_acceptance)
+    windows_release_manifest_verified --> terminal_manual_recovery: abort_corrupt_release_acceptance
     windows_preflight --> terminal_unsupported: reject_unsupported_platform
     windows_preflight --> windows_plan_computed: accept_preflight_and_plan
     windows_plan_computed --> windows_payload_staging: begin_payload_staging

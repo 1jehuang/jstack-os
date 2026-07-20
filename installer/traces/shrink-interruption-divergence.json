@@ -3,6 +3,8 @@
   "description": "An interrupted shrink whose observed disk matches neither precondition nor postcondition stops all automatic writes.",
   "steps": [
     "begin_preflight",
+    "acquire_release_manifest",
+    "persist_release_acceptance",
     "accept_preflight_and_plan",
     "begin_payload_staging",
     "accept_verified_payload",

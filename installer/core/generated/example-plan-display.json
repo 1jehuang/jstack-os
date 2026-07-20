@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+  "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
   "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "windows_partition_guid": "33333333-3333-4333-8333-333333333333",
   "windows_original_size_bytes": 429496729600,
@@ -11,7 +11,7 @@
   },
   "created_partitions": [
     {
-      "partition_guid": "3e1c5205-748c-88de-bcc7-45338c6f0453",
+      "partition_guid": "5230451e-a005-87e4-a039-20be4b0be603",
       "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
       "offset_bytes": 387101753344,
       "size_bytes": 4294967296,
@@ -20,7 +20,7 @@
       "name": "JSTACK-BOOT"
     },
     {
-      "partition_guid": "c837c2c3-f389-8214-aa06-b4394a328a33",
+      "partition_guid": "571501cf-0a67-8889-8994-d49a73e5c362",
       "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
       "offset_bytes": 391396720640,
       "size_bytes": 36507222016,

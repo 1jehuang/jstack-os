@@ -8,19 +8,19 @@
     "record_type": "action_intent",
     "precondition_hash": "1111111111111111111111111111111111111111111111111111111111111111",
     "postcondition_hash": null,
-    "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+    "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
     "created_objects": []
   },
   {
     "schema_version": 1,
     "sequence": 1,
-    "previous_record_hash": "b6c99bd645a7ec792c4ee47cf9380261cf2d8c6e145c98e868c8c30c88d6292c",
+    "previous_record_hash": "6f2d87649ebc8b30c9f0e776113de011548a64292967cf27506c079d616aafde",
     "actor": "windows_bootstrap",
     "transition_id": "create_installer_entry",
     "record_type": "action_committed",
     "precondition_hash": "1111111111111111111111111111111111111111111111111111111111111111",
     "postcondition_hash": "2222222222222222222222222222222222222222222222222222222222222222",
-    "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+    "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
     "created_objects": [
       {
         "kind": "boot_entry",
@@ -31,49 +31,49 @@
   {
     "schema_version": 1,
     "sequence": 2,
-    "previous_record_hash": "86cec483ad9df7cfc39814b2052866ed1550039ebd4c16c067ccca356536a710",
+    "previous_record_hash": "0279717f6f9718999e7c176d182f28f7e961fc569a7570b59e7fbef47e0bb0a3",
     "actor": "windows_bootstrap",
     "transition_id": "create_installer_entry",
     "record_type": "state_advanced",
     "precondition_hash": "2222222222222222222222222222222222222222222222222222222222222222",
     "postcondition_hash": "44bfe9d9b95d5b3f53fa40dfe47a9011f59744a61072e4a7e42cb3c6b17ff397",
-    "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+    "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
     "created_objects": []
   },
   {
     "schema_version": 1,
     "sequence": 3,
-    "previous_record_hash": "5c09e0c0854f039a8f18b5390ebbe7b647f7738b61bbcc6217426fd640231aaf",
+    "previous_record_hash": "e1714b840828caac6c1605b0e773217ede9214f16039df755fb89ba95325de71",
     "actor": "windows_bootstrap",
     "transition_id": "reboot_to_installer",
     "record_type": "action_intent",
     "precondition_hash": "3333333333333333333333333333333333333333333333333333333333333333",
     "postcondition_hash": null,
-    "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+    "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
     "created_objects": []
   },
   {
     "schema_version": 1,
     "sequence": 4,
-    "previous_record_hash": "c143675711948ff6d5693346a21e9ce256d653e5714e5bb6d8f52408a37130e6",
+    "previous_record_hash": "dc6da2c713508daa91236cd050c0577a1b1baec6b97eec5fcafaf30e849516ec",
     "actor": "windows_bootstrap",
     "transition_id": "reboot_to_installer",
     "record_type": "action_committed",
     "precondition_hash": "3333333333333333333333333333333333333333333333333333333333333333",
     "postcondition_hash": "4444444444444444444444444444444444444444444444444444444444444444",
-    "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+    "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
     "created_objects": []
   },
   {
     "schema_version": 1,
     "sequence": 5,
-    "previous_record_hash": "034c601e8020c4cf3974c7cde3e8744ddfcf9fb8ecb9007f3c98ff4117ab7211",
+    "previous_record_hash": "2b1707d016c1b3d73a97265bf17a3ce9904d6800af985c498ecece11a700f46a",
     "actor": "windows_bootstrap",
     "transition_id": "reboot_to_installer",
     "record_type": "state_advanced",
     "precondition_hash": "4444444444444444444444444444444444444444444444444444444444444444",
     "postcondition_hash": "fb6d30347943c5a8840ec21cd8dc3b30951a091259d721b79e6037c23af8989e",
-    "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+    "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
     "created_objects": []
   }
 ]

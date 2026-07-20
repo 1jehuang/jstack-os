@@ -1,9 +1,9 @@
 PYTHON ?= python3
 MODEL := model/installer-state-graph.json
 
-.PHONY: check validate test docs core
+.PHONY: check validate test docs core staging
 
-check: validate test docs core
+check: validate test docs core staging
 
 validate:
 	$(PYTHON) tools/validate_state_graph.py $(MODEL)
@@ -17,3 +17,6 @@ docs:
 
 core:
 	$(MAKE) -C core check
+
+staging:
+	$(MAKE) -C staging check

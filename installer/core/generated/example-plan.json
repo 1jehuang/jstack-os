@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+  "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
   "body": {
     "source_inventory_hash": "1d11f924827b63e2616e99b0f76b395f5cb53b117eaccf7c73854e7cbcf11c2d",
-    "install_id": "49d2c7ac-3096-8a14-a312-10365aa03bce",
+    "install_id": "06d5c773-b7f1-8191-8c4c-8954eb078f5d",
     "partition_fingerprints": {
       "source": "328cf5a64004ebe69a588b7e15c045e2528c61d8fbae9874a8edb48acd883475",
       "windows_reserved": "4001d89c7500c2cb76cbe261b628319b969c58cf9e9e0407331a724b4dbfc868",
-      "windows_handoff": "c078ad6a2e3d59c0a4a38f94713ba2e3ec70516883f912cfc7af47ff0e1026ba",
-      "installed": "1818e3d47e61344de5143a12875d70ababf62e92d1f0879f8f0a52fe49f2df04"
+      "windows_handoff": "a660597812edb26c538267b2f731493201bbeecbb7256e1b1a23782285d25e26",
+      "installed": "d982e9918f434bf0afa2d6871fba712ad24a31b655e16ccf90d443ff92ff13f8"
     },
-    "release_manifest_hash": "17d3a22dcf9973f9cb35a628d598deeee76449377e5718c976a5362f7f832fa1",
+    "release_manifest_hash": "f14d85ef135acefd5c3e1c8f8bcae4cac17780cdfd962c93b72311e79690b55f",
     "state_model_id": "jstack-installer-v1",
     "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "alignment_bytes": 1048576,
@@ -99,7 +99,7 @@
         "name": "Windows"
       },
       {
-        "partition_guid": "3e1c5205-748c-88de-bcc7-45338c6f0453",
+        "partition_guid": "5230451e-a005-87e4-a039-20be4b0be603",
         "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
         "offset_bytes": 387101753344,
         "size_bytes": 4294967296,
@@ -109,7 +109,7 @@
         "name": "JSTACK-BOOT"
       },
       {
-        "partition_guid": "c837c2c3-f389-8214-aa06-b4394a328a33",
+        "partition_guid": "571501cf-0a67-8889-8994-d49a73e5c362",
         "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
         "offset_bytes": 391396720640,
         "size_bytes": 36507222016,
@@ -131,7 +131,7 @@
     ],
     "created_partitions": [
       {
-        "partition_guid": "3e1c5205-748c-88de-bcc7-45338c6f0453",
+        "partition_guid": "5230451e-a005-87e4-a039-20be4b0be603",
         "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
         "offset_bytes": 387101753344,
         "size_bytes": 4294967296,
@@ -140,7 +140,7 @@
         "name": "JSTACK-BOOT"
       },
       {
-        "partition_guid": "c837c2c3-f389-8214-aa06-b4394a328a33",
+        "partition_guid": "571501cf-0a67-8889-8994-d49a73e5c362",
         "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
         "offset_bytes": 391396720640,
         "size_bytes": 36507222016,
@@ -152,19 +152,19 @@
     "rollback_objects": [
       {
         "kind": "partition",
-        "stable_id": "3e1c5205-748c-88de-bcc7-45338c6f0453"
+        "stable_id": "5230451e-a005-87e4-a039-20be4b0be603"
       },
       {
         "kind": "partition",
-        "stable_id": "c837c2c3-f389-8214-aa06-b4394a328a33"
+        "stable_id": "571501cf-0a67-8889-8994-d49a73e5c362"
       },
       {
         "kind": "esp_path",
-        "stable_id": "esp:11111111-1111-4111-8111-111111111111;path:\\EFI\\JStack\\Installations\\49d2c7ac-3096-8a14-a312-10365aa03bce"
+        "stable_id": "esp:11111111-1111-4111-8111-111111111111;path:\\EFI\\JStack\\Installations\\06d5c773-b7f1-8191-8c4c-8954eb078f5d"
       },
       {
         "kind": "windows_finalizer",
-        "stable_id": "task:\\JStack\\InstallerFinalizer-49d2c7ac-3096-8a14-a312-10365aa03bce"
+        "stable_id": "task:\\JStack\\InstallerFinalizer-06d5c773-b7f1-8191-8c4c-8954eb078f5d"
       }
     ]
   }

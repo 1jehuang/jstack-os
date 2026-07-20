@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Read;
+use std::io::{Read, Write};
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -148,12 +148,17 @@ pub enum ReleaseVerificationMode {
 pub struct PendingReleaseManifest {
     body: ReleaseManifestBody,
     manifest_digest: Hash256,
+    expected_previous_acceptance: Option<ReleaseAcceptanceState>,
     required_acceptance: ReleaseAcceptanceState,
 }
 
 impl PendingReleaseManifest {
     pub fn required_acceptance(&self) -> &ReleaseAcceptanceState {
         &self.required_acceptance
+    }
+
+    pub fn expected_previous_acceptance(&self) -> Option<&ReleaseAcceptanceState> {
+        self.expected_previous_acceptance.as_ref()
     }
 
     pub fn accept_after_persist(
@@ -206,24 +211,45 @@ impl VerifiedReleaseManifest {
         VerifiedReleaseRequirements(self.release_requirements())
     }
 
+    pub fn artifact_descriptor(
+        &self,
+        role: ArtifactRole,
+    ) -> Result<&ArtifactDescriptor, ReleaseError> {
+        self.body
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.role == role)
+            .ok_or(ReleaseError::MissingArtifactRole(role))
+    }
+
     pub fn verify_artifact<R: Read>(
         &self,
         role: ArtifactRole,
         reader: &mut R,
     ) -> Result<VerifiedArtifact, ReleaseError> {
-        let descriptor = self
-            .body
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.role == role)
-            .ok_or(ReleaseError::MissingArtifactRole(role))?;
-        verify_artifact_bytes(descriptor, reader)?;
-        Ok(VerifiedArtifact {
-            role,
+        let descriptor = self.artifact_descriptor(role)?;
+        verify_artifact_stream(descriptor, reader, &mut std::io::sink())?;
+        Ok(self.verified_artifact(descriptor))
+    }
+
+    pub fn copy_verified_artifact<R: Read, W: Write>(
+        &self,
+        role: ArtifactRole,
+        reader: &mut R,
+        destination: &mut W,
+    ) -> Result<VerifiedArtifact, ReleaseError> {
+        let descriptor = self.artifact_descriptor(role)?;
+        verify_artifact_stream(descriptor, reader, destination)?;
+        Ok(self.verified_artifact(descriptor))
+    }
+
+    fn verified_artifact(&self, descriptor: &ArtifactDescriptor) -> VerifiedArtifact {
+        VerifiedArtifact {
+            role: descriptor.role,
             size_bytes: descriptor.size_bytes,
             sha256: descriptor.sha256.clone(),
             manifest_digest: self.manifest_digest.clone(),
-        })
+        }
     }
 }
 
@@ -236,7 +262,7 @@ impl VerifiedReleaseRequirements {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct VerifiedArtifact {
     role: ArtifactRole,
     size_bytes: u64,
@@ -344,6 +370,7 @@ pub fn verify_release_manifest(
     Ok(PendingReleaseManifest {
         body: envelope.signed,
         manifest_digest,
+        expected_previous_acceptance: policy.previous_acceptance.clone(),
         required_acceptance,
     })
 }
@@ -709,9 +736,10 @@ fn validate_ratchet(
     })
 }
 
-fn verify_artifact_bytes<R: Read>(
+fn verify_artifact_stream<R: Read, W: Write>(
     descriptor: &ArtifactDescriptor,
     reader: &mut R,
+    destination: &mut W,
 ) -> Result<(), ReleaseError> {
     let mut whole = Sha256::new();
     let mut remaining_total = descriptor.size_bytes;
@@ -732,6 +760,12 @@ fn verify_artifact_bytes<R: Read>(
             if read == 0 {
                 return Err(ReleaseError::ArtifactTruncated(descriptor.role));
             }
+            destination
+                .write_all(&buffer[..read])
+                .map_err(|error| ReleaseError::ArtifactIo {
+                    role: descriptor.role,
+                    message: error.to_string(),
+                })?;
             chunk.update(&buffer[..read]);
             whole.update(&buffer[..read]);
             remaining_chunk -= read as u64;

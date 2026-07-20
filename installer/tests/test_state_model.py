@@ -18,6 +18,7 @@ from state_model import (  # noqa: E402
     simulate_trace,
     states_reaching_any,
     transition_is_mutating,
+    transition_is_system_mutating,
     validate_against_schema,
     validate_model,
 )
@@ -100,14 +101,22 @@ class StateModelTests(unittest.TestCase):
 
     def test_every_mutation_failure_can_reach_safe_terminal(self) -> None:
         actions = index_by_id(self.model["actions"])
-        safe_reachable = states_reaching_any(
+        system_safe_reachable = states_reaching_any(
             self.model, {"terminal.rolled_back", "terminal.manual_recovery"}
+        )
+        staging_safe_reachable = states_reaching_any(
+            self.model, {"terminal.cancelled", "terminal.manual_recovery"}
         )
         for transition in self.model["transitions"]:
             if not transition_is_mutating(transition, actions):
                 continue
             with self.subTest(transition=transition["id"]):
-                self.assertIn(transition["failure_to"], safe_reachable)
+                reachable = (
+                    system_safe_reachable
+                    if transition_is_system_mutating(transition, actions)
+                    else staging_safe_reachable
+                )
+                self.assertIn(transition["failure_to"], reachable)
 
     def test_validator_rejects_unauthorized_disk_mutation(self) -> None:
         unsafe = clone_model(self.model)
@@ -119,6 +128,47 @@ class StateModelTests(unittest.TestCase):
         transition["authorization"] = []
         errors = validate_model(unsafe)
         self.assertTrue(any("lacks plan or rollback authorization" in error for error in errors))
+
+    def test_validator_rejects_unauthorized_staging_mutation(self) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "persist_release_acceptance"
+        )
+        transition["authorization"] = []
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "staging transition persist_release_acceptance lacks release_policy authorization",
+            errors,
+        )
+
+    def test_validator_rejects_staging_failure_that_can_reach_success(self) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "begin_payload_staging"
+        )
+        transition["failure_to"] = "windows.payload_verified"
+        errors = validate_model(unsafe)
+        self.assertTrue(
+            any("is not an explicit staging recovery checkpoint" in error for error in errors)
+        )
+
+    def test_release_acquisition_failure_is_retryable_without_manual_recovery(self) -> None:
+        transitions = index_by_id(self.model["transitions"])
+        begin = transitions["begin_preflight"]
+        acquire = transitions["acquire_release_manifest"]
+        retry = transitions["retry_release_acquisition"]
+        cancel = transitions["cancel_release_acquisition"]
+
+        self.assertEqual(begin["actions"], ["reconcile_staging_store"])
+        self.assertEqual(begin["to"], "windows.staging_reconciled")
+        self.assertEqual(acquire["failure_to"], "windows.release_acquisition_failed")
+        self.assertNotIn("reconcile_staging_store", acquire["actions"])
+        self.assertEqual(retry["to"], "windows.staging_reconciled")
+        self.assertEqual(cancel["to"], "terminal.cancelled")
 
     def test_validator_rejects_missing_pre_action_intent(self) -> None:
         unsafe = clone_model(self.model)
@@ -177,6 +227,24 @@ class StateModelTests(unittest.TestCase):
         errors = validate_model(unsafe)
         self.assertIn(
             "arm_installer_reboot_retry lacks installer_rearm_not_attempted guard",
+            errors,
+        )
+
+    def test_validator_rejects_stale_hash_guard_instead_of_bootnext_rehash(self) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "arm_installer_bootnext"
+        )
+        transition["actions"].remove("rehash_installer_boot_payload")
+        transition["guards"].append("payload_hashes_valid")
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "arm_installer_bootnext lacks immediate installer payload rehash", errors
+        )
+        self.assertIn(
+            "arm_installer_bootnext relies on stale payload_hashes_valid evidence",
             errors,
         )
 

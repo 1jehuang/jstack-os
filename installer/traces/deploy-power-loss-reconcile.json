@@ -3,6 +3,8 @@
   "description": "Power loss after deployment postcondition advances safely, then rollback remains available.",
   "steps": [
     "begin_preflight",
+    "acquire_release_manifest",
+    "persist_release_acceptance",
     "accept_preflight_and_plan",
     "begin_payload_staging",
     "accept_verified_payload",

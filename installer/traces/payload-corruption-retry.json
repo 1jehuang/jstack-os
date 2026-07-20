@@ -3,6 +3,8 @@
   "description": "Corrupt payload retries without mutation and then proceeds.",
   "steps": [
     "begin_preflight",
+    "acquire_release_manifest",
+    "persist_release_acceptance",
     "accept_preflight_and_plan",
     "begin_payload_staging",
     "mark_payload_invalid",

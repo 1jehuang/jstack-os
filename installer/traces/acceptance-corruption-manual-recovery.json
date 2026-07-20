@@ -1,0 +1,10 @@
+{
+  "id": "acceptance_corruption_manual_recovery",
+  "description": "A committed or malformed anti-rollback floor fails closed without deletion or downgrade.",
+  "steps": [
+    "begin_preflight",
+    "acquire_release_manifest",
+    "abort_corrupt_release_acceptance"
+  ],
+  "expected_terminal": "terminal.manual_recovery"
+}

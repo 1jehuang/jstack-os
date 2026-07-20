@@ -149,13 +149,23 @@
       "platform": "windows"
     },
     {
+      "id": "release_candidate_valid",
+      "description": "Canonical metadata, immutable local policy, signature quorum, compatibility bindings, and release lifetime validate before durable acceptance.",
+      "platform": "shared"
+    },
+    {
       "id": "release_manifest_valid",
       "description": "Canonical Ed25519 quorum, immutable local policy, channel, architecture, graph digest, protocol, lifetime, and durable anti-rollback acceptance validate.",
       "platform": "shared"
     },
     {
+      "id": "staging_evidence_current",
+      "description": "Durable evidence binds the accepted manifest, acceptance-state hash, and exact promoted artifact set.",
+      "platform": "shared"
+    },
+    {
       "id": "payload_hashes_valid",
-      "description": "Every staged payload chunk matches the signed manifest.",
+      "description": "The exact byte stream currently being consumed matches every signed chunk hash, whole hash, size, and EOF.",
       "platform": "shared"
     },
     {
@@ -210,7 +220,7 @@
     },
     {
       "id": "handoff_signature_valid",
-      "description": "The cross-OS handoff and journal sequence chain validate.",
+      "description": "The cross-OS handoff, journal sequence, accepted manifest, and durable staging-evidence hash validate.",
       "platform": "linux"
     },
     {
@@ -272,6 +282,22 @@
       "recovery": "retry"
     },
     {
+      "id": "reconcile_staging_store",
+      "description": "Lock the trusted staging root, remove untrusted cache names, and retain syntactically eligible resumable files for mandatory chunk rehash before use.",
+      "platform": "shared",
+      "risk": "staging_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile"
+    },
+    {
+      "id": "persist_release_acceptance",
+      "description": "Compare-and-swap append the anti-rollback acceptance record, flush its commit marker, reopen it, and require exact canonical readback.",
+      "platform": "shared",
+      "risk": "staging_mutation",
+      "idempotency": "reconcile_required",
+      "recovery": "reconcile"
+    },
+    {
       "id": "download_release_manifest",
       "description": "Download the signed release and channel manifest.",
       "platform": "windows",
@@ -281,27 +307,27 @@
     },
     {
       "id": "verify_release_manifest",
-      "description": "Verify canonical metadata, immutable trust policy, signature quorum, compatibility bindings, and the durable anti-rollback acceptance ratchet.",
+      "description": "Verify canonical metadata, immutable trust policy, signature quorum, compatibility bindings, and release lifetime to produce a pending acceptance capability.",
       "platform": "shared",
       "risk": "read_only",
       "idempotency": "idempotent",
       "recovery": "retry"
     },
     {
-      "id": "download_payload",
-      "description": "Download content-addressed installer, UKI, image, and recovery chunks.",
+      "id": "stage_payload_quarantine",
+      "description": "Download into no-follow quarantine, retain only complete verified logical chunks, and flush every resumable boundary.",
       "platform": "windows",
-      "risk": "external_io",
+      "risk": "staging_mutation",
       "idempotency": "content_addressed",
-      "recovery": "retry"
+      "recovery": "reconcile"
     },
     {
-      "id": "verify_payload",
-      "description": "Verify exact artifact sizes, logical chunk hashes, whole hashes, and EOF against the accepted manifest.",
+      "id": "promote_verified_payload",
+      "description": "Full-hash quarantined artifacts, durably promote them by digest without clobber, reopen them, and persist exact staging evidence.",
       "platform": "shared",
-      "risk": "read_only",
-      "idempotency": "idempotent",
-      "recovery": "retry"
+      "risk": "staging_mutation",
+      "idempotency": "content_addressed",
+      "recovery": "reconcile"
     },
     {
       "id": "present_exact_plan",
@@ -368,7 +394,7 @@
     },
     {
       "id": "copy_payload_to_xbootldr",
-      "description": "Copy and re-verify content-addressed payload chunks and handoff data.",
+      "description": "Open promoted artifacts no-follow and hash the same byte stream copied into a journaled XBOOTLDR destination before committing it.",
       "platform": "windows",
       "risk": "filesystem_mutation",
       "idempotency": "content_addressed",
@@ -376,7 +402,7 @@
     },
     {
       "id": "stage_namespaced_esp_loader",
-      "description": "Write only signed JStack loader files under the namespaced ESP path.",
+      "description": "Open the promoted loader no-follow and hash the exact source stream written under the namespaced ESP path.",
       "platform": "windows",
       "risk": "boot_mutation",
       "idempotency": "content_addressed",
@@ -389,6 +415,14 @@
       "risk": "boot_mutation",
       "idempotency": "reconcile_required",
       "recovery": "compensate"
+    },
+    {
+      "id": "rehash_installer_boot_payload",
+      "description": "Reopen the installer loader and UKI no-follow and verify exact size, chunks, whole hashes, and EOF immediately before setting BootNext.",
+      "platform": "shared",
+      "risk": "read_only",
+      "idempotency": "idempotent",
+      "recovery": "retry"
     },
     {
       "id": "set_installer_bootnext",
@@ -408,7 +442,7 @@
     },
     {
       "id": "verify_handoff",
-      "description": "Verify signed handoff, journal chain, release manifest, and actor transition.",
+      "description": "Verify handoff, journal chain, accepted manifest, staging-evidence hash, and actor transition.",
       "platform": "linux",
       "risk": "read_only",
       "idempotency": "idempotent",
@@ -440,7 +474,7 @@
     },
     {
       "id": "deploy_root_image",
-      "description": "Deploy and content-verify the offline JStack root image.",
+      "description": "Open the promoted system image no-follow and hash the exact stream deployed into the uncommitted root destination.",
       "platform": "linux",
       "risk": "filesystem_mutation",
       "idempotency": "content_addressed",
@@ -456,7 +490,7 @@
     },
     {
       "id": "install_jstack_boot_artifacts",
-      "description": "Install signed UKIs and boot metadata on XBOOTLDR.",
+      "description": "Open promoted UKIs no-follow and hash the exact source streams installed on XBOOTLDR.",
       "platform": "linux",
       "risk": "boot_mutation",
       "idempotency": "content_addressed",
@@ -682,6 +716,27 @@
       "enforced_by": [
         "validator:single_mutation_transition"
       ]
+    },
+    {
+      "id": "acceptance_persisted_before_requirements",
+      "description": "Planning and payload staging require an exact reopened readback of the monotonic release acceptance record.",
+      "enforced_by": [
+        "release_manifest_valid"
+      ]
+    },
+    {
+      "id": "staged_artifact_digest_addressed",
+      "description": "Only no-follow, flushed, full-hash-verified artifacts promoted under their signed digest can enter durable staging evidence.",
+      "enforced_by": [
+        "staging_evidence_current"
+      ]
+    },
+    {
+      "id": "point_of_use_reverification",
+      "description": "Each privileged consumer hashes the exact source byte stream it copies or deploys before committing the destination.",
+      "enforced_by": [
+        "payload_hashes_valid"
+      ]
     }
   ],
   "states": [
@@ -694,11 +749,35 @@
       "ui_view": "welcome"
     },
     {
+      "id": "windows.staging_reconciled",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The trusted staging store is reconciled and release acquisition may be retried without changing durable acceptance.",
+      "ui_view": "verifying_release"
+    },
+    {
+      "id": "windows.release_acquisition_failed",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "Release metadata could not be downloaded or verified; no acceptance or system mutation occurred.",
+      "ui_view": "release_unavailable"
+    },
+    {
+      "id": "windows.release_manifest_verified",
+      "phase": "windows",
+      "actor": "windows_bootstrap",
+      "kind": "checkpoint",
+      "description": "The signed release is valid but its anti-rollback acceptance has not yet been durably committed.",
+      "ui_view": "verifying_release"
+    },
+    {
       "id": "windows.preflight",
       "phase": "windows",
       "actor": "windows_bootstrap",
       "kind": "checkpoint",
-      "description": "Hardware, security, power, storage, and boot inventory is being evaluated.",
+      "description": "The release acceptance record is durable and hardware, security, power, storage, and boot inventory is being evaluated.",
       "ui_view": "preflight"
     },
     {
@@ -827,7 +906,7 @@
       "phase": "windows",
       "actor": "windows_bootstrap",
       "kind": "checkpoint",
-      "description": "Signed release metadata and offline payload are downloading.",
+      "description": "Accepted release artifacts are downloading into resumable no-follow quarantine.",
       "ui_view": "download"
     },
     {
@@ -835,7 +914,7 @@
       "phase": "windows",
       "actor": "windows_bootstrap",
       "kind": "checkpoint",
-      "description": "All staged artifacts verify against the signed manifest.",
+      "description": "All accepted artifacts are durably digest-promoted and bound by staging evidence.",
       "ui_view": "payload_ready"
     },
     {
@@ -1111,15 +1190,64 @@
     {
       "id": "begin_preflight",
       "from": "windows.bootstrap_started",
-      "to": "windows.preflight",
+      "to": "windows.staging_reconciled",
       "event": "start",
       "actor": "windows_bootstrap",
       "guards": [],
       "actions": [
-        "collect_inventory",
+        "reconcile_staging_store"
+      ],
+      "authorization": [
+        "release_policy"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "trusted_private_staging_root"
+      ],
+      "postconditions": [
+        "staging_store_reconciled"
+      ],
+      "description": "Reconcile the trusted durable staging store before any network acquisition or release acceptance.",
+      "failure_to": "terminal.manual_recovery"
+    },
+    {
+      "id": "acquire_release_manifest",
+      "from": "windows.staging_reconciled",
+      "to": "windows.release_manifest_verified",
+      "event": "acquire_release",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [
         "download_release_manifest",
         "verify_release_manifest"
       ],
+      "authorization": [
+        "release_policy"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "staging_store_reconciled"
+      ],
+      "postconditions": [
+        "release_candidate_verified"
+      ],
+      "description": "Download and verify signed release metadata without changing durable acceptance.",
+      "failure_to": "windows.release_acquisition_failed"
+    },
+    {
+      "id": "mark_release_acquisition_failed",
+      "from": "windows.staging_reconciled",
+      "to": "windows.release_acquisition_failed",
+      "event": "release_unavailable",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
       "authorization": [],
       "journal": {
         "intent_before_actions": true,
@@ -1127,7 +1255,87 @@
       },
       "preconditions": [],
       "postconditions": [],
-      "description": "Collect immutable system inventory and accept signed release metadata before planning."
+      "description": "Enter a retryable checkpoint after transient download failure or rejected release metadata."
+    },
+    {
+      "id": "retry_release_acquisition",
+      "from": "windows.release_acquisition_failed",
+      "to": "windows.staging_reconciled",
+      "event": "retry",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Retry release acquisition without resetting durable staging or acceptance state."
+    },
+    {
+      "id": "cancel_release_acquisition",
+      "from": "windows.release_acquisition_failed",
+      "to": "terminal.cancelled",
+      "event": "cancel",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Cancel safely when release metadata is unavailable or invalid."
+    },
+    {
+      "id": "persist_release_acceptance",
+      "from": "windows.release_manifest_verified",
+      "to": "windows.preflight",
+      "event": "accept_release",
+      "actor": "windows_bootstrap",
+      "guards": [
+        "release_candidate_valid"
+      ],
+      "actions": [
+        "persist_release_acceptance"
+      ],
+      "authorization": [
+        "release_policy"
+      ],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [
+        "acceptance_floor_matches_verified_policy"
+      ],
+      "postconditions": [
+        "acceptance_record_committed",
+        "acceptance_readback_exact"
+      ],
+      "failure_to": "terminal.manual_recovery",
+      "description": "Durably ratchet release acceptance before exposing planner requirements or artifact capabilities."
+    },
+    {
+      "id": "abort_corrupt_release_acceptance",
+      "from": "windows.release_manifest_verified",
+      "to": "terminal.manual_recovery",
+      "event": "acceptance_corrupt",
+      "actor": "windows_bootstrap",
+      "guards": [],
+      "actions": [],
+      "authorization": [],
+      "journal": {
+        "intent_before_actions": true,
+        "commit_after_postconditions": true
+      },
+      "preconditions": [],
+      "postconditions": [],
+      "description": "Fail closed rather than deleting or resetting a corrupt durable anti-rollback floor."
     },
     {
       "id": "reject_unsupported_platform",
@@ -1169,6 +1377,7 @@
         "boot_chain_trusted"
       ],
       "actions": [
+        "collect_inventory",
         "compute_partition_plan"
       ],
       "authorization": [],
@@ -1186,18 +1395,26 @@
       "to": "windows.payload_staging",
       "event": "stage_payload",
       "actor": "windows_bootstrap",
-      "guards": [],
-      "actions": [
-        "download_payload"
+      "guards": [
+        "release_manifest_valid"
       ],
-      "authorization": [],
+      "actions": [
+        "stage_payload_quarantine"
+      ],
+      "authorization": [
+        "release_policy"
+      ],
       "journal": {
         "intent_before_actions": true,
         "commit_after_postconditions": true
       },
-      "preconditions": [],
-      "postconditions": [],
-      "description": "Download the content-addressed offline payload bound to the already accepted manifest.",
+      "preconditions": [
+        "acceptance_readback_exact"
+      ],
+      "postconditions": [
+        "quarantine_chunks_complete_and_synced"
+      ],
+      "description": "Download accepted artifacts into resumable, chunk-verified quarantine.",
       "failure_to": "windows.payload_invalid"
     },
     {
@@ -1208,20 +1425,26 @@
       "actor": "windows_bootstrap",
       "guards": [
         "release_manifest_valid",
-        "payload_hashes_valid",
         "boot_chain_trusted"
       ],
       "actions": [
-        "verify_payload"
+        "promote_verified_payload"
       ],
-      "authorization": [],
+      "authorization": [
+        "release_policy"
+      ],
       "journal": {
         "intent_before_actions": true,
         "commit_after_postconditions": true
       },
-      "preconditions": [],
-      "postconditions": [],
-      "description": "Accept only a signed and content-verified payload.",
+      "preconditions": [
+        "quarantine_chunks_complete_and_synced"
+      ],
+      "postconditions": [
+        "promoted_artifacts_reopened_and_verified",
+        "staging_evidence_durable"
+      ],
+      "description": "Promote only full-hash-verified artifacts and durably bind the exact accepted set.",
       "failure_to": "windows.payload_invalid"
     },
     {
@@ -1532,7 +1755,8 @@
         "confirmed_plan_current",
         "plan_fingerprint_current",
         "xbootldr_matches_plan",
-        "payload_hashes_valid"
+        "release_manifest_valid",
+        "staging_evidence_current"
       ],
       "actions": [
         "copy_payload_to_xbootldr"
@@ -1546,13 +1770,13 @@
       },
       "preconditions": [
         "xbootldr_mounted",
-        "payload_source_verified"
+        "staged_artifacts_opened_no_follow"
       ],
       "postconditions": [
         "xbootldr_payload_verified",
         "journal_replica_current"
       ],
-      "description": "Copy and re-verify payload and replicated journal.",
+      "description": "Rehash the exact promoted source streams while copying into journaled XBOOTLDR destinations.",
       "failure_to": "recovery.rollback_required"
     },
     {
@@ -1565,7 +1789,8 @@
         "confirmed_plan_current",
         "plan_fingerprint_current",
         "boot_chain_trusted",
-        "windows_boot_entry_present"
+        "windows_boot_entry_present",
+        "staging_evidence_current"
       ],
       "actions": [
         "stage_namespaced_esp_loader"
@@ -1581,7 +1806,8 @@
         "jstack_esp_namespace_absent_or_owned"
       ],
       "postconditions": [
-        "namespaced_loader_hash_matches_manifest"
+        "namespaced_loader_hash_matches_manifest",
+        "source_stream_reverified"
       ],
       "description": "Stage only the verified namespaced loader files on the existing ESP.",
       "failure_to": "recovery.rollback_required"
@@ -1629,10 +1855,11 @@
         "confirmed_plan_current",
         "plan_fingerprint_current",
         "boot_chain_trusted",
-        "payload_hashes_valid",
-        "windows_boot_entry_present"
+        "windows_boot_entry_present",
+        "staging_evidence_current"
       ],
       "actions": [
+        "rehash_installer_boot_payload",
         "set_installer_bootnext"
       ],
       "authorization": [
@@ -1646,7 +1873,8 @@
         "bootnext_not_installer"
       ],
       "postconditions": [
-        "bootnext_is_installer"
+        "bootnext_is_installer",
+        "boot_payload_reverified_at_bootnext"
       ],
       "description": "Arm only the verified installer entry.",
       "failure_to": "recovery.rollback_required"
@@ -1659,7 +1887,8 @@
       "actor": "windows_bootstrap",
       "guards": [
         "confirmed_plan_current",
-        "plan_fingerprint_current"
+        "plan_fingerprint_current",
+        "staging_evidence_current"
       ],
       "actions": [
         "request_reboot"
@@ -1736,11 +1965,12 @@
         "confirmed_plan_current",
         "plan_fingerprint_current",
         "boot_chain_trusted",
-        "payload_hashes_valid",
         "installer_rearm_not_attempted",
-        "finalizer_not_armed"
+        "finalizer_not_armed",
+        "staging_evidence_current"
       ],
       "actions": [
+        "rehash_installer_boot_payload",
         "set_installer_bootnext"
       ],
       "authorization": [
@@ -1756,7 +1986,8 @@
       ],
       "postconditions": [
         "bootnext_is_installer",
-        "installer_rearm_attempt_recorded"
+        "installer_rearm_attempt_recorded",
+        "boot_payload_reverified_at_bootnext"
       ],
       "description": "Record and arm the single permitted installer BootNext retry.",
       "failure_to": "recovery.rollback_required"
@@ -1850,7 +2081,7 @@
       "guards": [
         "handoff_signature_valid",
         "release_manifest_valid",
-        "payload_hashes_valid"
+        "staging_evidence_current"
       ],
       "actions": [
         "verify_handoff"
@@ -1973,7 +2204,7 @@
       "guards": [
         "confirmed_plan_current",
         "plan_fingerprint_current",
-        "payload_hashes_valid"
+        "staging_evidence_current"
       ],
       "actions": [
         "deploy_root_image"
@@ -1986,10 +2217,12 @@
         "commit_after_postconditions": true
       },
       "preconditions": [
-        "root_btrfs_matches_plan"
+        "root_btrfs_matches_plan",
+        "staged_artifact_opened_no_follow"
       ],
       "postconditions": [
-        "deployed_image_hash_matches"
+        "deployed_image_hash_matches",
+        "deployed_stream_reverified"
       ],
       "description": "Deploy the content-addressed offline image.",
       "failure_to": "recovery.rollback_required"
@@ -2033,7 +2266,8 @@
         "confirmed_plan_current",
         "plan_fingerprint_current",
         "boot_chain_trusted",
-        "xbootldr_matches_plan"
+        "xbootldr_matches_plan",
+        "staging_evidence_current"
       ],
       "actions": [
         "install_jstack_boot_artifacts"
@@ -2050,7 +2284,8 @@
       ],
       "postconditions": [
         "jstack_boot_entry_valid",
-        "windows_boot_entry_present"
+        "windows_boot_entry_present",
+        "source_stream_reverified"
       ],
       "description": "Install signed installed-system boot artifacts.",
       "failure_to": "recovery.rollback_required"

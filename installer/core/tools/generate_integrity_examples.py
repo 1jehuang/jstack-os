@@ -135,6 +135,7 @@ def main() -> int:
         "control_state": state,
         "journal_head_hash": digest(state_advanced),
         "release_manifest_hash": plan["body"]["release_manifest_hash"],
+        "staging_evidence_hash": "e" * 64,
         "plan_hash": plan["plan_hash"],
         "disk_guid": plan["body"]["disk_guid"],
         "partition_phase": "windows_handoff",

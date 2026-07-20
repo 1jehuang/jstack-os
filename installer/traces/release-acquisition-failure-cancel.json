@@ -1,0 +1,12 @@
+{
+  "id": "release_acquisition_failure_cancel",
+  "description": "A transient or rejected release acquisition can be retried or cancelled without durable acceptance or system mutation.",
+  "steps": [
+    "begin_preflight",
+    "mark_release_acquisition_failed",
+    "retry_release_acquisition",
+    "mark_release_acquisition_failed",
+    "cancel_release_acquisition"
+  ],
+  "expected_terminal": "terminal.cancelled"
+}

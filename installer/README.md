@@ -27,6 +27,8 @@ make docs
 - `core/`: cross-platform Rust contracts, canonical signed-release verification,
   pure planner, integrity binding, and read-only Windows inventory and planning
   CLIs
+- `staging/`: crash-safe acceptance WAL, resumable digest-addressed quarantine,
+  durable staging evidence, and same-stream point-of-use verification
 - `traces/`: success, rejection, interruption, and rollback scenarios
 - `tools/validate_state_graph.py`: structural and safety validator
 - `tools/render_state_graph.py`: generated Mermaid and transition tables
@@ -44,6 +46,9 @@ documented in `docs/installer/WINDOWS_INVENTORY.md`.
 The immutable trust policy, canonical Ed25519 message, anti-rollback ratchet,
 closed artifact role set, and cross-OS revalidation boundary are documented in
 `docs/installer/RELEASE_TRUST.md`.
+
+The trusted staging root, crash protocol, point-of-use rule, and remaining VM
+and TPM production gates are documented in `docs/installer/STAGING.md`.
 
 ## v1 scope
 

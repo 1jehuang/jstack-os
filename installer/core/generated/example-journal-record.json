@@ -7,6 +7,6 @@
   "record_type": "action_intent",
   "precondition_hash": "1111111111111111111111111111111111111111111111111111111111111111",
   "postcondition_hash": null,
-  "plan_hash": "be5f11b553a3d3e49271a24754c5782530dfa2c81bbdb3f788f0c951b019ae07",
+  "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
   "created_objects": []
 }

@@ -77,9 +77,11 @@ For a new acquisition:
 The verifier returns `PendingReleaseManifest` plus the exact next
 `ReleaseAcceptanceState`. Planner requirements and artifact verification remain
 unavailable until the adapter atomically persists that state and supplies an
-identical read-back to `accept_after_persist`. Production adapters must use a
-write-new, flush, directory-sync, atomic-replace, read-back sequence suitable for
-the platform.
+identical read-back to `accept_after_persist`. The staging crate implements this
+as a locked append-only WAL with a canonical body checksum, separately flushed
+commit marker, monotonic compare-and-swap check, and exact reopened read-back.
+Production adapters must use that durable interface rather than inventing a
+second acceptance format.
 
 `Acquire` enforces expiry, maximum lifetime, future skew, and the persisted time
 floor. `Resume` may use an expired manifest only when its digest, sequence, and
@@ -106,10 +108,12 @@ boundaries and rejects truncation, trailing bytes, changed chunks, inconsistent
 whole hashes, overflow, missing roles, extra roles, and duplicate roles.
 
 `VerifiedArtifact` is produced only through an accepted manifest and carries the
-manifest digest. Future staging adapters must write an exclusive no-follow,
-reparse-safe quarantine file, flush it, verify it, atomically promote it by
-digest, and reverify the bytes at each privileged copy, deployment, or boot use.
-Manifest data never selects a privileged destination path.
+manifest digest. The staging crate writes no-follow, reparse-safe quarantine
+files, flushes complete logical chunks, verifies the complete file, promotes it
+without clobber under its digest, and reverifies the exact byte stream at each
+privileged copy or deployment use. Manifest data never selects a privileged
+destination path. The complete protocol and trusted-root assumptions are in
+`STAGING.md`.
 
 ## Cross-OS and boot-chain boundary
 
@@ -119,11 +123,17 @@ accepted digest, and acceptance state cross the handoff. Linux must independentl
 verify the manifest and rehash artifact bytes at the privileged point of use. A
 hash copied from Windows is not sufficient evidence by itself.
 
+The handoff also binds the canonical durable staging-evidence hash. That evidence
+commits to the accepted manifest, canonical acceptance-state hash, and exact
+promoted artifact set. Linux rejects a missing or different evidence hash and
+still reopens and rehashes the artifact source.
+
 Authenticode verification of the Windows bootstrap and Secure Boot verification
 of the ESP loader and installer UKI are separate mandatory platform gates. Real
 storage mutation and real boot transitions remain unreachable until those gates,
-no-follow staging, atomic acceptance persistence, and Windows/Linux VM fault
-injection are implemented.
+production adapter integration, and Windows/Linux VM fault injection are
+implemented. No-follow staging and atomic acceptance persistence are covered by
+the shared implementation and deterministic fault harness.
 
 ## Deterministic validation
 

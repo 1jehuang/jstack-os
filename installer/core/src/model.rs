@@ -397,6 +397,7 @@ pub struct Handoff {
     pub control_state: String,
     pub journal_head_hash: Hash256,
     pub release_manifest_hash: Hash256,
+    pub staging_evidence_hash: Hash256,
     pub plan_hash: Hash256,
     pub disk_guid: Uuid,
     pub partition_phase: PartitionFingerprintPhase,

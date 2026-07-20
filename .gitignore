@@ -4,3 +4,4 @@
 __pycache__/
 *.pyc
 /installer/core/target/
+/installer/staging/target/

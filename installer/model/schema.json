@@ -202,6 +202,7 @@
             "read_only",
             "external_io",
             "user_authorization",
+            "staging_mutation",
             "filesystem_mutation",
             "security_mutation",
             "disk_mutation",

@@ -267,6 +267,7 @@ pub fn create_handoff(
     control_state: impl Into<String>,
     intended_boot_target: impl Into<String>,
     nonce: impl Into<String>,
+    staging_evidence_hash: &Hash256,
     partition_phase: PartitionFingerprintPhase,
 ) -> Result<Handoff, IntegrityError> {
     validate_plan_hash(plan)?;
@@ -283,6 +284,7 @@ pub fn create_handoff(
         control_state,
         journal_head_hash: hash_journal_record(journal_head)?,
         release_manifest_hash: plan.body.release_manifest_hash.clone(),
+        staging_evidence_hash: staging_evidence_hash.clone(),
         plan_hash: plan.plan_hash.clone(),
         disk_guid: plan.body.disk_guid,
         partition_phase,
@@ -302,6 +304,7 @@ pub fn validate_handoff(
     journal: &[JournalRecord],
     expected_state: &str,
     expected_boot_target: &str,
+    expected_staging_evidence_hash: &Hash256,
     expected_partition_phase: PartitionFingerprintPhase,
 ) -> Result<(), IntegrityError> {
     validate_plan_hash(plan)?;
@@ -314,6 +317,7 @@ pub fn validate_handoff(
         || handoff.journal_head_hash != hash_journal_record(journal_head)?
         || journal_head.plan_hash != plan.plan_hash
         || handoff.release_manifest_hash != plan.body.release_manifest_hash
+        || handoff.staging_evidence_hash != *expected_staging_evidence_hash
         || handoff.plan_hash != plan.plan_hash
         || handoff.disk_guid != plan.body.disk_guid
         || handoff.partition_phase != expected_partition_phase
@@ -494,6 +498,7 @@ mod tests {
             "windows.reboot_to_installer_pending",
             "installer",
             "nonce-1",
+            &hash("e"),
             PartitionFingerprintPhase::WindowsHandoff,
         )
         .unwrap();
@@ -503,9 +508,24 @@ mod tests {
             &journal,
             "windows.reboot_to_installer_pending",
             "installer",
+            &hash("e"),
             PartitionFingerprintPhase::WindowsHandoff,
         )
         .unwrap();
+        let mut altered_evidence = handoff.clone();
+        altered_evidence.staging_evidence_hash = hash("f");
+        assert!(matches!(
+            validate_handoff(
+                &altered_evidence,
+                &plan,
+                &journal,
+                "windows.reboot_to_installer_pending",
+                "installer",
+                &hash("e"),
+                PartitionFingerprintPhase::WindowsHandoff,
+            ),
+            Err(IntegrityError::InvalidHandoff)
+        ));
         validate_observed_partition_fingerprint(
             &handoff,
             &plan.body.partition_fingerprints.windows_handoff,
@@ -526,6 +546,7 @@ mod tests {
                 "windows.reboot_to_installer_pending",
                 "installer",
                 "nonce-1",
+                &hash("e"),
                 PartitionFingerprintPhase::WindowsHandoff,
             ),
             Err(IntegrityError::InvalidHandoff)
@@ -591,6 +612,7 @@ mod tests {
                 "windows.installer_loader_files_staged",
                 "installer",
                 "nonce-1",
+                &hash("e"),
                 PartitionFingerprintPhase::WindowsHandoff,
             ),
             Err(IntegrityError::InvalidHandoff)
@@ -619,6 +641,7 @@ mod tests {
             &journal,
             "windows.reboot_to_installer_pending",
             "installer",
+            &handoff.staging_evidence_hash,
             PartitionFingerprintPhase::WindowsHandoff,
         )
         .unwrap();

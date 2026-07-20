@@ -3,6 +3,8 @@
   "description": "The RAM installer rejects an invalid signed handoff before creating the Linux root and rolls back through Windows.",
   "steps": [
     "begin_preflight",
+    "acquire_release_manifest",
+    "persist_release_acceptance",
     "accept_preflight_and_plan",
     "begin_payload_staging",
     "accept_verified_payload",

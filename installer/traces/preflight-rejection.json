@@ -3,6 +3,8 @@
   "description": "Unsupported layouts stop without mutation.",
   "steps": [
     "begin_preflight",
+    "acquire_release_manifest",
+    "persist_release_acceptance",
     "reject_unsupported_platform"
   ],
   "expected_terminal": "terminal.unsupported"

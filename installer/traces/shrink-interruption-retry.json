@@ -3,6 +3,8 @@
   "description": "Power loss with the NTFS precondition still present retries the exact confirmed shrink, then rolls back cleanly on request.",
   "steps": [
     "begin_preflight",
+    "acquire_release_manifest",
+    "persist_release_acceptance",
     "accept_preflight_and_plan",
     "begin_payload_staging",
     "accept_verified_payload",

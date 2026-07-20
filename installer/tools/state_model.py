@@ -11,12 +11,15 @@ from typing import Any, Iterable
 
 
 MUTATING_RISKS = {
+    "staging_mutation",
     "filesystem_mutation",
     "security_mutation",
     "disk_mutation",
     "boot_mutation",
     "reboot",
 }
+
+SYSTEM_MUTATING_RISKS = MUTATING_RISKS - {"staging_mutation"}
 
 EXPECTED_TERMINAL_OUTCOMES = {
     "success",
@@ -61,6 +64,11 @@ EXPECTED_HANDOFF_ACTORS = {
     "reboot_to_installed_jstack": "jstack_first_boot",
     "reboot_rearmed_jstack": "jstack_first_boot",
     "reboot_to_windows_rollback": "windows_finalizer",
+}
+
+STAGING_SAFE_FAILURE_TARGETS = {
+    "windows.payload_invalid",
+    "terminal.manual_recovery",
 }
 
 
@@ -110,6 +118,16 @@ def transition_is_mutating(
 ) -> bool:
     return any(
         actions[action_id]["risk"] in MUTATING_RISKS
+        for action_id in transition.get("actions", [])
+        if action_id in actions
+    )
+
+
+def transition_is_system_mutating(
+    transition: dict[str, Any], actions: dict[str, dict[str, Any]]
+) -> bool:
+    return any(
+        actions[action_id]["risk"] in SYSTEM_MUTATING_RISKS
         for action_id in transition.get("actions", [])
         if action_id in actions
     )
@@ -369,9 +387,15 @@ def validate_model(model: dict[str, Any]) -> list[str]:
                     + ", ".join(mutating_action_ids)
                 )
             authorization = set(transition.get("authorization", []))
-            if not authorization & {"confirmed_plan", "rollback_authorized"}:
+            is_system_mutating = transition_is_system_mutating(transition, actions)
+            if is_system_mutating:
+                if not authorization & {"confirmed_plan", "rollback_authorized"}:
+                    errors.append(
+                        f"mutating transition {transition_id} lacks plan or rollback authorization"
+                    )
+            elif "release_policy" not in authorization:
                 errors.append(
-                    f"mutating transition {transition_id} lacks plan or rollback authorization"
+                    f"staging transition {transition_id} lacks release_policy authorization"
                 )
             journal = transition.get("journal", {})
             if not journal.get("intent_before_actions"):
@@ -469,17 +493,35 @@ def validate_model(model: dict[str, Any]) -> list[str]:
     for state_id in sorted(reachable - terminal_reachable):
         errors.append(f"reachable state cannot reach a terminal outcome: {state_id}")
 
-    safe_failure_terminals = {"terminal.rolled_back", "terminal.manual_recovery"}
-    safe_failure_reachable = states_reaching_any(model, safe_failure_terminals)
+    system_failure_reachable = states_reaching_any(
+        model, {"terminal.rolled_back", "terminal.manual_recovery"}
+    )
+    staging_failure_reachable = states_reaching_any(
+        model, {"terminal.cancelled", "terminal.manual_recovery"}
+    )
     for transition_id, transition in transitions.items():
         if not transition_is_mutating(transition, actions):
             continue
         failure_target = transition.get("failure_to")
-        if failure_target and failure_target not in safe_failure_reachable:
-            errors.append(
-                f"mutating transition {transition_id} failure target {failure_target} "
-                "cannot reach rollback or manual recovery"
-            )
+        if not failure_target:
+            continue
+        if transition_is_system_mutating(transition, actions):
+            if failure_target not in system_failure_reachable:
+                errors.append(
+                    f"mutating transition {transition_id} failure target {failure_target} "
+                    "cannot reach rollback or manual recovery"
+                )
+        else:
+            if failure_target not in staging_failure_reachable:
+                errors.append(
+                    f"staging transition {transition_id} failure target {failure_target} "
+                    "cannot reach safe cancellation or manual recovery"
+                )
+            if failure_target not in STAGING_SAFE_FAILURE_TARGETS:
+                errors.append(
+                    f"staging transition {transition_id} failure target {failure_target} "
+                    "is not an explicit staging recovery checkpoint"
+                )
 
     dom = dominators(model)
     for required_dominator in {
@@ -493,7 +535,7 @@ def validate_model(model: dict[str, Any]) -> list[str]:
             )
 
     for transition_id, transition in transitions.items():
-        if not transition_is_mutating(transition, actions):
+        if not transition_is_system_mutating(transition, actions):
             continue
         if "rollback_authorized" in transition.get("authorization", []):
             continue
@@ -509,6 +551,27 @@ def validate_model(model: dict[str, Any]) -> list[str]:
         transition = transitions.get(transition_id)
         if transition and "boot_chain_trusted" not in transition.get("guards", []):
             errors.append(f"{transition_id} lacks boot_chain_trusted guard")
+
+    for transition_id in ("arm_installer_bootnext", "arm_installer_reboot_retry"):
+        transition = transitions.get(transition_id)
+        if not transition:
+            continue
+        if "staging_evidence_current" not in transition.get("guards", []):
+            errors.append(f"{transition_id} lacks staging_evidence_current guard")
+        if "rehash_installer_boot_payload" not in transition.get("actions", []):
+            errors.append(f"{transition_id} lacks immediate installer payload rehash")
+        if "payload_hashes_valid" in transition.get("guards", []):
+            errors.append(f"{transition_id} relies on stale payload_hashes_valid evidence")
+
+    for transition_id in (
+        "copy_verified_payload",
+        "stage_installer_loader",
+        "deploy_jstack_image",
+        "install_jstack_boot",
+    ):
+        transition = transitions.get(transition_id)
+        if transition and "staging_evidence_current" not in transition.get("guards", []):
+            errors.append(f"{transition_id} lacks staging_evidence_current guard")
 
     rearm = transitions.get("arm_installer_reboot_retry")
     if rearm and "installer_rearm_not_attempted" not in rearm.get("guards", []):

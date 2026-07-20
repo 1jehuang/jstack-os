@@ -58,11 +58,12 @@ def render_transitions(model: dict) -> str:
         "read_only": 0,
         "external_io": 1,
         "user_authorization": 2,
-        "filesystem_mutation": 3,
-        "security_mutation": 4,
-        "disk_mutation": 5,
-        "boot_mutation": 6,
-        "reboot": 7,
+        "staging_mutation": 3,
+        "filesystem_mutation": 4,
+        "security_mutation": 5,
+        "disk_mutation": 6,
+        "boot_mutation": 7,
+        "reboot": 8,
     }
     for transition in model["transitions"]:
         risks = [actions[action]["risk"] for action in transition["actions"]]
