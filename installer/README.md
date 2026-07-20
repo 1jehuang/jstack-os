@@ -50,6 +50,10 @@ closed artifact role set, and cross-OS revalidation boundary are documented in
 The trusted staging root, crash protocol, point-of-use rule, and remaining VM
 and TPM production gates are documented in `docs/installer/STAGING.md`.
 
+The current proof boundary, platform-independent work, disposable VM campaign,
+and physical-hardware gates are tracked in
+`docs/installer/ASSURANCE_MATRIX.md`.
+
 ## v1 scope
 
 - Windows 10 or 11, x86-64

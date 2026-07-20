@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from collections import deque
 from pathlib import Path
 
 
@@ -22,6 +23,43 @@ from state_model import (  # noqa: E402
     validate_against_schema,
     validate_model,
 )
+
+
+def path_to_state(model: dict, target: str) -> list[str | dict[str, str]]:
+    """Return a shortest executable sequence reaching target through any edge."""
+
+    initial = model["initial_state"]
+    if target == initial:
+        return []
+
+    transitions_by_source: dict[str, list[dict]] = {}
+    for transition in model["transitions"]:
+        transitions_by_source.setdefault(transition["from"], []).append(transition)
+
+    queue = deque([(initial, [])])
+    visited = {initial}
+    while queue:
+        state, steps = queue.popleft()
+        for transition in transitions_by_source.get(state, []):
+            outcomes: list[tuple[str, str | dict[str, str]]] = [
+                (transition["to"], transition["id"])
+            ]
+            if failure := transition.get("failure_to"):
+                outcomes.append(
+                    (
+                        failure,
+                        {"transition": transition["id"], "outcome": "failure"},
+                    )
+                )
+            for next_state, step in outcomes:
+                next_steps = [*steps, step]
+                if next_state == target:
+                    return next_steps
+                if next_state not in visited:
+                    visited.add(next_state)
+                    queue.append((next_state, next_steps))
+
+    raise AssertionError(f"no executable path reaches {target}")
 
 
 class StateModelTests(unittest.TestCase):
@@ -49,6 +87,25 @@ class StateModelTests(unittest.TestCase):
             for path in (ROOT / "traces").glob("*.json")
         }
         self.assertEqual(actual, expected)
+
+    def test_every_transition_success_edge_is_executable(self) -> None:
+        for transition in self.model["transitions"]:
+            with self.subTest(transition=transition["id"]):
+                steps = path_to_state(self.model, transition["from"])
+                steps.append(transition["id"])
+                trace = {"id": f"generated-{transition['id']}-success", "steps": steps}
+                self.assertEqual(simulate_trace(self.model, trace), transition["to"])
+
+    def test_every_transition_failure_edge_is_executable(self) -> None:
+        for transition in self.model["transitions"]:
+            failure = transition.get("failure_to")
+            if not failure:
+                continue
+            with self.subTest(transition=transition["id"]):
+                steps = path_to_state(self.model, transition["from"])
+                steps.append({"transition": transition["id"], "outcome": "failure"})
+                trace = {"id": f"generated-{transition['id']}-failure", "steps": steps}
+                self.assertEqual(simulate_trace(self.model, trace), failure)
 
     def test_every_mutation_has_deterministic_interruption_semantics(self) -> None:
         actions = index_by_id(self.model["actions"])
