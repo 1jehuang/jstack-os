@@ -389,8 +389,13 @@ def validate_model(model: dict[str, Any]) -> list[str]:
                     f"transition {transition_id} actor {transition.get('actor')} "
                     f"cannot execute {action_id} on platform {action_platform}"
                 )
-        if failure := transition.get("failure_to"):
-            if failure not in states:
+        if "failure_to" in transition:
+            failure = transition["failure_to"]
+            if not isinstance(failure, str) or not failure:
+                errors.append(
+                    f"transition {transition_id} failure_to must be a non-empty state id"
+                )
+            elif failure not in states:
                 errors.append(
                     f"transition {transition_id} has unknown failure target {failure}"
                 )

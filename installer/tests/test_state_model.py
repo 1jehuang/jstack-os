@@ -44,7 +44,12 @@ def path_to_state(model: dict, target: str) -> list[str | dict[str, str]]:
             outcomes: list[tuple[str, str | dict[str, str]]] = [
                 (transition["to"], transition["id"])
             ]
-            if failure := transition.get("failure_to"):
+            if "failure_to" in transition:
+                failure = transition["failure_to"]
+                if not isinstance(failure, str) or not failure:
+                    raise AssertionError(
+                        f"transition {transition['id']} has invalid failure_to"
+                    )
                 outcomes.append(
                     (
                         failure,
@@ -98,14 +103,32 @@ class StateModelTests(unittest.TestCase):
 
     def test_every_transition_failure_edge_is_executable(self) -> None:
         for transition in self.model["transitions"]:
-            failure = transition.get("failure_to")
-            if not failure:
+            if "failure_to" not in transition:
                 continue
+            failure = transition["failure_to"]
+            self.assertIsInstance(failure, str)
+            self.assertTrue(failure)
             with self.subTest(transition=transition["id"]):
                 steps = path_to_state(self.model, transition["from"])
                 steps.append({"transition": transition["id"], "outcome": "failure"})
                 trace = {"id": f"generated-{transition['id']}-failure", "steps": steps}
                 self.assertEqual(simulate_trace(self.model, trace), failure)
+
+    def test_validator_rejects_empty_failure_target(self) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "mark_release_acquisition_failed"
+        )
+        transition["failure_to"] = ""
+
+        self.assertIn(
+            "transition mark_release_acquisition_failed failure_to must be a non-empty state id",
+            validate_model(unsafe),
+        )
+        model_schema = load_json(ROOT / "model" / "schema.json")
+        self.assertTrue(validate_against_schema(unsafe, model_schema))
 
     def test_every_mutation_has_deterministic_interruption_semantics(self) -> None:
         actions = index_by_id(self.model["actions"])

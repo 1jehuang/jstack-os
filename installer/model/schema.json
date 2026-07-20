@@ -388,7 +388,8 @@
           }
         },
         "failure_to": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "handoff": {
           "type": "object",

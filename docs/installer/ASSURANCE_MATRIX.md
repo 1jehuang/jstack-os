@@ -27,7 +27,7 @@ invariants, and 17 scenario traces. Its 31 non-read-only actions include staging
 disk, filesystem, boot, security, reboot, external-I/O, and explicit user
 authorization effects.
 
-The complete `make check` gate passes under Rust 1.85. It currently includes 29
+The complete `make check` gate passes under Rust 1.85. It currently includes 30
 state-model tests, 52 core tests, 16 staging tests, strict Clippy, schema and
 canonical fixture validation, independent Ed25519 and artifact vectors, the
 PowerShell collector audit and mocked execution, Linux builds, and
