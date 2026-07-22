@@ -1,0 +1,38 @@
+[
+  {
+    "schema_version": 1,
+    "sequence": 0,
+    "previous_record_hash": null,
+    "actor": "windows_bootstrap",
+    "transition_id": "begin_preflight",
+    "record_type": "action_intent",
+    "precondition_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+    "postcondition_hash": null,
+    "plan_hash": "c558b122396cde57c2ec9937a9d599ed4176867d8cef8ec3d762d3cf3c3bcd56",
+    "created_objects": []
+  },
+  {
+    "schema_version": 1,
+    "sequence": 1,
+    "previous_record_hash": "286e4c970f0b740c83b803ce811d163c0da75370195ebe53bc45ddd5e88dd5d6",
+    "actor": "windows_bootstrap",
+    "transition_id": "begin_preflight",
+    "record_type": "action_failed",
+    "precondition_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+    "postcondition_hash": "83c49dc2407e8a84c456bb227b45d02026cb094607567fb27138183f89e47605",
+    "plan_hash": "c558b122396cde57c2ec9937a9d599ed4176867d8cef8ec3d762d3cf3c3bcd56",
+    "created_objects": []
+  },
+  {
+    "schema_version": 1,
+    "sequence": 2,
+    "previous_record_hash": "1e8da0aaa64985266c7bddd41843f3b8b12d4a608002440575c44dcc03d4af64",
+    "actor": "windows_bootstrap",
+    "transition_id": "begin_preflight",
+    "record_type": "state_advanced",
+    "precondition_hash": "83c49dc2407e8a84c456bb227b45d02026cb094607567fb27138183f89e47605",
+    "postcondition_hash": "34d60df64a308384dbe6b008c7774b1b3383e2ac4ee23e6b5d9eb3da230dfa1c",
+    "plan_hash": "c558b122396cde57c2ec9937a9d599ed4176867d8cef8ec3d762d3cf3c3bcd56",
+    "created_objects": []
+  }
+]

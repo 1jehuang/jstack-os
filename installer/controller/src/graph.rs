@@ -623,6 +623,10 @@ impl GraphModel {
         self.states.len()
     }
 
+    pub fn state_ids(&self) -> impl Iterator<Item = StateId> + '_ {
+        (0..self.states.len()).map(|position| StateId(position as u16))
+    }
+
     pub fn guard_count(&self) -> usize {
         self.guards.len()
     }

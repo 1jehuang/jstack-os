@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/failure-evidence.schema.json",
+  "title": "JStack durable action failure evidence",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "graph_model_id",
+    "transition_id",
+    "actor",
+    "plan_hash",
+    "action_intent_record_hash",
+    "failure_state",
+    "error_class",
+    "no_committed_effect_hash",
+    "residual_objects"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "graph_model_id": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "transition_id": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "actor": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "plan_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "action_intent_record_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "failure_state": {
+      "$ref": "common.schema.json#/$defs/nonempty"
+    },
+    "error_class": {
+      "enum": [
+        "executor_failed",
+        "binding_invalid",
+        "output_conflict",
+        "injected_fault"
+      ]
+    },
+    "no_committed_effect_hash": {
+      "$ref": "common.schema.json#/$defs/hash256"
+    },
+    "residual_objects": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/rollbackObject"
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

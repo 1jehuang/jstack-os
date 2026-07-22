@@ -126,6 +126,25 @@ For every mutating action:
 5. Append and flush `action_committed`.
 6. Advance the durable control state.
 
+If independent reconciliation proves that no committed effect survives, the
+runtime instead appends `action_failed` containing the canonical failure-evidence
+digest, then appends `state_advanced` to the transition's exact `failure_to`
+state. `action_failed` never changes control state by itself. Residual objects
+named by the failure evidence remain rollback-owned. A platform adapter must
+recompute the no-committed-effect proof before it may create this record. Replay
+requires exactly one canonical `FailureEvidence` object for every
+`action_failed` record and rejects missing, duplicate, extra, or mismatched
+evidence.
+
+Non-mutating transitions use one graph-bound `state_advanced` record whose
+precondition and postcondition are the source and selected success/failure state
+hashes. Generic handoff validation intentionally rejects direct advances and
+failure-derived advances. A future graph-aware handoff validator must prove the
+transition class, exact target, and failure evidence before either can cross an
+actor boundary. The current VM evidence bundle likewise rejects `action_failed`
+chains because it has no failure-evidence artifact role yet; it never treats an
+unbound failure hash as proof.
+
 A transition may contain at most one mutating action. Operations that previously
 looked atomic, such as partition creation plus formatting or multi-step rollback,
 are separate named checkpoints. This makes partial progress observable instead
@@ -135,8 +154,9 @@ After power loss, the runtime reads the pending intent:
 
 - If preconditions still hold, retry the idempotent action.
 - If postconditions hold, synthesize the missing commit record and advance.
-- If neither holds, stop automatic mutation and enter rollback or manual
-  recovery according to the graph.
+- If neither holds and cleanup proves no committed effect survives, durably
+  record failure and advance to the graph's failure state. Otherwise stop
+  automatic mutation for manual recovery rather than forging a failure proof.
 
 ## Primary references
 

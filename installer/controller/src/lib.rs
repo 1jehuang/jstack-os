@@ -5,9 +5,11 @@
 //! production disk, firmware, boot, filesystem, or security mutation API.
 
 pub mod graph;
+pub mod replay;
 pub mod simulator;
 pub mod trace;
 
 pub use graph::*;
+pub use replay::*;
 pub use simulator::*;
 pub use trace::*;

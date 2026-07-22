@@ -65,16 +65,18 @@ has been atomically persisted and read back.
   altered sizes is rejected.
 - `JournalRecord` binds sequence, previous-record hash, transition, actor,
   precondition, postcondition, and plan. Validation also enforces the phase
-  grammar `intent → committed → state advanced → next intent` and keeps each
-  transition's actor and identity stable through its commit. Created resource
-  identities are allowed only on commit records.
+  grammar `intent → (committed | failed) → state advanced`, plus hash-contiguous
+  direct state advances for non-mutating transitions. It keeps each transition's
+  actor and identity stable through its outcome. Failure records bind strict
+  canonical `FailureEvidence`, including an independently recomputable
+  no-committed-effect proof and any residual rollback objects.
 - `journaled_rollback_objects` returns only identities durably recorded by
-  committed actions and checked against the plan allowlist. Rollback must never
-  delete every prospective plan object blindly.
+  committed actions or proven failure residuals, checked against the plan
+  allowlist. Rollback must never delete every prospective plan object blindly.
 - `Handoff` requires the complete journal chain to end in `state_advanced`, binds
   `control_state` to that record's postcondition hash, and binds graph state,
   journal head, release, plan, disk, fingerprint phase, intended target, and
-  nonce.
+  nonce. Generic core handoff rejects graph-unvalidated direct state advances.
 
 ## Current validation
 

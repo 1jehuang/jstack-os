@@ -474,7 +474,9 @@ mod tests {
             record_type: match previous.map(|record| record.record_type) {
                 None => JournalRecordType::ActionIntent,
                 Some(JournalRecordType::ActionIntent) => JournalRecordType::ActionCommitted,
-                Some(JournalRecordType::ActionCommitted) => JournalRecordType::StateAdvanced,
+                Some(JournalRecordType::ActionCommitted | JournalRecordType::ActionFailed) => {
+                    JournalRecordType::StateAdvanced
+                }
                 Some(JournalRecordType::StateAdvanced) => JournalRecordType::ActionIntent,
             },
             precondition_hash: previous

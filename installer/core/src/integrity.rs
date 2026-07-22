@@ -48,6 +48,8 @@ pub enum IntegrityError {
     InvalidJournalChain,
     #[error("journal record fields do not match its record type")]
     InvalidJournalRecord,
+    #[error("failure evidence is not bound to its action intent")]
+    InvalidFailureEvidence,
     #[error("handoff does not match the current plan, journal, or expected target")]
     InvalidHandoff,
     #[error("canonical hashing failed: {0}")]
@@ -120,7 +122,10 @@ pub fn validate_journal_record(
     match previous {
         None if record.sequence == 0
             && record.previous_record_hash.is_none()
-            && record.record_type == JournalRecordType::ActionIntent => {}
+            && matches!(
+                record.record_type,
+                JournalRecordType::ActionIntent | JournalRecordType::StateAdvanced
+            ) => {}
         Some(previous)
             if Some(record.sequence) == expected_sequence
                 && record.previous_record_hash.as_ref()
@@ -155,12 +160,25 @@ fn valid_journal_phase(previous: &JournalRecord, current: &JournalRecord) -> boo
                 && current.transition_id == previous.transition_id
                 && current.precondition_hash == previous.precondition_hash
         }
+        (JournalRecordType::ActionIntent, JournalRecordType::ActionFailed) => {
+            current.actor == previous.actor
+                && current.transition_id == previous.transition_id
+                && current.precondition_hash == previous.precondition_hash
+        }
         (JournalRecordType::ActionCommitted, JournalRecordType::StateAdvanced) => {
             current.actor == previous.actor
                 && current.transition_id == previous.transition_id
                 && previous.postcondition_hash.as_ref() == Some(&current.precondition_hash)
         }
+        (JournalRecordType::ActionFailed, JournalRecordType::StateAdvanced) => {
+            current.actor == previous.actor
+                && current.transition_id == previous.transition_id
+                && previous.postcondition_hash.as_ref() == Some(&current.precondition_hash)
+        }
         (JournalRecordType::StateAdvanced, JournalRecordType::ActionIntent) => true,
+        (JournalRecordType::StateAdvanced, JournalRecordType::StateAdvanced) => {
+            previous.postcondition_hash.as_ref() == Some(&current.precondition_hash)
+        }
         _ => false,
     }
 }
@@ -174,6 +192,7 @@ fn validate_journal_shape(record: &JournalRecord) -> Result<(), IntegrityError> 
             record.postcondition_hash.is_none() && record.created_objects.is_empty()
         }
         JournalRecordType::ActionCommitted => record.postcondition_hash.is_some(),
+        JournalRecordType::ActionFailed => record.postcondition_hash.is_some(),
         JournalRecordType::StateAdvanced => {
             record.postcondition_hash.is_some() && record.created_objects.is_empty()
         }
@@ -189,6 +208,114 @@ fn validate_journal_shape(record: &JournalRecord) -> Result<(), IntegrityError> 
     Ok(())
 }
 
+pub fn create_failure_evidence(
+    action_intent: &JournalRecord,
+    graph_model_id: impl Into<String>,
+    failure_state: impl Into<String>,
+    error_class: FailureClass,
+    no_committed_effect_hash: Hash256,
+    residual_objects: Vec<RollbackObject>,
+) -> Result<FailureEvidence, IntegrityError> {
+    validate_journal_shape(action_intent)?;
+    if action_intent.record_type != JournalRecordType::ActionIntent {
+        return Err(IntegrityError::InvalidFailureEvidence);
+    }
+    let evidence = FailureEvidence {
+        schema_version: CONTRACT_SCHEMA_VERSION,
+        graph_model_id: graph_model_id.into(),
+        transition_id: action_intent.transition_id.clone(),
+        actor: action_intent.actor.clone(),
+        plan_hash: action_intent.plan_hash.clone(),
+        action_intent_record_hash: hash_journal_record(action_intent)?,
+        failure_state: failure_state.into(),
+        error_class,
+        no_committed_effect_hash,
+        residual_objects,
+    };
+    validate_failure_evidence(&evidence, action_intent)?;
+    Ok(evidence)
+}
+
+pub fn validate_failure_evidence(
+    evidence: &FailureEvidence,
+    action_intent: &JournalRecord,
+) -> Result<(), IntegrityError> {
+    validate_journal_shape(action_intent)?;
+    let mut residual_ids = std::collections::BTreeSet::new();
+    let residuals_valid = evidence.residual_objects.iter().all(|object| {
+        !object.stable_id.is_empty()
+            && residual_ids.insert((object.kind, object.stable_id.as_str()))
+    });
+    if evidence.schema_version != CONTRACT_SCHEMA_VERSION {
+        return Err(IntegrityError::UnsupportedSchema(evidence.schema_version));
+    }
+    if action_intent.record_type != JournalRecordType::ActionIntent
+        || evidence.graph_model_id.is_empty()
+        || evidence.failure_state.is_empty()
+        || evidence.transition_id != action_intent.transition_id
+        || evidence.actor != action_intent.actor
+        || evidence.plan_hash != action_intent.plan_hash
+        || evidence.action_intent_record_hash != hash_journal_record(action_intent)?
+        || !residuals_valid
+    {
+        return Err(IntegrityError::InvalidFailureEvidence);
+    }
+    Ok(())
+}
+
+pub fn create_action_failed_record(
+    action_intent: &JournalRecord,
+    evidence: &FailureEvidence,
+) -> Result<JournalRecord, IntegrityError> {
+    validate_failure_evidence(evidence, action_intent)?;
+    let record = JournalRecord {
+        schema_version: CONTRACT_SCHEMA_VERSION,
+        sequence: action_intent
+            .sequence
+            .checked_add(1)
+            .ok_or(IntegrityError::InvalidJournalChain)?,
+        previous_record_hash: Some(hash_journal_record(action_intent)?),
+        actor: action_intent.actor.clone(),
+        transition_id: action_intent.transition_id.clone(),
+        record_type: JournalRecordType::ActionFailed,
+        precondition_hash: action_intent.precondition_hash.clone(),
+        postcondition_hash: Some(canonical_sha256(evidence)?),
+        plan_hash: action_intent.plan_hash.clone(),
+        created_objects: evidence.residual_objects.clone(),
+    };
+    validate_journal_record(&record, Some(action_intent))?;
+    Ok(record)
+}
+
+pub fn create_failure_state_advanced_record(
+    action_intent: &JournalRecord,
+    action_failed: &JournalRecord,
+    evidence: &FailureEvidence,
+) -> Result<JournalRecord, IntegrityError> {
+    let expected_failed = create_action_failed_record(action_intent, evidence)?;
+    if action_failed != &expected_failed {
+        return Err(IntegrityError::InvalidFailureEvidence);
+    }
+    let evidence_hash = canonical_sha256(evidence)?;
+    let record = JournalRecord {
+        schema_version: CONTRACT_SCHEMA_VERSION,
+        sequence: action_failed
+            .sequence
+            .checked_add(1)
+            .ok_or(IntegrityError::InvalidJournalChain)?,
+        previous_record_hash: Some(hash_journal_record(action_failed)?),
+        actor: action_failed.actor.clone(),
+        transition_id: action_failed.transition_id.clone(),
+        record_type: JournalRecordType::StateAdvanced,
+        precondition_hash: evidence_hash,
+        postcondition_hash: Some(control_state_hash(&evidence.failure_state)?),
+        plan_hash: action_failed.plan_hash.clone(),
+        created_objects: Vec::new(),
+    };
+    validate_journal_record(&record, Some(action_failed))?;
+    Ok(record)
+}
+
 pub fn control_state_hash(control_state: &str) -> Result<Hash256, IntegrityError> {
     Ok(canonical_sha256(&control_state)?)
 }
@@ -199,9 +326,24 @@ fn validate_journal_for_handoff<'a>(
     control_state: &str,
 ) -> Result<&'a JournalRecord, IntegrityError> {
     let head = validate_journal_chain(journal)?;
+    // Generic core validation cannot prove graph targets for direct or failed
+    // advances. They are useful for controller replay, but may not authorize a
+    // cross-actor handoff until a graph-aware validator checks the transition
+    // class, failure evidence, and exact target state.
+    let graph_unvalidated_advance = journal.iter().enumerate().any(|(index, record)| {
+        record.record_type == JournalRecordType::StateAdvanced
+            && !matches!(
+                index
+                    .checked_sub(1)
+                    .and_then(|previous| journal.get(previous))
+                    .map(|record| record.record_type),
+                Some(JournalRecordType::ActionCommitted)
+            )
+    });
     if head.plan_hash != plan.plan_hash
         || head.record_type != JournalRecordType::StateAdvanced
         || head.postcondition_hash.as_ref() != Some(&control_state_hash(control_state)?)
+        || graph_unvalidated_advance
     {
         return Err(IntegrityError::InvalidHandoff);
     }
@@ -245,7 +387,12 @@ pub fn journaled_rollback_objects(
     let mut seen = std::collections::BTreeSet::new();
     Ok(journal
         .iter()
-        .filter(|record| record.record_type == JournalRecordType::ActionCommitted)
+        .filter(|record| {
+            matches!(
+                record.record_type,
+                JournalRecordType::ActionCommitted | JournalRecordType::ActionFailed
+            )
+        })
         .flat_map(|record| record.created_objects.iter())
         .filter(|object| seen.insert((object.kind, object.stable_id.clone())))
         .cloned()
@@ -620,6 +767,131 @@ mod tests {
     }
 
     #[test]
+    fn failure_records_bind_evidence_and_advance_only_through_state_advanced() {
+        let (inventory, requirements) = fixture();
+        let plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
+        let residual = plan.body.rollback_objects[0].clone();
+        let intent = JournalRecord {
+            schema_version: CONTRACT_SCHEMA_VERSION,
+            sequence: 0,
+            previous_record_hash: None,
+            actor: "windows_bootstrap".into(),
+            transition_id: "shrink_windows".into(),
+            record_type: JournalRecordType::ActionIntent,
+            precondition_hash: hash("1"),
+            postcondition_hash: None,
+            plan_hash: plan.plan_hash.clone(),
+            created_objects: vec![],
+        };
+        let evidence = create_failure_evidence(
+            &intent,
+            "jstack-no-usb-dual-boot-v1",
+            "recovery.rollback_required",
+            FailureClass::ExecutorFailed,
+            hash("9"),
+            vec![residual.clone()],
+        )
+        .unwrap();
+        let failed = create_action_failed_record(&intent, &evidence).unwrap();
+        let advanced = create_failure_state_advanced_record(&intent, &failed, &evidence).unwrap();
+
+        validate_journal_chain(&[intent.clone(), failed.clone(), advanced.clone()]).unwrap();
+        assert_eq!(failed.created_objects, vec![residual.clone()]);
+        assert_eq!(
+            failed.postcondition_hash,
+            Some(canonical_sha256(&evidence).unwrap())
+        );
+        assert_eq!(
+            advanced.postcondition_hash,
+            Some(control_state_hash("recovery.rollback_required").unwrap())
+        );
+        assert_eq!(
+            journaled_rollback_objects(&plan, &[intent.clone(), failed.clone(), advanced.clone()],)
+                .unwrap(),
+            vec![residual]
+        );
+        assert!(matches!(
+            create_handoff(
+                &plan,
+                &[intent.clone(), failed.clone(), advanced.clone()],
+                "recovery.rollback_required",
+                "installer",
+                "nonce-failure",
+                &hash("e"),
+                PartitionFingerprintPhase::WindowsHandoff,
+            ),
+            Err(IntegrityError::InvalidHandoff)
+        ));
+
+        let mut forged = evidence.clone();
+        forged.failure_state = "terminal.completed".into();
+        assert!(matches!(
+            create_failure_state_advanced_record(&intent, &failed, &forged),
+            Err(IntegrityError::InvalidFailureEvidence)
+        ));
+
+        let mut committed = failed.clone();
+        committed.record_type = JournalRecordType::ActionCommitted;
+        assert!(matches!(
+            validate_journal_record(&failed, Some(&committed)),
+            Err(IntegrityError::InvalidJournalChain)
+        ));
+    }
+
+    #[test]
+    fn direct_state_advances_require_hash_continuity() {
+        let (inventory, requirements) = fixture();
+        let plan =
+            crate::planner::create_install_plan_unverified(&inventory, &requirements).unwrap();
+        let first = JournalRecord {
+            schema_version: CONTRACT_SCHEMA_VERSION,
+            sequence: 0,
+            previous_record_hash: None,
+            actor: "windows_bootstrap".into(),
+            transition_id: "acquire_release_manifest".into(),
+            record_type: JournalRecordType::StateAdvanced,
+            precondition_hash: control_state_hash("windows.preflight_complete").unwrap(),
+            postcondition_hash: Some(control_state_hash("windows.release_manifest_ready").unwrap()),
+            plan_hash: plan.plan_hash.clone(),
+            created_objects: vec![],
+        };
+        validate_journal_record(&first, None).unwrap();
+        let second = JournalRecord {
+            schema_version: CONTRACT_SCHEMA_VERSION,
+            sequence: 1,
+            previous_record_hash: Some(hash_journal_record(&first).unwrap()),
+            actor: "windows_bootstrap".into(),
+            transition_id: "verify_release_manifest".into(),
+            record_type: JournalRecordType::StateAdvanced,
+            precondition_hash: first.postcondition_hash.clone().unwrap(),
+            postcondition_hash: Some(control_state_hash("windows.release_verified").unwrap()),
+            plan_hash: plan.plan_hash.clone(),
+            created_objects: vec![],
+        };
+        validate_journal_chain(&[first.clone(), second.clone()]).unwrap();
+        assert!(matches!(
+            create_handoff(
+                &plan,
+                &[first.clone(), second.clone()],
+                "windows.release_verified",
+                "installer",
+                "nonce-direct",
+                &hash("e"),
+                PartitionFingerprintPhase::WindowsHandoff,
+            ),
+            Err(IntegrityError::InvalidHandoff)
+        ));
+
+        let mut discontinuous = second;
+        discontinuous.precondition_hash = hash("f");
+        assert!(matches!(
+            validate_journal_record(&discontinuous, Some(&first)),
+            Err(IntegrityError::InvalidJournalChain)
+        ));
+    }
+
+    #[test]
     fn persisted_contract_examples_are_semantically_valid() {
         let plan: InstallPlan =
             serde_json::from_str(include_str!("../generated/example-plan.json")).unwrap();
@@ -629,6 +901,13 @@ mod tests {
             serde_json::from_str(include_str!("../generated/example-confirmation.json")).unwrap();
         let journal: Vec<JournalRecord> =
             serde_json::from_str(include_str!("../generated/example-journal-chain.json")).unwrap();
+        let failure_evidence: FailureEvidence =
+            serde_json::from_str(include_str!("../generated/example-failure-evidence.json"))
+                .unwrap();
+        let failure_journal: Vec<JournalRecord> = serde_json::from_str(include_str!(
+            "../generated/example-failure-journal-chain.json"
+        ))
+        .unwrap();
         let handoff: Handoff =
             serde_json::from_str(include_str!("../generated/example-handoff.json")).unwrap();
         let staging_evidence: serde_json::Value =
@@ -639,6 +918,21 @@ mod tests {
         validate_plan_hash(&plan).unwrap();
         validate_confirmation(&plan, &display, &confirmation).unwrap();
         validate_journal_chain(&journal).unwrap();
+        validate_journal_chain(&failure_journal).unwrap();
+        validate_failure_evidence(&failure_evidence, &failure_journal[0]).unwrap();
+        assert_eq!(
+            create_action_failed_record(&failure_journal[0], &failure_evidence).unwrap(),
+            failure_journal[1]
+        );
+        assert_eq!(
+            create_failure_state_advanced_record(
+                &failure_journal[0],
+                &failure_journal[1],
+                &failure_evidence,
+            )
+            .unwrap(),
+            failure_journal[2]
+        );
         validate_handoff(
             &handoff,
             &plan,

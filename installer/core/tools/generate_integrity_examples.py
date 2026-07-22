@@ -140,6 +140,55 @@ def main() -> int:
         reboot_committed,
         state_advanced,
     ]
+    failure_intent = {
+        "schema_version": 1,
+        "sequence": 0,
+        "previous_record_hash": None,
+        "actor": "windows_bootstrap",
+        "transition_id": "begin_preflight",
+        "record_type": "action_intent",
+        "precondition_hash": "66" * 32,
+        "postcondition_hash": None,
+        "plan_hash": plan["plan_hash"],
+        "created_objects": [],
+    }
+    failure_evidence = {
+        "schema_version": 1,
+        "graph_model_id": graph_model_id,
+        "transition_id": failure_intent["transition_id"],
+        "actor": failure_intent["actor"],
+        "plan_hash": plan["plan_hash"],
+        "action_intent_record_hash": digest(failure_intent),
+        "failure_state": "terminal.manual_recovery",
+        "error_class": "executor_failed",
+        "no_committed_effect_hash": "55" * 32,
+        "residual_objects": [],
+    }
+    action_failed = {
+        "schema_version": 1,
+        "sequence": 1,
+        "previous_record_hash": digest(failure_intent),
+        "actor": failure_intent["actor"],
+        "transition_id": failure_intent["transition_id"],
+        "record_type": "action_failed",
+        "precondition_hash": failure_intent["precondition_hash"],
+        "postcondition_hash": digest(failure_evidence),
+        "plan_hash": plan["plan_hash"],
+        "created_objects": [],
+    }
+    failure_advanced = {
+        "schema_version": 1,
+        "sequence": 2,
+        "previous_record_hash": digest(action_failed),
+        "actor": failure_intent["actor"],
+        "transition_id": failure_intent["transition_id"],
+        "record_type": "state_advanced",
+        "precondition_hash": digest(failure_evidence),
+        "postcondition_hash": digest("terminal.manual_recovery"),
+        "plan_hash": plan["plan_hash"],
+        "created_objects": [],
+    }
+    failure_journal = [failure_intent, action_failed, failure_advanced]
     handoff = {
         "schema_version": 1,
         "graph_model_id": plan["body"]["state_model_id"],
@@ -226,6 +275,8 @@ def main() -> int:
     write(args.output / "example-confirmation.json", confirmation)
     write(args.output / "example-journal-record.json", intent)
     write(args.output / "example-journal-chain.json", journal)
+    write(args.output / "example-failure-evidence.json", failure_evidence)
+    write(args.output / "example-failure-journal-chain.json", failure_journal)
     write(args.output / "example-handoff.json", handoff)
     write(args.output / "example-destination-intent.json", destination_intent)
     write(args.output / "example-destination-commit.json", destination_commit)

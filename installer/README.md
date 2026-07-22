@@ -34,9 +34,11 @@ make docs
   CLIs
 - `staging/`: crash-safe acceptance WAL, resumable digest-addressed quarantine,
   durable staging evidence, and same-stream point-of-use verification
-- `controller/`: verified typed state-graph loader and pure trace simulator for
-  the graph-driven controller; contains no platform adapters and no reachable
-  production mutation API
+- `controller/`: verified typed state-graph loader, pure trace simulator, and
+  graph-bound durable-journal replay core. It derives restart disposition at
+  every journal phase, rejects non-adjacent or wrong-actor records, and binds
+  success/failure advances to exact graph states. It contains no platform
+  adapters and no reachable production mutation API.
 - `traces/`: success, rejection, interruption, and rollback scenarios
 - `tools/validate_state_graph.py`: structural and safety validator
 - `tools/render_state_graph.py`: generated Mermaid and transition tables

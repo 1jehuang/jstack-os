@@ -1141,6 +1141,10 @@ class EvidenceVerifierTests(unittest.TestCase):
         def skip_commit(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return [records[0], records[2]]
 
+        def failed_without_evidence(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            records[1]["record_type"] = "action_failed"
+            return records
+
         def invented_actor(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             records[0]["actor"] = "invented_actor"
             return records
@@ -1173,6 +1177,11 @@ class EvidenceVerifierTests(unittest.TestCase):
             ("incomplete triplet", incomplete, "ends before durable state advancement"),
             ("single state advanced", state_advanced_only, "must begin with an action_intent"),
             ("intent skips commit", skip_commit, "phases must repeat intent, commit"),
+            (
+                "failed action without a bound failure-evidence artifact",
+                failed_without_evidence,
+                "phases must repeat intent, commit",
+            ),
             ("invented actor", invented_actor, "does not own transition"),
             ("invented transition", invented_transition, "not a transition in the signed graph"),
             ("invented state", invented_state, "does not bind graph state"),

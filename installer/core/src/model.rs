@@ -386,7 +386,39 @@ pub struct JournalRecord {
 pub enum JournalRecordType {
     ActionIntent,
     ActionCommitted,
+    ActionFailed,
     StateAdvanced,
+}
+
+/// Evidence that a journaled action did not commit and must follow the
+/// executable graph's failure edge.
+///
+/// The platform-specific controller is responsible for producing and
+/// independently verifying `no_committed_effect_hash`. The generic contract
+/// binds that proof, the failed intent, the graph identity, the failure state,
+/// and any residual rollback objects into one canonical value.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailureEvidence {
+    pub schema_version: u32,
+    pub graph_model_id: String,
+    pub transition_id: String,
+    pub actor: String,
+    pub plan_hash: Hash256,
+    pub action_intent_record_hash: Hash256,
+    pub failure_state: String,
+    pub error_class: FailureClass,
+    pub no_committed_effect_hash: Hash256,
+    pub residual_objects: Vec<RollbackObject>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureClass {
+    ExecutorFailed,
+    BindingInvalid,
+    OutputConflict,
+    InjectedFault,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

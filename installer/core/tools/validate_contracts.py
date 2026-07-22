@@ -45,6 +45,8 @@ def main() -> int:
         ("confirmation.schema.json", ROOT / "generated" / "example-confirmation.json"),
         ("journal-record.schema.json", ROOT / "generated" / "example-journal-record.json"),
         ("journal-chain.schema.json", ROOT / "generated" / "example-journal-chain.json"),
+        ("failure-evidence.schema.json", ROOT / "generated" / "example-failure-evidence.json"),
+        ("journal-chain.schema.json", ROOT / "generated" / "example-failure-journal-chain.json"),
         ("handoff.schema.json", ROOT / "generated" / "example-handoff.json"),
         ("destination-evidence.schema.json", ROOT / "generated" / "example-destination-intent.json"),
         ("destination-evidence.schema.json", ROOT / "generated" / "example-destination-commit.json"),
@@ -83,9 +85,28 @@ def main() -> int:
     state_without_postcondition = dict(intent)
     state_without_postcondition["record_type"] = "state_advanced"
     invalid_phase_examples.append(("state advanced without postcondition", state_without_postcondition))
+    failed_without_postcondition = dict(intent)
+    failed_without_postcondition["record_type"] = "action_failed"
+    invalid_phase_examples.append(("action failed without evidence hash", failed_without_postcondition))
     for label, document in invalid_phase_examples:
         if journal_validator.is_valid(document):
             errors.append(f"journal schema accepted invalid {label}")
+
+    failure_validator = validator_for(schemas["failure-evidence.schema.json"])(
+        schemas["failure-evidence.schema.json"],
+        registry=registry,
+        format_checker=FormatChecker(),
+    )
+    failure = load(ROOT / "generated" / "example-failure-evidence.json")
+    for field in ("graph_model_id", "transition_id", "actor", "failure_state"):
+        invalid = dict(failure)
+        invalid[field] = ""
+        if failure_validator.is_valid(invalid):
+            errors.append(f"failure evidence schema accepted empty {field}")
+    unknown_class = dict(failure)
+    unknown_class["error_class"] = "unknown"
+    if failure_validator.is_valid(unknown_class):
+        errors.append("failure evidence schema accepted an unknown error class")
 
     destination_validator = validator_for(schemas["destination-evidence.schema.json"])(
         schemas["destination-evidence.schema.json"],
