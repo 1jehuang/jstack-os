@@ -61,8 +61,9 @@ examples:
 		--display generated/example-plan-display.json \
 		--state-model ../model/installer-state-graph.json \
 		--staging-evidence ../staging/fixtures/staging-evidence.json \
+		--release-manifest fixtures/signed-release-manifest.json \
 		--output "$$temporary"; \
-	for name in example-confirmation.json example-journal-record.json example-journal-chain.json example-handoff.json; do \
+	for name in example-confirmation.json example-journal-record.json example-journal-chain.json example-handoff.json example-destination-intent.json example-destination-commit.json; do \
 		diff -u "generated/$$name" "$$temporary/$$name" || exit 1; \
 	done
 

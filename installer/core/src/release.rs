@@ -222,6 +222,15 @@ impl VerifiedReleaseManifest {
             .ok_or(ReleaseError::MissingArtifactRole(role))
     }
 
+    pub fn artifact_stream_verifier(
+        &self,
+        role: ArtifactRole,
+    ) -> Result<ArtifactStreamVerifier, ReleaseError> {
+        Ok(ArtifactStreamVerifier::new(
+            self.artifact_descriptor(role)?.clone(),
+        ))
+    }
+
     pub fn verify_artifact<R: Read>(
         &self,
         role: ArtifactRole,
@@ -257,6 +266,135 @@ pub struct VerifiedArtifact {
     size_bytes: u64,
     sha256: Hash256,
     manifest_digest: Hash256,
+}
+
+/// Incrementally verifies the exact signed bytes of one release artifact.
+///
+/// This type deliberately verifies only the byte slices supplied to [`Self::update`].
+/// It does not prove that a source stream is at EOF. A point-of-use transaction must
+/// probe EOF on the same open source handle before treating a destination as committed.
+pub struct ArtifactStreamVerifier {
+    descriptor: ArtifactDescriptor,
+    bytes_seen: u64,
+    chunk_index: usize,
+    chunk_bytes_seen: u64,
+    chunk_digest: Sha256,
+    whole_digest: Sha256,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct VerifiedArtifactBytes {
+    role: ArtifactRole,
+    size_bytes: u64,
+    sha256: Hash256,
+}
+
+impl VerifiedArtifactBytes {
+    pub fn role(&self) -> ArtifactRole {
+        self.role
+    }
+
+    pub fn size_bytes(&self) -> u64 {
+        self.size_bytes
+    }
+
+    pub fn sha256(&self) -> &Hash256 {
+        &self.sha256
+    }
+}
+
+impl ArtifactStreamVerifier {
+    fn new(descriptor: ArtifactDescriptor) -> Self {
+        Self {
+            descriptor,
+            bytes_seen: 0,
+            chunk_index: 0,
+            chunk_bytes_seen: 0,
+            chunk_digest: Sha256::new(),
+            whole_digest: Sha256::new(),
+        }
+    }
+
+    pub fn role(&self) -> ArtifactRole {
+        self.descriptor.role
+    }
+
+    pub fn expected_size_bytes(&self) -> u64 {
+        self.descriptor.size_bytes
+    }
+
+    pub fn bytes_seen(&self) -> u64 {
+        self.bytes_seen
+    }
+
+    pub fn update(&mut self, mut bytes: &[u8]) -> Result<(), ReleaseError> {
+        let supplied = u64::try_from(bytes.len())
+            .map_err(|_| ReleaseError::ArtifactTrailingBytes(self.descriptor.role))?;
+        if supplied > self.descriptor.size_bytes.saturating_sub(self.bytes_seen) {
+            return Err(ReleaseError::ArtifactTrailingBytes(self.descriptor.role));
+        }
+
+        while !bytes.is_empty() {
+            let chunk_start = u64::try_from(self.chunk_index)
+                .ok()
+                .and_then(|index| index.checked_mul(u64::from(self.descriptor.chunk_size_bytes)))
+                .ok_or(ReleaseError::ArtifactTruncated(self.descriptor.role))?;
+            let expected_chunk_size = self
+                .descriptor
+                .size_bytes
+                .saturating_sub(chunk_start)
+                .min(u64::from(self.descriptor.chunk_size_bytes));
+            let remaining_chunk = expected_chunk_size.saturating_sub(self.chunk_bytes_seen);
+            let take = usize::try_from(remaining_chunk.min(bytes.len() as u64))
+                .map_err(|_| ReleaseError::ArtifactTruncated(self.descriptor.role))?;
+            let (current, rest) = bytes.split_at(take);
+            self.chunk_digest.update(current);
+            self.whole_digest.update(current);
+            self.chunk_bytes_seen += take as u64;
+            self.bytes_seen += take as u64;
+            bytes = rest;
+
+            if self.chunk_bytes_seen == expected_chunk_size {
+                let actual = Hash256::from_bytes(
+                    std::mem::replace(&mut self.chunk_digest, Sha256::new())
+                        .finalize()
+                        .into(),
+                );
+                let expected = self
+                    .descriptor
+                    .chunk_sha256
+                    .get(self.chunk_index)
+                    .ok_or(ReleaseError::ArtifactTruncated(self.descriptor.role))?;
+                if &actual != expected {
+                    return Err(ReleaseError::ArtifactChunkMismatch {
+                        role: self.descriptor.role,
+                        index: self.chunk_index,
+                    });
+                }
+                self.chunk_index += 1;
+                self.chunk_bytes_seen = 0;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn finish(self) -> Result<VerifiedArtifactBytes, ReleaseError> {
+        if self.bytes_seen != self.descriptor.size_bytes
+            || self.chunk_bytes_seen != 0
+            || self.chunk_index != self.descriptor.chunk_sha256.len()
+        {
+            return Err(ReleaseError::ArtifactTruncated(self.descriptor.role));
+        }
+        let actual = Hash256::from_bytes(self.whole_digest.finalize().into());
+        if actual != self.descriptor.sha256 {
+            return Err(ReleaseError::ArtifactDigestMismatch(self.descriptor.role));
+        }
+        Ok(VerifiedArtifactBytes {
+            role: self.descriptor.role,
+            size_bytes: self.descriptor.size_bytes,
+            sha256: actual,
+        })
+    }
 }
 
 impl VerifiedArtifact {
@@ -731,40 +869,23 @@ fn verify_artifact_stream<R: Read>(
     descriptor: &ArtifactDescriptor,
     reader: &mut R,
 ) -> Result<(), ReleaseError> {
-    let mut whole = Sha256::new();
-    let mut remaining_total = descriptor.size_bytes;
+    let mut verifier = ArtifactStreamVerifier::new(descriptor.clone());
     let mut buffer = [0_u8; 64 * 1024];
 
-    for (index, expected_chunk) in descriptor.chunk_sha256.iter().enumerate() {
-        let mut chunk = Sha256::new();
-        let mut remaining_chunk = remaining_total.min(u64::from(descriptor.chunk_size_bytes));
-        while remaining_chunk > 0 {
-            let wanted = remaining_chunk.min(buffer.len() as u64) as usize;
-            let read =
-                reader
-                    .read(&mut buffer[..wanted])
-                    .map_err(|error| ReleaseError::ArtifactIo {
-                        role: descriptor.role,
-                        message: error.to_string(),
-                    })?;
-            if read == 0 {
-                return Err(ReleaseError::ArtifactTruncated(descriptor.role));
-            }
-            chunk.update(&buffer[..read]);
-            whole.update(&buffer[..read]);
-            remaining_chunk -= read as u64;
-            remaining_total -= read as u64;
+    while verifier.bytes_seen() < verifier.expected_size_bytes() {
+        let remaining = verifier.expected_size_bytes() - verifier.bytes_seen();
+        let wanted = remaining.min(buffer.len() as u64) as usize;
+        let read =
+            reader
+                .read(&mut buffer[..wanted])
+                .map_err(|error| ReleaseError::ArtifactIo {
+                    role: descriptor.role,
+                    message: error.to_string(),
+                })?;
+        if read == 0 {
+            return Err(ReleaseError::ArtifactTruncated(descriptor.role));
         }
-        if Hash256::from_bytes(chunk.finalize().into()) != *expected_chunk {
-            return Err(ReleaseError::ArtifactChunkMismatch {
-                role: descriptor.role,
-                index,
-            });
-        }
-    }
-
-    if remaining_total != 0 {
-        return Err(ReleaseError::ArtifactTruncated(descriptor.role));
+        verifier.update(&buffer[..read])?;
     }
     let mut trailing = [0_u8; 1];
     if reader
@@ -777,9 +898,7 @@ fn verify_artifact_stream<R: Read>(
     {
         return Err(ReleaseError::ArtifactTrailingBytes(descriptor.role));
     }
-    if Hash256::from_bytes(whole.finalize().into()) != descriptor.sha256 {
-        return Err(ReleaseError::ArtifactDigestMismatch(descriptor.role));
-    }
+    verifier.finish()?;
     Ok(())
 }
 
@@ -1146,6 +1265,69 @@ mod tests {
                 bytes.len() as u64
             );
         }
+    }
+
+    #[test]
+    fn incremental_artifact_verifier_splits_arbitrary_writes_across_signed_chunks() {
+        let keys = signing_keys();
+        let pending = verify(&keys);
+        let persisted = pending.required_acceptance().clone();
+        let verified = pending.accept_after_persist(&persisted).unwrap();
+        let bytes = b"system-image";
+
+        for maximum in 1..=bytes.len() {
+            let mut verifier = verified
+                .artifact_stream_verifier(ArtifactRole::OfflineSystemImage)
+                .unwrap();
+            verifier.update(&[]).unwrap();
+            for part in bytes.chunks(maximum) {
+                verifier.update(part).unwrap();
+            }
+            let result = verifier.finish().unwrap();
+            assert_eq!(result.role(), ArtifactRole::OfflineSystemImage);
+            assert_eq!(result.size_bytes(), bytes.len() as u64);
+            assert_eq!(result.sha256(), &hash(bytes));
+        }
+    }
+
+    #[test]
+    fn incremental_artifact_verifier_rejects_truncation_overflow_and_tampering() {
+        let keys = signing_keys();
+        let pending = verify(&keys);
+        let persisted = pending.required_acceptance().clone();
+        let verified = pending.accept_after_persist(&persisted).unwrap();
+
+        let mut truncated = verified
+            .artifact_stream_verifier(ArtifactRole::OfflineSystemImage)
+            .unwrap();
+        truncated.update(b"system-imag").unwrap();
+        assert!(matches!(
+            truncated.finish(),
+            Err(ReleaseError::ArtifactTruncated(
+                ArtifactRole::OfflineSystemImage
+            ))
+        ));
+
+        let mut overflow = verified
+            .artifact_stream_verifier(ArtifactRole::OfflineSystemImage)
+            .unwrap();
+        assert!(matches!(
+            overflow.update(b"system-image!"),
+            Err(ReleaseError::ArtifactTrailingBytes(
+                ArtifactRole::OfflineSystemImage
+            ))
+        ));
+
+        let mut tampered = verified
+            .artifact_stream_verifier(ArtifactRole::OfflineSystemImage)
+            .unwrap();
+        assert!(matches!(
+            tampered.update(b"system-Xmage"),
+            Err(ReleaseError::ArtifactChunkMismatch {
+                role: ArtifactRole::OfflineSystemImage,
+                ..
+            })
+        ));
     }
 
     #[test]

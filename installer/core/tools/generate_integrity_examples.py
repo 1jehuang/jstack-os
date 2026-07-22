@@ -35,6 +35,7 @@ def main() -> int:
     parser.add_argument("--display", type=Path, required=True)
     parser.add_argument("--state-model", type=Path, required=True)
     parser.add_argument("--staging-evidence", type=Path, required=True)
+    parser.add_argument("--release-manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -43,6 +44,7 @@ def main() -> int:
     display = load(args.display)
     state_model = load(args.state_model)
     staging_evidence = load(args.staging_evidence)
+    release_manifest = load(args.release_manifest)
     graph_model_id = state_model.get("model_id")
     if graph_model_id != "jstack-no-usb-dual-boot-v1":
         parser.error(f"unexpected executable state-model id: {graph_model_id!r}")
@@ -152,10 +154,81 @@ def main() -> int:
         "intended_boot_target": "installer",
         "nonce": "fixture-nonce-1",
     }
+    artifacts_by_role = {
+        artifact["role"]: artifact for artifact in release_manifest["signed"]["artifacts"]
+    }
+    partitions_by_role = {
+        partition["role"]: partition for partition in plan["body"]["created_partitions"]
+    }
+    destination_intent = {
+        "schema_version": 1,
+        "graph_model_id": graph_model_id,
+        "transition_id": "copy_verified_payload",
+        "actor": "windows_bootstrap",
+        "plan_hash": plan["plan_hash"],
+        "staging_evidence_hash": digest(staging_evidence),
+        "partition_phase": "windows_handoff",
+        "partition_fingerprint": plan["body"]["partition_fingerprints"]["windows_handoff"],
+        "artifacts": [],
+    }
+    for role, placement in [
+        ("installer_uki", "xbootldr_installer_uki"),
+        ("offline_system_image", "xbootldr_offline_system_image"),
+        ("recovery_uki", "xbootldr_recovery_uki"),
+    ]:
+        artifact = artifacts_by_role[role]
+        destination_intent["artifacts"].append(
+            {
+                "artifact": {
+                    "manifest_digest": plan["body"]["release_manifest_hash"],
+                    "role": role,
+                    "sha256": artifact["sha256"],
+                    "size_bytes": artifact["size_bytes"],
+                },
+                "destination": {
+                    "disk_guid": plan["body"]["disk_guid"],
+                    "partition_guid": partitions_by_role["xbootldr"]["partition_guid"],
+                    "placement": placement,
+                    "transform": "exact_file_copy",
+                },
+            }
+        )
+    destination_action_intent = {
+        "schema_version": 1,
+        "sequence": 0,
+        "previous_record_hash": None,
+        "actor": destination_intent["actor"],
+        "transition_id": destination_intent["transition_id"],
+        "record_type": "action_intent",
+        "precondition_hash": digest(destination_intent),
+        "postcondition_hash": None,
+        "plan_hash": plan["plan_hash"],
+        "created_objects": [],
+    }
+    destination_commit = {
+        "schema_version": 1,
+        "graph_model_id": graph_model_id,
+        "transition_id": destination_intent["transition_id"],
+        "actor": destination_intent["actor"],
+        "plan_hash": plan["plan_hash"],
+        "intent_hash": digest(destination_intent),
+        "action_intent_record_hash": digest(destination_action_intent),
+        "artifacts": [
+            {
+                "artifact": item["artifact"],
+                "destination": item["destination"],
+                "written_size_bytes": item["artifact"]["size_bytes"],
+                "written_sha256": item["artifact"]["sha256"],
+            }
+            for item in destination_intent["artifacts"]
+        ],
+    }
     write(args.output / "example-confirmation.json", confirmation)
     write(args.output / "example-journal-record.json", intent)
     write(args.output / "example-journal-chain.json", journal)
     write(args.output / "example-handoff.json", handoff)
+    write(args.output / "example-destination-intent.json", destination_intent)
+    write(args.output / "example-destination-commit.json", destination_commit)
     return 0
 
 

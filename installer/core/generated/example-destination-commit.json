@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "graph_model_id": "jstack-no-usb-dual-boot-v1",
+  "transition_id": "copy_verified_payload",
+  "actor": "windows_bootstrap",
+  "plan_hash": "c558b122396cde57c2ec9937a9d599ed4176867d8cef8ec3d762d3cf3c3bcd56",
+  "intent_hash": "0f5728ae33bf0ea5ab1ad5325741bd499868f3bd71337f901aa63a2dc1191f5f",
+  "action_intent_record_hash": "edf636195a144d9846ea20a68bec2d7765c90c1d479861250bfcb263a61e6732",
+  "artifacts": [
+    {
+      "artifact": {
+        "manifest_digest": "c3f4abaf3ffffa45085e1e9404743b840c931360821ff5161149af4b74338669",
+        "role": "installer_uki",
+        "sha256": "49dec361b29af35bd4e6a89b96dab88c2097fb71593573b13f8a3b4b20022235",
+        "size_bytes": 29
+      },
+      "destination": {
+        "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "partition_guid": "6cf33821-877f-8143-b0fa-adb670a57c0f",
+        "placement": "xbootldr_installer_uki",
+        "transform": "exact_file_copy"
+      },
+      "written_size_bytes": 29,
+      "written_sha256": "49dec361b29af35bd4e6a89b96dab88c2097fb71593573b13f8a3b4b20022235"
+    },
+    {
+      "artifact": {
+        "manifest_digest": "c3f4abaf3ffffa45085e1e9404743b840c931360821ff5161149af4b74338669",
+        "role": "offline_system_image",
+        "sha256": "b964eb0d7eb0933041a13132501c338c0c260958f2c553c40c3abf3c4795d998",
+        "size_bytes": 36
+      },
+      "destination": {
+        "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "partition_guid": "6cf33821-877f-8143-b0fa-adb670a57c0f",
+        "placement": "xbootldr_offline_system_image",
+        "transform": "exact_file_copy"
+      },
+      "written_size_bytes": 36,
+      "written_sha256": "b964eb0d7eb0933041a13132501c338c0c260958f2c553c40c3abf3c4795d998"
+    },
+    {
+      "artifact": {
+        "manifest_digest": "c3f4abaf3ffffa45085e1e9404743b840c931360821ff5161149af4b74338669",
+        "role": "recovery_uki",
+        "sha256": "b93a6b45e48823ec27f77bc744c5cafb615c0d7b358288369a0cbdc131034401",
+        "size_bytes": 28
+      },
+      "destination": {
+        "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "partition_guid": "6cf33821-877f-8143-b0fa-adb670a57c0f",
+        "placement": "xbootldr_recovery_uki",
+        "transform": "exact_file_copy"
+      },
+      "written_size_bytes": 28,
+      "written_sha256": "b93a6b45e48823ec27f77bc744c5cafb615c0d7b358288369a0cbdc131034401"
+    }
+  ]
+}

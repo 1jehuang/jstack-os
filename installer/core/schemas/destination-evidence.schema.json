@@ -1,0 +1,861 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/v1/destination-evidence.schema.json",
+  "title": "JStack destination transaction evidence",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/intent"
+    },
+    {
+      "$ref": "#/$defs/commit"
+    }
+  ],
+  "$defs": {
+    "artifactRole": {
+      "enum": [
+        "esp_loader",
+        "installer_uki",
+        "offline_system_image",
+        "recovery_uki"
+      ]
+    },
+    "placement": {
+      "enum": [
+        "xbootldr_installer_uki",
+        "xbootldr_offline_system_image",
+        "xbootldr_recovery_uki",
+        "esp_bootstrap_loader",
+        "root_image_deployment",
+        "installed_installer_uki",
+        "installed_recovery_uki"
+      ]
+    },
+    "transform": {
+      "enum": [
+        "exact_file_copy",
+        "raw_image_write"
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "manifest_digest",
+        "role",
+        "sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "manifest_digest": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "role": {
+          "$ref": "#/$defs/artifactRole"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "destination": {
+      "type": "object",
+      "required": [
+        "disk_guid",
+        "partition_guid",
+        "placement",
+        "transform"
+      ],
+      "properties": {
+        "disk_guid": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "partition_guid": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "placement": {
+          "$ref": "#/$defs/placement"
+        },
+        "transform": {
+          "$ref": "#/$defs/transform"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactIntent": {
+      "type": "object",
+      "required": [
+        "artifact",
+        "destination"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/artifact"
+        },
+        "destination": {
+          "$ref": "#/$defs/destination"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactCommit": {
+      "type": "object",
+      "required": [
+        "artifact",
+        "destination",
+        "written_size_bytes",
+        "written_sha256"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/artifact"
+        },
+        "destination": {
+          "$ref": "#/$defs/destination"
+        },
+        "written_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "written_sha256": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "xbootldrInstaller": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "installer_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "xbootldr_installer_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "xbootldrImage": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "offline_system_image"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "xbootldr_offline_system_image"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "xbootldrRecovery": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "recovery_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "xbootldr_recovery_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "espLoader": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "esp_loader"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "esp_bootstrap_loader"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rootImage": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "offline_system_image"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "root_image_deployment"
+                },
+                "transform": {
+                  "const": "raw_image_write"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "installedInstaller": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "installer_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "installed_installer_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "installedRecovery": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactIntent"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "recovery_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "installed_recovery_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "intent": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "graph_model_id",
+        "transition_id",
+        "actor",
+        "plan_hash",
+        "staging_evidence_hash",
+        "partition_phase",
+        "partition_fingerprint",
+        "artifacts"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "graph_model_id": {
+          "$ref": "common.schema.json#/$defs/nonempty"
+        },
+        "transition_id": {
+          "enum": [
+            "copy_verified_payload",
+            "stage_installer_loader",
+            "deploy_jstack_image",
+            "install_jstack_boot"
+          ]
+        },
+        "actor": {
+          "enum": [
+            "windows_bootstrap",
+            "linux_installer"
+          ]
+        },
+        "plan_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "staging_evidence_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "partition_phase": {
+          "enum": [
+            "windows_handoff",
+            "installed"
+          ]
+        },
+        "partition_fingerprint": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "artifacts": {
+          "type": "array"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "copy_verified_payload"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "windows_bootstrap"
+              },
+              "partition_phase": {
+                "const": "windows_handoff"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/xbootldrInstaller"
+                  },
+                  {
+                    "$ref": "#/$defs/xbootldrImage"
+                  },
+                  {
+                    "$ref": "#/$defs/xbootldrRecovery"
+                  }
+                ],
+                "items": false,
+                "minItems": 3
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "stage_installer_loader"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "windows_bootstrap"
+              },
+              "partition_phase": {
+                "const": "windows_handoff"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/espLoader"
+                  }
+                ],
+                "items": false,
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "deploy_jstack_image"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "linux_installer"
+              },
+              "partition_phase": {
+                "const": "installed"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/rootImage"
+                  }
+                ],
+                "items": false,
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "install_jstack_boot"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "linux_installer"
+              },
+              "partition_phase": {
+                "const": "installed"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/installedInstaller"
+                  },
+                  {
+                    "$ref": "#/$defs/installedRecovery"
+                  }
+                ],
+                "items": false,
+                "minItems": 2
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "commit": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "graph_model_id",
+        "transition_id",
+        "actor",
+        "plan_hash",
+        "intent_hash",
+        "action_intent_record_hash",
+        "artifacts"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "graph_model_id": {
+          "$ref": "common.schema.json#/$defs/nonempty"
+        },
+        "transition_id": {
+          "enum": [
+            "copy_verified_payload",
+            "stage_installer_loader",
+            "deploy_jstack_image",
+            "install_jstack_boot"
+          ]
+        },
+        "actor": {
+          "enum": [
+            "windows_bootstrap",
+            "linux_installer"
+          ]
+        },
+        "plan_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "intent_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "action_intent_record_hash": {
+          "$ref": "common.schema.json#/$defs/hash256"
+        },
+        "artifacts": {
+          "type": "array"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "copy_verified_payload"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "windows_bootstrap"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/xbootldrInstallerCommit"
+                  },
+                  {
+                    "$ref": "#/$defs/xbootldrImageCommit"
+                  },
+                  {
+                    "$ref": "#/$defs/xbootldrRecoveryCommit"
+                  }
+                ],
+                "items": false,
+                "minItems": 3
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "stage_installer_loader"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "windows_bootstrap"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/espLoaderCommit"
+                  }
+                ],
+                "items": false,
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "deploy_jstack_image"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "linux_installer"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/rootImageCommit"
+                  }
+                ],
+                "items": false,
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transition_id": {
+                "const": "install_jstack_boot"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actor": {
+                "const": "linux_installer"
+              },
+              "artifacts": {
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/installedInstallerCommit"
+                  },
+                  {
+                    "$ref": "#/$defs/installedRecoveryCommit"
+                  }
+                ],
+                "items": false,
+                "minItems": 2
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "xbootldrInstallerCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "installer_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "xbootldr_installer_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "xbootldrImageCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "offline_system_image"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "xbootldr_offline_system_image"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "xbootldrRecoveryCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "recovery_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "xbootldr_recovery_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "espLoaderCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "esp_loader"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "esp_bootstrap_loader"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rootImageCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "offline_system_image"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "root_image_deployment"
+                },
+                "transform": {
+                  "const": "raw_image_write"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "installedInstallerCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "installer_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "installed_installer_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "installedRecoveryCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactCommit"
+        },
+        {
+          "properties": {
+            "artifact": {
+              "properties": {
+                "role": {
+                  "const": "recovery_uki"
+                }
+              }
+            },
+            "destination": {
+              "properties": {
+                "placement": {
+                  "const": "installed_recovery_uki"
+                },
+                "transform": {
+                  "const": "exact_file_copy"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

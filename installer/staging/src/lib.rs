@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+pub mod journal;
+pub mod transaction;
+pub use journal::*;
+pub use transaction::*;
+
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -15,9 +20,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-const ACCEPTANCE_MAGIC: &[u8; 8] = b"JSACTV1\0";
+const ACCEPTANCE_MAGIC: &[u8; 8] = b"JSACTV2\0";
 const ACCEPTANCE_COMMIT: &[u8; 8] = b"JSCMIT1\0";
-const ACCEPTANCE_HEADER_BYTES: usize = ACCEPTANCE_MAGIC.len() + std::mem::size_of::<u32>();
+const ACCEPTANCE_HEADER_BYTES: usize = ACCEPTANCE_MAGIC.len() + 2 * std::mem::size_of::<u32>();
 const ACCEPTANCE_TRAILER_BYTES: usize = 32 + ACCEPTANCE_COMMIT.len();
 const MAX_ACCEPTANCE_RECORD_BYTES: usize = 4 * 1024;
 const COPY_BUFFER_BYTES: usize = 64 * 1024;
@@ -584,7 +589,9 @@ impl<I: FaultInjector> StagingStore<I> {
 
         file.seek(SeekFrom::End(0))?;
         file.write_all(ACCEPTANCE_MAGIC)?;
-        file.write_all(&(body.len() as u32).to_be_bytes())?;
+        let body_length = body.len() as u32;
+        file.write_all(&body_length.to_be_bytes())?;
+        file.write_all(&(!body_length).to_be_bytes())?;
         file.write_all(&body)?;
         file.write_all(&Sha256::digest(&body))?;
         self.hit(FaultPoint::AcceptanceAfterRecordWrite)?;
@@ -612,6 +619,9 @@ impl<I: FaultInjector> StagingStore<I> {
         if release.verify_artifact(role, &mut file).is_err() {
             return Err(StagingError::ExistingArtifactInvalid(role));
         }
+        let quarantine_path = self.quarantine_path(release.manifest_digest(), &descriptor);
+        remove_obsolete_cache_entry(&quarantine_path)?;
+        ensure_single_link_file(&file, &path)?;
         file.seek(SeekFrom::Start(0))?;
         Ok(Some(StagedArtifact {
             file,
@@ -770,30 +780,40 @@ fn parse_acceptance_log(
             break;
         }
         if &bytes[offset..offset + ACCEPTANCE_MAGIC.len()] != ACCEPTANCE_MAGIC {
-            return Err(StagingError::AcceptanceCorrupt);
+            return finish_invalid_acceptance_tail(file, &bytes, states, durable_end);
         }
         let length_start = offset + ACCEPTANCE_MAGIC.len();
         let body_length = u32::from_be_bytes(
             bytes[length_start..length_start + 4]
                 .try_into()
                 .map_err(|_| StagingError::AcceptanceCorrupt)?,
-        ) as usize;
+        );
+        let inverse_length_start = length_start + std::mem::size_of::<u32>();
+        let inverse_body_length = u32::from_be_bytes(
+            bytes[inverse_length_start..inverse_length_start + 4]
+                .try_into()
+                .map_err(|_| StagingError::AcceptanceCorrupt)?,
+        );
+        if inverse_body_length != !body_length {
+            return finish_invalid_acceptance_tail(file, &bytes, states, durable_end);
+        }
+        let body_length = body_length as usize;
         if body_length == 0 || body_length > MAX_ACCEPTANCE_RECORD_BYTES {
-            return Err(StagingError::AcceptanceCorrupt);
+            return finish_invalid_acceptance_tail(file, &bytes, states, durable_end);
         }
         let frame_length = ACCEPTANCE_HEADER_BYTES
             .checked_add(body_length)
             .and_then(|value| value.checked_add(ACCEPTANCE_TRAILER_BYTES))
             .ok_or(StagingError::AcceptanceCorrupt)?;
         if bytes.len() - offset < frame_length {
-            break;
+            return finish_invalid_acceptance_tail(file, &bytes, states, durable_end);
         }
         let body_start = offset + ACCEPTANCE_HEADER_BYTES;
         let body_end = body_start + body_length;
         let checksum_end = body_end + 32;
         let commit_end = checksum_end + ACCEPTANCE_COMMIT.len();
         if &bytes[checksum_end..commit_end] != ACCEPTANCE_COMMIT {
-            return Err(StagingError::AcceptanceCorrupt);
+            return finish_invalid_acceptance_tail(file, &bytes, states, durable_end);
         }
         if Sha256::digest(&bytes[body_start..body_end]).as_slice() != &bytes[body_end..checksum_end]
         {
@@ -817,6 +837,23 @@ fn parse_acceptance_log(
         file.set_len(durable_end as u64)?;
         file.sync_all()?;
     }
+    Ok(states)
+}
+
+fn finish_invalid_acceptance_tail(
+    file: &mut File,
+    bytes: &[u8],
+    states: Vec<ReleaseAcceptanceState>,
+    durable_end: usize,
+) -> Result<Vec<ReleaseAcceptanceState>, StagingError> {
+    if bytes[durable_end..]
+        .windows(ACCEPTANCE_COMMIT.len())
+        .any(|window| window == ACCEPTANCE_COMMIT)
+    {
+        return Err(StagingError::AcceptanceCorrupt);
+    }
+    file.set_len(durable_end as u64)?;
+    file.sync_all()?;
     Ok(states)
 }
 
@@ -1055,6 +1092,36 @@ fn remove_untrusted_cache_entry(path: &Path) -> Result<(), StagingError> {
         return Err(StagingError::UnexpectedEntry(path.to_path_buf()));
     }
     remove_file_if_present(path)
+}
+
+fn remove_obsolete_cache_entry(path: &Path) -> Result<(), StagingError> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            Err(StagingError::UnexpectedEntry(path.to_path_buf()))
+        }
+        Ok(_) => {
+            remove_file_if_present(path)?;
+            sync_directory(path.parent().ok_or(StagingError::InvalidRoot)?)?;
+            Ok(())
+        }
+    }
+}
+
+#[cfg(unix)]
+fn ensure_single_link_file(file: &File, path: &Path) -> Result<(), StagingError> {
+    use std::os::unix::fs::MetadataExt;
+
+    if file.metadata()?.nlink() != 1 {
+        return Err(StagingError::UnsafePath(path.to_path_buf()));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_single_link_file(_file: &File, _path: &Path) -> Result<(), StagingError> {
+    Ok(())
 }
 
 fn channel_token(channel: ReleaseChannel) -> &'static str {
@@ -1418,6 +1485,87 @@ mod tests {
     }
 
     #[test]
+    fn complete_invalid_uncommitted_acceptance_headers_are_truncated() {
+        let temporary = TempDir::new().unwrap();
+        let mut store = StagingStore::open(temporary.path()).unwrap();
+        let release = accepted_release(&mut store);
+        let state = release.acceptance().clone();
+        let log = store.acceptance_log_path(state.channel, &state.state_model_sha256);
+        let durable = fs::read(&log).unwrap();
+
+        let header = |magic: &[u8; 8], length: u32, inverse: u32| {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(magic);
+            bytes.extend_from_slice(&length.to_be_bytes());
+            bytes.extend_from_slice(&inverse.to_be_bytes());
+            bytes
+        };
+        let oversized = MAX_ACCEPTANCE_RECORD_BYTES as u32 + 1;
+        let tails = [
+            header(ACCEPTANCE_MAGIC, 0, !0),
+            header(ACCEPTANCE_MAGIC, oversized, !oversized),
+            header(ACCEPTANCE_MAGIC, 128, !128),
+            header(ACCEPTANCE_MAGIC, 1, 1),
+            header(b"BROKEN!!", 1, !1),
+        ];
+
+        for tail in tails {
+            let mut bytes = durable.clone();
+            bytes.extend_from_slice(&tail);
+            fs::write(&log, bytes).unwrap();
+            assert_eq!(
+                store
+                    .read_acceptance(state.channel, &state.state_model_sha256)
+                    .unwrap(),
+                Some(state.clone())
+            );
+            assert_eq!(fs::read(&log).unwrap(), durable);
+        }
+    }
+
+    #[test]
+    fn committed_acceptance_header_corruption_hard_stops_without_truncation() {
+        let temporary = TempDir::new().unwrap();
+        let mut store = StagingStore::open(temporary.path()).unwrap();
+        let release = accepted_release(&mut store);
+        let state = release.acceptance().clone();
+        let log = store.acceptance_log_path(state.channel, &state.state_model_sha256);
+        let committed = fs::read(&log).unwrap();
+        let length_start = ACCEPTANCE_MAGIC.len();
+        let inverse_start = length_start + std::mem::size_of::<u32>();
+
+        let mut corruptions = Vec::new();
+        let mut wrong_length = committed.clone();
+        wrong_length[length_start..length_start + 4].copy_from_slice(&4096_u32.to_be_bytes());
+        corruptions.push(wrong_length);
+
+        let mut coherent_wrong_length = committed.clone();
+        coherent_wrong_length[length_start..length_start + 4]
+            .copy_from_slice(&4096_u32.to_be_bytes());
+        coherent_wrong_length[inverse_start..inverse_start + 4]
+            .copy_from_slice(&(!4096_u32).to_be_bytes());
+        corruptions.push(coherent_wrong_length);
+
+        let mut wrong_inverse = committed.clone();
+        wrong_inverse[inverse_start] ^= 1;
+        corruptions.push(wrong_inverse);
+
+        let mut wrong_magic = committed.clone();
+        wrong_magic[0] ^= 1;
+        corruptions.push(wrong_magic);
+
+        for corrupted in corruptions {
+            let corrupted_length = corrupted.len();
+            fs::write(&log, corrupted).unwrap();
+            assert!(matches!(
+                store.read_acceptance(state.channel, &state.state_model_sha256),
+                Err(StagingError::AcceptanceCorrupt)
+            ));
+            assert_eq!(fs::metadata(&log).unwrap().len(), corrupted_length as u64);
+        }
+    }
+
+    #[test]
     fn artifact_resume_preserves_only_complete_verified_chunks() {
         let temporary = TempDir::new().unwrap();
         let mut store = StagingStore::open(temporary.path()).unwrap();
@@ -1528,7 +1676,17 @@ mod tests {
             let progress = recovered
                 .stage_artifact(&release, role, offset, &mut Cursor::new(&bytes[start..]))
                 .unwrap();
-            assert!(matches!(progress, StageProgress::Complete(_)));
+            let StageProgress::Complete(staged) = progress else {
+                panic!("artifact did not complete after recovery");
+            };
+            let descriptor = release.artifact_descriptor(role).unwrap();
+            let quarantine = recovered.quarantine_path(release.manifest_digest(), descriptor);
+            assert!(!quarantine.exists());
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                assert_eq!(staged.file.metadata().unwrap().nlink(), 1);
+            }
         }
     }
 

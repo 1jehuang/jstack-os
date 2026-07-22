@@ -46,6 +46,8 @@ def main() -> int:
         ("journal-record.schema.json", ROOT / "generated" / "example-journal-record.json"),
         ("journal-chain.schema.json", ROOT / "generated" / "example-journal-chain.json"),
         ("handoff.schema.json", ROOT / "generated" / "example-handoff.json"),
+        ("destination-evidence.schema.json", ROOT / "generated" / "example-destination-intent.json"),
+        ("destination-evidence.schema.json", ROOT / "generated" / "example-destination-commit.json"),
     ]
     for schema_name, path in documents:
         schema = schemas[schema_name]
@@ -84,6 +86,44 @@ def main() -> int:
     for label, document in invalid_phase_examples:
         if journal_validator.is_valid(document):
             errors.append(f"journal schema accepted invalid {label}")
+
+    destination_validator = validator_for(schemas["destination-evidence.schema.json"])(
+        schemas["destination-evidence.schema.json"],
+        registry=registry,
+        format_checker=FormatChecker(),
+    )
+    destination_intent = load(ROOT / "generated" / "example-destination-intent.json")
+    invalid_destinations = []
+    reordered = json.loads(json.dumps(destination_intent))
+    reordered["artifacts"][0], reordered["artifacts"][1] = (
+        reordered["artifacts"][1],
+        reordered["artifacts"][0],
+    )
+    invalid_destinations.append(("reordered destination artifacts", reordered))
+    wrong_actor = json.loads(json.dumps(destination_intent))
+    wrong_actor["actor"] = "linux_installer"
+    invalid_destinations.append(("transition actor mismatch", wrong_actor))
+    wrong_phase = json.loads(json.dumps(destination_intent))
+    wrong_phase["partition_phase"] = "installed"
+    invalid_destinations.append(("transition partition phase mismatch", wrong_phase))
+    missing_artifact = json.loads(json.dumps(destination_intent))
+    missing_artifact["artifacts"].pop()
+    invalid_destinations.append(("missing destination artifact", missing_artifact))
+    for label, document in invalid_destinations:
+        if destination_validator.is_valid(document):
+            errors.append(f"destination schema accepted invalid {label}")
+    destination_commit = load(ROOT / "generated" / "example-destination-commit.json")
+    reordered_commit = json.loads(json.dumps(destination_commit))
+    reordered_commit["artifacts"][0], reordered_commit["artifacts"][1] = (
+        reordered_commit["artifacts"][1],
+        reordered_commit["artifacts"][0],
+    )
+    if destination_validator.is_valid(reordered_commit):
+        errors.append("destination schema accepted reordered commit artifacts")
+    wrong_commit_transition = json.loads(json.dumps(destination_commit))
+    wrong_commit_transition["transition_id"] = "deploy_jstack_image"
+    if destination_validator.is_valid(wrong_commit_transition):
+        errors.append("destination schema accepted commit transition/artifact mismatch")
 
     if errors:
         for error in errors:
