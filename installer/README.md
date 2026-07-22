@@ -64,6 +64,10 @@ The current proof boundary, platform-independent work, disposable VM campaign,
 and physical-hardware gates are tracked in
 `docs/installer/ASSURANCE_MATRIX.md`.
 
+The executable checklist for completing every remaining task that does not
+require physical Windows hardware is tracked in
+`docs/installer/PRE_HARDWARE_LEDGER.md`.
+
 The end-to-end Windows acceptance criteria, evidence requirements, fault
 campaign, and host real-drive interlock are defined in
 `docs/installer/VM_PROOF.md`. The file-only QEMU/KVM harness lives in `vm/`.
