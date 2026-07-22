@@ -22,7 +22,7 @@ is open.
 
 ## Current Milestone 5 baseline
 
-The executable graph models 55 states, 92 transitions, 41 actions, 40 guards, 18
+The executable graph models 55 states, 92 transitions, 41 actions, 44 guards, 20
 invariants, and 17 scenario traces. Its 31 non-read-only actions include staging,
 disk, filesystem, boot, security, reboot, external-I/O, and explicit user
 authorization effects.
@@ -31,7 +31,7 @@ The complete `make check` gate passes under Rust 1.85. It currently includes 49
 state-model tests, 62 core tests, 34 staging tests, 86 VM tests, strict Clippy,
 schema and canonical fixture validation, independent Ed25519 and artifact vectors,
 the PowerShell collector audit and mocked execution, Linux builds, and
-`cargo check --target x86_64-pc-windows-msvc` for both Rust crates. This is a
+`cargo check --target x86_64-pc-windows-msvc` for every Rust crate. This is a
 compile check, not an MSVC-linked Windows build.
 
 | Area | Current level | Evidence demonstrated now | Required production level | Open boundary |

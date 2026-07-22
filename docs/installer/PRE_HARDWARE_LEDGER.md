@@ -29,20 +29,23 @@ The following restrictions remain unconditional throughout this work:
 
 ## Verified baseline
 
-Baseline commit: `eed4d6b301ed890d3db5f902fa514fea9ead4a6a`.
+Implementation baseline commit: `eed4d6b301ed890d3db5f902fa514fea9ead4a6a`.
+This ledger was introduced by `1cdab4c1f5ab1acb2bc9ec4af7fa62a82866859f`.
+Neither commit is the future PH-18 release candidate: that gate records and
+validates the exact immutable tree that contains all completed work.
 
 | Capability | Current evidence | State |
 | --- | --- | --- |
-| Executable model | 55 states, 92 transitions, 41 actions, 40 guards, 18 invariants, and 17 traces validated by `installer/tools/state_model.py` | complete foundation |
+| Executable model | 55 states, 92 transitions, 41 actions, 44 guards, 20 invariants, and 17 traces validated by `installer/tools/validate_state_graph.py` using `state_model.py` | complete foundation |
 | Typed graph and replay | Digest-pinned Rust graph loader, all abstract traces, every success/failure edge, and graph-bound durable replay in `installer/controller` | complete foundation |
 | Release and planning | Canonical threshold-signed release, acceptance ratchet, strict inventory, deterministic plan, confirmation, and identity bindings in `installer/core` | complete foundation |
 | Durable staging | Acceptance WAL, resumable quarantine, evidence publication, and private regular-file transaction simulator in `installer/staging` | complete foundation |
 | VM safety harness | File-only QEMU plan, workspace confinement, QMP/FD audit, immutable profiles, and strict evidence verifier in `installer/vm` | complete foundation |
 | Exact toolchain | Rust and Cargo 1.85.0 plus installed Linux and `x86_64-pc-windows-msvc` targets | available |
 | Virtualization | QEMU 11.0.2, KVM access, OVMF secure/nonsecure code, swtpm 0.10.1, PowerShell 7.5.4 | available |
-| Official Windows 10 media | 6,140,975,104 bytes, SHA-256 `a6f470ca6d331eb353b815c043e327a347f594f37ff525f17764738fe812852e`; matches the Microsoft-published profile record | acquired and authenticated |
+| Official Windows 10 media | 6,140,975,104 bytes, SHA-256 `a6f470ca6d331eb353b815c043e327a347f594f37ff525f17764738fe812852e`; matches the page-sourced Microsoft hash recorded in the profile, but no archival Microsoft publication artifact is retained | acquired; publication provenance is non-archival |
 | Official Windows 11 media | 7,092,807,680 bytes, SHA-256 `a61adeab895ef5a4db436e0a7011c92a2ff17bb0357f58b13bbc4062e535e7b9`; matches the Microsoft publication record | acquired and authenticated |
-| Local capacity | 8 logical CPUs, 15 GiB RAM, KVM, and 75 GiB currently free; obsolete detached review worktrees provide reclaimable scratch capacity | usable with capacity discipline |
+| Local capacity | 8 logical CPUs, 15 GiB RAM, KVM, and approximately 74 GiB free at the baseline audit; obsolete detached review worktrees provide reclaimable scratch capacity | usable only while at least 64 GiB remains free before a new base-image build |
 
 ## Pre-hardware requirement ledger
 
@@ -56,7 +59,7 @@ substitute for a physical-hardware observation.
 | PH-02 | Deterministic runtime selection | `GraphModel::select_enabled` fails on zero or multiple candidates | Every transition is selected from current state, event, verified guards, actor, and authorization; no parallel workflow exists | open |
 | PH-03 | Restart-safe controller execution | Durable journal replay derives all current dispositions | `step`, `resume`, and `reconcile` execute graph actions through a sealed virtual effect boundary and converge after every durable boundary | open |
 | PH-04 | Verified failure admission | Strict `FailureEvidence` and `ActionFailed` records exist | Each mutating action class recomputes a no-committed-effect proof or recovers forward; callers cannot choose a failure target | open |
-| PH-05 | Replicated cross-OS state | Handoff and journal schemas bind graph, plan, release, disk, and journal head | At least two authenticated durable virtual replicas reconcile exactly; handoff nonces are single-use; graph-aware handoff accepts only legal actor changes | open |
+| PH-05 | Replicated cross-OS state | Handoff and journal schemas bind graph, plan, release, disk, and journal head | At least two authenticated durable virtual replicas reconcile exactly; confirmation and handoff objects are authenticated; handoff nonces are single-use; graph-aware handoff accepts only legal actor changes | open |
 | PH-06 | Deterministic virtual platform | Graph actions and guards define required state | Private state models GPT, filesystems, firmware, boot targets, BitLocker, power, replicas, and independently observable pre/postconditions for all applicable actions | open |
 | PH-07 | FAT32 and Btrfs image transactions | Same-stream private regular-file simulator proves the core protocol | Descriptor-confined transactions write only plan-derived ESP/XBOOTLDR/Btrfs locations in sparse images and pass short-write, ENOSPC, crash, case, link, tamper, and replay tests | open |
 | PH-08 | Disposable-VM Windows adapters | Read-only collector and Windows-target compile checks pass | Storage shrink/expand, partition creation, BitLocker suspend/restore, finalizer, BootNext, and reboot adapters run only in disposable VMs and consume controller capabilities | open |
@@ -66,7 +69,7 @@ substitute for a physical-hardware observation.
 | PH-12 | Reproducible base images | Official ISOs and unattended answer media exist | Freshly built UEFI/GPT qcow2 bases match declared Windows edition/build/layout and are independently inspected before sealing read-only | open |
 | PH-13 | End-to-end happy paths | `VM_PROOF.md` defines twelve independent observations | Each claimed Secure Boot/TPM/BitLocker profile completes Windows → installer → Windows → JStack and cold-boots both OSes with a terminal journal | open |
 | PH-14 | Graph-derived fault campaigns | Model and evidence schema define mutation classes and eight interruption phases | Every applicable mutation and failure edge is exercised with process termination plus ENOSPC, sharing, tamper, stale identity, firmware, reboot, finalizer, rollback, and recovery cases | open |
-| PH-15 | Repetition and freshness | Fresh-run isolation is enforced by the harness | Ten fresh-overlay happy paths pass per claimed security profile, a base is reconstructed, and all required campaigns rerun after relevant changes | open |
+| PH-15 | Repetition and freshness | Fresh-run isolation is enforced by the harness | Ten fresh-overlay happy paths pass per supported OS and security-profile combination, a base is reconstructed, and all required campaigns rerun after relevant changes | open |
 | PH-16 | Canonical evidence and support matrix | Strict evidence schema/verifier rejects malformed and self-selected trust roots | Every run and campaign has an immutable verified bundle and approved index; published support claims equal exact observed profile coverage | open |
 | PH-17 | Runnable packaging and recovery UX | Core CLIs and deterministic fixtures exist | A pre-hardware installer CLI presents exact confirmation, runs only virtual/disposable capabilities, explains recovery states, and builds a deterministic signed test bundle | open |
 | PH-18 | Frozen-tree assurance | Milestone gate is documented and previously exercised | Exact Rust 1.85 Linux/Windows-target/VM/media/evidence gates and static host-device audit pass on immutable trees; independent P0/P1 reviewers report no blockers before each commit | open |
