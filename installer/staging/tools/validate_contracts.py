@@ -51,7 +51,7 @@ def main() -> int:
     if fixture != expected:
         raise SystemExit("staging evidence fixture diverges from signed core fixtures")
     digest = hashlib.sha256(canonical(fixture)).hexdigest()
-    if digest != "fa20e93dec1c8d282b7611f33a476540e08b3ffc80afcae3f30c598bb131b95f":
+    if digest != "cfd7abe3283906bf1146ac9ac01bad0a3faa0bf253560b027de6cd8721bee4fd":
         raise SystemExit("staging evidence known-answer digest changed")
     print("validated staging evidence schema, canonical fixture, and known-answer digest")
     return 0

@@ -847,7 +847,7 @@ mod tests {
             architecture: Architecture::X86_64,
             issued_at_unix_secs: NOW - 60,
             expires_at_unix_secs: NOW + 3_600,
-            state_model_id: "jstack-installer-v1".to_owned(),
+            state_model_id: crate::state_graph::EXECUTABLE_STATE_MODEL_ID.to_owned(),
             state_model_sha256: hash(b"state-model"),
             installer_protocol_min: 1,
             installer_protocol_max: 1,
@@ -897,7 +897,7 @@ mod tests {
         ReleaseTrustPolicy {
             channel: ReleaseChannel::Stable,
             architecture: Architecture::X86_64,
-            state_model_id: "jstack-installer-v1".to_owned(),
+            state_model_id: crate::state_graph::EXECUTABLE_STATE_MODEL_ID.to_owned(),
             state_model_sha256: hash(b"state-model"),
             installer_protocol_version: 1,
             now_unix_secs: NOW,

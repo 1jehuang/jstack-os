@@ -1,0 +1,578 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/vm/v1/profile.schema.json",
+  "title": "Immutable approved Windows VM support profiles",
+  "description": "Profiles are exact declarations. Required unresolved digests block execution and must be resolved into a newly content-addressed profile, never patched into these records.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/windows11Enterprise25h2Evaluation"
+    },
+    {
+      "$ref": "#/$defs/windows10Pro22h2"
+    }
+  ],
+  "$defs": {
+    "windows11Enterprise25h2Evaluation": {
+      "const": {
+        "schema_version": 1,
+        "kind": "vm-support-profile",
+        "profile_id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0",
+        "status": "blocked-required-inputs",
+        "guest": {
+          "name": "Windows 11",
+          "edition": "Enterprise Evaluation",
+          "release": "25H2",
+          "architecture": "x86_64",
+          "language": "en-US",
+          "installed_build": {
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/guest/build"
+          }
+        },
+        "media": {
+          "record_path": "profiles/windows-11-enterprise-25h2-en-us-eval.media.json",
+          "record_sha256": "21d0fa82f8121cae68bfeb3acc24cbe90f72321b2380a93e3965711df538a3b3"
+        },
+        "qemu": {
+          "binary": "qemu-system-x86_64",
+          "version_constraint": {
+            "minimum_inclusive": "11.0.0",
+            "maximum_exclusive": "11.1.0"
+          },
+          "accelerator": "kvm",
+          "machine": {
+            "type": "pc-q35-11.0",
+            "compatibility_version": "11.0",
+            "smm": true
+          },
+          "binary_sha256_input": "qemu-binary-sha256"
+        },
+        "firmware": {
+          "implementation": "OVMF",
+          "code": {
+            "canonical_name": "OVMF_CODE.secboot.4m.fd",
+            "mode": "read-only",
+            "sha256_input": "ovmf-code-sha256",
+            "digest_evidence_scope": "host-acquisition"
+          },
+          "nonsecure_code": {
+            "canonical_name": "OVMF_CODE.4m.fd",
+            "mode": "read-only",
+            "sha256_input": "ovmf-nonsecure-code-sha256",
+            "digest_evidence_scope": "host-acquisition"
+          },
+          "enrolled_vars": {
+            "canonical_name": "OVMF_VARS.ms-enrolled.4m.fd",
+            "enrollment": "microsoft-production",
+            "copy_policy": "immutable-master-per-run-copy",
+            "sha256_input": "ovmf-enrolled-vars-sha256",
+            "digest_evidence_scope": "base-image-acquisition"
+          },
+          "fixed_vars": {
+            "canonical_name": "OVMF_VARS.4m.fd",
+            "enrollment": "none",
+            "copy_policy": "immutable-master-per-run-copy",
+            "sha256_input": "ovmf-fixed-vars-sha256",
+            "digest_evidence_scope": "host-acquisition"
+          }
+        },
+        "security": {
+          "secure_boot": {
+            "variants": [
+              "enabled",
+              "disabled"
+            ],
+            "enabled_mode": "user",
+            "enabled_enrollment": "microsoft-production"
+          },
+          "tpm": {
+            "version": "2.0",
+            "model": "tpm-crb",
+            "emulator": "swtpm",
+            "emulator_version_constraint": {
+              "minimum_inclusive": "0.10.0",
+              "maximum_exclusive": "0.11.0"
+            },
+            "emulator_sha256_input": "swtpm-binary-sha256",
+            "state_policy": "fresh-per-run",
+            "absent_variant_permitted": false
+          },
+          "bitlocker": {
+            "variants": [
+              "disabled",
+              "enabled"
+            ],
+            "enabled_conversion_status": "fully-encrypted",
+            "enabled_encryption_method": "xts-aes-128",
+            "enabled_protectors": [
+              "tpm",
+              "recovery-password"
+            ],
+            "recovery_confirmation_required": true
+          },
+          "scenario_matrix": [
+            {
+              "id": "secureboot-tpm-bitlocker-off",
+              "secure_boot": "enabled",
+              "tpm": "2.0",
+              "bitlocker": "disabled"
+            },
+            {
+              "id": "secureboot-tpm-bitlocker-on",
+              "secure_boot": "enabled",
+              "tpm": "2.0",
+              "bitlocker": "enabled"
+            },
+            {
+              "id": "nosecureboot-tpm-bitlocker-off",
+              "secure_boot": "disabled",
+              "tpm": "2.0",
+              "bitlocker": "disabled"
+            }
+          ]
+        },
+        "compute": {
+          "ram_bytes": 4294967296,
+          "cpu": {
+            "architecture": "x86_64",
+            "model": "host",
+            "sockets": 1,
+            "cores": 4,
+            "threads": 1,
+            "vcpus": 4,
+            "minimum_features": [
+              "sse4.2",
+              "popcnt",
+              "xsave",
+              "avx"
+            ]
+          }
+        },
+        "storage": {
+          "controller": "nvme",
+          "bus": "pcie",
+          "logical_sector_bytes": 512,
+          "physical_sector_bytes": 4096,
+          "disk_count": 1,
+          "base_image_format": "qcow2",
+          "virtual_size_bytes": 137438953472,
+          "layout": {
+            "partition_table": "gpt",
+            "firmware_boot": "uefi",
+            "system_disk_only": true,
+            "esp_on_system_disk": true,
+            "ordered_partition_roles": [
+              "esp",
+              "msr",
+              "windows",
+              "recovery"
+            ],
+            "windows_filesystem": "ntfs",
+            "recovery_filesystem": "ntfs",
+            "preexisting_jstack_partitions": 0
+          },
+          "base_image_sha256_input": "base-image-sha256",
+          "base_image_gpt_sha256_input": "base-image-gpt-sha256",
+          "serial": "JSTACKLAB0001"
+        },
+        "artifacts": {
+          "installer_sha256_input": "installer-sha256",
+          "installer_graph_sha256_input": "installer-graph-sha256",
+          "release_manifest_sha256_input": "release-manifest-sha256",
+          "boot_artifacts_sha256_input": "boot-artifacts-sha256"
+        },
+        "required_inputs": [
+          {
+            "id": "qemu-binary-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/versions/qemu/binary_sha256"
+          },
+          {
+            "id": "ovmf-code-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/firmware/ovmf_secure_code/sha256"
+          },
+          {
+            "id": "ovmf-nonsecure-code-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/firmware/ovmf_code/sha256"
+          },
+          {
+            "id": "ovmf-enrolled-vars-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/firmware/enrolled_vars_sha256"
+          },
+          {
+            "id": "ovmf-fixed-vars-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/firmware/ovmf_vars/sha256"
+          },
+          {
+            "id": "swtpm-binary-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/versions/swtpm/binary_sha256"
+          },
+          {
+            "id": "base-image-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/image/sha256"
+          },
+          {
+            "id": "base-image-gpt-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/disk/gpt_sha256"
+          },
+          {
+            "id": "installer-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/installer/sha256"
+          },
+          {
+            "id": "installer-graph-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/installer_graph/sha256"
+          },
+          {
+            "id": "release-manifest-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/release_manifest/sha256"
+          },
+          {
+            "id": "boot-artifacts-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/boot_artifacts/sha256"
+          }
+        ],
+        "network": {
+          "controller": "e1000e",
+          "backend": "user",
+          "mac_address": "52:54:00:4a:53:01",
+          "host_forwarding": "disabled",
+          "inbox_windows_driver": true
+        }
+      }
+    },
+    "windows10Pro22h2": {
+      "const": {
+        "schema_version": 1,
+        "kind": "vm-support-profile",
+        "profile_id": "windows-10-pro-22h2-en-us-x64-q35-11.0",
+        "status": "blocked-required-inputs",
+        "guest": {
+          "name": "Windows 10",
+          "edition": "Pro",
+          "release": "22H2",
+          "architecture": "x86_64",
+          "language": "en-US",
+          "installed_build": {
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/guest/build"
+          }
+        },
+        "media": {
+          "record_path": "profiles/windows-10-pro-22h2-en-us.media.json",
+          "record_sha256": "cd11e4b2314039feeca17bd149bf2368a9c91c617703c86f2f2abe6f34fd6296"
+        },
+        "qemu": {
+          "binary": "qemu-system-x86_64",
+          "version_constraint": {
+            "minimum_inclusive": "11.0.0",
+            "maximum_exclusive": "11.1.0"
+          },
+          "accelerator": "kvm",
+          "machine": {
+            "type": "pc-q35-11.0",
+            "compatibility_version": "11.0",
+            "smm": true
+          },
+          "binary_sha256_input": "qemu-binary-sha256"
+        },
+        "firmware": {
+          "implementation": "OVMF",
+          "code": {
+            "canonical_name": "OVMF_CODE.secboot.4m.fd",
+            "mode": "read-only",
+            "sha256_input": "ovmf-code-sha256",
+            "digest_evidence_scope": "host-acquisition"
+          },
+          "nonsecure_code": {
+            "canonical_name": "OVMF_CODE.4m.fd",
+            "mode": "read-only",
+            "sha256_input": "ovmf-nonsecure-code-sha256",
+            "digest_evidence_scope": "host-acquisition"
+          },
+          "enrolled_vars": {
+            "canonical_name": "OVMF_VARS.ms-enrolled.4m.fd",
+            "enrollment": "microsoft-production",
+            "copy_policy": "immutable-master-per-run-copy",
+            "sha256_input": "ovmf-enrolled-vars-sha256",
+            "digest_evidence_scope": "base-image-acquisition"
+          },
+          "fixed_vars": {
+            "canonical_name": "OVMF_VARS.4m.fd",
+            "enrollment": "none",
+            "copy_policy": "immutable-master-per-run-copy",
+            "sha256_input": "ovmf-fixed-vars-sha256",
+            "digest_evidence_scope": "host-acquisition"
+          }
+        },
+        "security": {
+          "secure_boot": {
+            "variants": [
+              "enabled",
+              "disabled"
+            ],
+            "enabled_mode": "user",
+            "enabled_enrollment": "microsoft-production"
+          },
+          "tpm": {
+            "version": "2.0",
+            "model": "tpm-crb",
+            "emulator": "swtpm",
+            "emulator_version_constraint": {
+              "minimum_inclusive": "0.10.0",
+              "maximum_exclusive": "0.11.0"
+            },
+            "emulator_sha256_input": "swtpm-binary-sha256",
+            "state_policy": "fresh-per-run",
+            "absent_variant_permitted": true
+          },
+          "bitlocker": {
+            "variants": [
+              "disabled",
+              "enabled"
+            ],
+            "enabled_conversion_status": "fully-encrypted",
+            "enabled_encryption_method": "xts-aes-128",
+            "enabled_protectors": [
+              "tpm",
+              "recovery-password"
+            ],
+            "recovery_confirmation_required": true
+          },
+          "scenario_matrix": [
+            {
+              "id": "secureboot-tpm-bitlocker-off",
+              "secure_boot": "enabled",
+              "tpm": "2.0",
+              "bitlocker": "disabled"
+            },
+            {
+              "id": "secureboot-tpm-bitlocker-on",
+              "secure_boot": "enabled",
+              "tpm": "2.0",
+              "bitlocker": "enabled"
+            },
+            {
+              "id": "nosecureboot-tpm-bitlocker-off",
+              "secure_boot": "disabled",
+              "tpm": "2.0",
+              "bitlocker": "disabled"
+            },
+            {
+              "id": "nosecureboot-notpm-bitlocker-off",
+              "secure_boot": "disabled",
+              "tpm": "absent",
+              "bitlocker": "disabled"
+            }
+          ]
+        },
+        "compute": {
+          "ram_bytes": 4294967296,
+          "cpu": {
+            "architecture": "x86_64",
+            "model": "host",
+            "sockets": 1,
+            "cores": 4,
+            "threads": 1,
+            "vcpus": 4,
+            "minimum_features": [
+              "sse4.2",
+              "popcnt",
+              "xsave",
+              "avx"
+            ]
+          }
+        },
+        "storage": {
+          "controller": "nvme",
+          "bus": "pcie",
+          "logical_sector_bytes": 512,
+          "physical_sector_bytes": 4096,
+          "disk_count": 1,
+          "base_image_format": "qcow2",
+          "virtual_size_bytes": 137438953472,
+          "layout": {
+            "partition_table": "gpt",
+            "firmware_boot": "uefi",
+            "system_disk_only": true,
+            "esp_on_system_disk": true,
+            "ordered_partition_roles": [
+              "esp",
+              "msr",
+              "windows",
+              "recovery"
+            ],
+            "windows_filesystem": "ntfs",
+            "recovery_filesystem": "ntfs",
+            "preexisting_jstack_partitions": 0
+          },
+          "base_image_sha256_input": "base-image-sha256",
+          "base_image_gpt_sha256_input": "base-image-gpt-sha256",
+          "serial": "JSTACKLAB0001"
+        },
+        "artifacts": {
+          "installer_sha256_input": "installer-sha256",
+          "installer_graph_sha256_input": "installer-graph-sha256",
+          "release_manifest_sha256_input": "release-manifest-sha256",
+          "boot_artifacts_sha256_input": "boot-artifacts-sha256"
+        },
+        "required_inputs": [
+          {
+            "id": "qemu-binary-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/versions/qemu/binary_sha256"
+          },
+          {
+            "id": "ovmf-code-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/firmware/ovmf_secure_code/sha256"
+          },
+          {
+            "id": "ovmf-nonsecure-code-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/firmware/ovmf_code/sha256"
+          },
+          {
+            "id": "ovmf-enrolled-vars-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/firmware/enrolled_vars_sha256"
+          },
+          {
+            "id": "ovmf-fixed-vars-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/firmware/ovmf_vars/sha256"
+          },
+          {
+            "id": "swtpm-binary-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "host-acquisition",
+            "evidence_locator": "evidence/host.json#/versions/swtpm/binary_sha256"
+          },
+          {
+            "id": "base-image-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/image/sha256"
+          },
+          {
+            "id": "base-image-gpt-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "base-image-acquisition",
+            "evidence_locator": "base-image.json#/disk/gpt_sha256"
+          },
+          {
+            "id": "installer-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/installer/sha256"
+          },
+          {
+            "id": "installer-graph-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/installer_graph/sha256"
+          },
+          {
+            "id": "release-manifest-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/release_manifest/sha256"
+          },
+          {
+            "id": "boot-artifacts-sha256",
+            "type": "sha256",
+            "state": "required-unresolved",
+            "value": null,
+            "evidence_scope": "release-build",
+            "evidence_locator": "release-inputs.json#/boot_artifacts/sha256"
+          }
+        ],
+        "network": {
+          "controller": "e1000e",
+          "backend": "user",
+          "mac_address": "52:54:00:4a:53:01",
+          "host_forwarding": "disabled",
+          "inbox_windows_driver": true
+        }
+      }
+    }
+  }
+}

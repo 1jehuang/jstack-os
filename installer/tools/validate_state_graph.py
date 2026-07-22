@@ -12,6 +12,7 @@ from state_model import (
     simulate_trace,
     validate_against_schema,
     validate_model,
+    validate_trace,
 )
 
 
@@ -47,11 +48,15 @@ def main() -> int:
             f"trace {trace_path.name} schema: {error}"
             for error in validate_against_schema(trace, trace_schema)
         )
+        trace_errors = validate_trace(model, trace)
+        errors.extend(f"trace {trace_path.name}: {error}" for error in trace_errors)
         if trace.get("id") in trace_ids:
             errors.append(f"duplicate trace id: {trace.get('id')}")
         trace_ids.add(trace.get("id"))
         if expected_terminal := trace.get("expected_terminal"):
             traced_terminals.add(expected_terminal)
+        if trace_errors:
+            continue
         try:
             terminal = simulate_trace(model, trace)
         except AssertionError as error:

@@ -13,11 +13,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 ROOT = Path(__file__).resolve().parents[1]
+STATE_GRAPH_PATH = ROOT.parent / "model" / "installer-state-graph.json"
+REQUIREMENTS_PATH = ROOT / "fixtures" / "release-requirements.json"
 DOMAIN = b"JSTACK-RELEASE-MANIFEST-V1\0"
-EXPECTED_DIGEST = "f14d85ef135acefd5c3e1c8f8bcae4cac17780cdfd962c93b72311e79690b55f"
+EXPECTED_DIGEST = "c3f4abaf3ffffa45085e1e9404743b840c931360821ff5161149af4b74338669"
 EXPECTED_SIGNATURES = {
-    "34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e": "c01c182bf29bbe7824ba3b59cf332e23ded9f8c53557326a2555ed42f60259b6b652d1925d2a328e0683e5686593482ad51e24444a43bddaf1c3ac5c7f377d00",
-    "6a3803d5f059902a1c6dafbc9ba4729212f7caac08634cc3ae76b27529f03827": "d4d1e250d6884139a900b86e639f35ad6fdac0e8be479523cae526435bb68ac1aec03c4f842bf7f51f89924a5775dcb19928cac8e2144a435e7c5d174cbbd805",
+    "34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e": "0211f5ac7176509dfa5b43a8afda3b157f60d9d95b7144ba9895554ad3a95a225a6a8b8e85513ad18ab9a385ceab7369c77888e38ef9b1ffeb4054c79123080a",
+    "6a3803d5f059902a1c6dafbc9ba4729212f7caac08634cc3ae76b27529f03827": "bad55153857fcf292e3f9dd1690fd622631bd8dfc82b2a7bef1829333ea1aa51532e7652ea6c155500caad3e998de5b25e8b835518ca61f68a4c16a9559a5309",
 }
 ARTIFACT_BYTES = {
     "esp_loader": b"jstack-esp-loader-fixture\n",
@@ -51,6 +53,15 @@ def main() -> int:
         fail("signed release fixture is not byte-canonical JSON")
 
     body = canonical(envelope["signed"])
+    graph = json.loads(STATE_GRAPH_PATH.read_bytes())
+    requirements = json.loads(REQUIREMENTS_PATH.read_bytes())
+    graph_model_id = graph.get("model_id")
+    if graph_model_id != "jstack-no-usb-dual-boot-v1":
+        fail(f"unexpected executable state-model id: {graph_model_id!r}")
+    if envelope["signed"].get("state_model_id") != graph_model_id:
+        fail("signed release fixture is bound to a different state-model id")
+    if requirements.get("state_model_id") != graph_model_id:
+        fail("release requirements fixture is bound to a different state-model id")
     message = DOMAIN + len(body).to_bytes(8, "big") + body
     digest = hashlib.sha256(message).hexdigest()
     if digest != EXPECTED_DIGEST:

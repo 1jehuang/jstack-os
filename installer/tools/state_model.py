@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any, Iterable
@@ -20,6 +21,40 @@ MUTATING_RISKS = {
 }
 
 SYSTEM_MUTATING_RISKS = MUTATING_RISKS - {"staging_mutation"}
+
+ROLLBACK_MUTATION_ENTRY_STATE = "recovery.rollback_required"
+
+ROLLBACK_MUTATING_TRANSITION_IDS = frozenset(
+    {
+        "dispatch_rollback_linux",
+        "reboot_to_windows_rollback",
+        "execute_windows_rollback",
+        "rollback_remove_esp_files",
+        "rollback_delete_partitions",
+        "rollback_expand_windows",
+        "rollback_restore_security",
+        "rollback_unregister_finalizer",
+    }
+)
+
+ROLLBACK_RECOVERY_STATE_IDS = frozenset(
+    {
+        "recovery.rollback_required",
+        "linux.rollback_to_windows_pending",
+        "windows.rollback_running",
+        "windows.rollback_boot_entries_removed",
+        "windows.rollback_esp_cleaned",
+        "windows.rollback_partitions_deleted",
+        "windows.rollback_ntfs_restored",
+        "windows.rollback_security_restored",
+    }
+)
+
+ROLLBACK_RECOVERY_TERMINAL_IDS = frozenset(
+    {"terminal.rolled_back", "terminal.manual_recovery"}
+)
+
+ROLLBACK_PROOF_WITNESS_ROLES = ("journal",)
 
 EXPECTED_TERMINAL_OUTCOMES = {
     "success",
@@ -82,6 +117,67 @@ STAGING_SAFE_FAILURE_TARGETS = {
     "terminal.manual_recovery",
 }
 
+EVIDENCE_IDENTITY_FIELDS = (
+    "graph_digest",
+    "release_digest",
+    "release_acceptance_digest",
+    "staging_evidence_digest",
+    "plan_digest",
+    "disk_identity",
+)
+
+ASSURANCE_TRANSITION_REQUIREMENTS = {
+    "installer_boot_observed": {
+        "guard": "installer_boot_evidence_current",
+        "preconditions": (
+            "installer_boot_witnesses_content_addressed",
+            "installer_boot_identity_agrees",
+        ),
+        "postconditions": ("installer_boot_observation_committed_with_evidence",),
+        "witness_roles": ("handoff", "journal", "guest-output"),
+    },
+    "windows_finalizer_booted": {
+        "guard": "windows_finalizer_boot_evidence_current",
+        "preconditions": (
+            "windows_finalizer_boot_witnesses_content_addressed",
+            "windows_finalizer_boot_identity_agrees",
+        ),
+        "postconditions": (
+            "windows_finalizer_boot_observation_committed_with_evidence",
+        ),
+        "witness_roles": ("handoff", "journal", "windows-boot-attestation"),
+    },
+    "jstack_boot_observed": {
+        "guard": "jstack_boot_evidence_current",
+        "preconditions": (
+            "jstack_boot_witnesses_content_addressed",
+            "jstack_boot_identity_agrees",
+        ),
+        "postconditions": ("jstack_boot_observation_committed_with_evidence",),
+        "witness_roles": ("handoff", "journal", "jstack-boot-attestation"),
+    },
+    "complete_after_first_boot": {
+        "guard": "first_boot_completion_evidence_current",
+        "preconditions": (
+            "first_boot_completion_witnesses_content_addressed",
+            "first_boot_completion_identity_agrees",
+        ),
+        "postconditions": ("terminal_completion_committed_with_evidence",),
+        "witness_roles": (
+            "journal",
+            "windows-boot-attestation",
+            "jstack-boot-attestation",
+            "dual-boot-verification",
+        ),
+    },
+}
+
+IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+EVIDENCE_PATH_RE = re.compile(
+    r"^artifacts/(?!\.\.?(?:/|$))(?!.*(?:/\.\.?)(?:/|$))(?!.*\\)[^\x00]+$"
+)
+
 
 def load_json(path: str | Path) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as handle:
@@ -142,6 +238,29 @@ def transition_is_system_mutating(
         for action_id in transition.get("actions", [])
         if action_id in actions
     )
+
+
+def rollback_mutating_transition_ids(
+    model: dict[str, Any], actions: dict[str, dict[str, Any]]
+) -> set[str]:
+    """Derive system mutations in the rollback region over every control edge."""
+
+    adjacency = all_adjacency(model)
+    rollback_states = {ROLLBACK_MUTATION_ENTRY_STATE}
+    queue = deque(rollback_states)
+    while queue:
+        current = queue.popleft()
+        for target in adjacency.get(current, set()):
+            if target not in rollback_states:
+                rollback_states.add(target)
+                queue.append(target)
+
+    return {
+        transition["id"]
+        for transition in model["transitions"]
+        if transition.get("from") in rollback_states
+        and transition_is_system_mutating(transition, actions)
+    }
 
 
 def valid_failure_target(transition: dict[str, Any]) -> str | None:
@@ -288,6 +407,43 @@ def validate_model(model: dict[str, Any]) -> list[str]:
     actors = set(model["actors"])
     actor_platforms = model["actor_platforms"]
 
+    derived_rollback_mutations = rollback_mutating_transition_ids(model, actions)
+    missing_rollback_mutations = (
+        ROLLBACK_MUTATING_TRANSITION_IDS - derived_rollback_mutations
+    )
+    unexpected_rollback_mutations = (
+        derived_rollback_mutations - ROLLBACK_MUTATING_TRANSITION_IDS
+    )
+    rollback_mutations = (
+        ROLLBACK_MUTATING_TRANSITION_IDS | derived_rollback_mutations
+    )
+    if missing_rollback_mutations:
+        errors.append(
+            "rollback mutation closure lacks required transitions: "
+            + ", ".join(sorted(missing_rollback_mutations))
+        )
+    if unexpected_rollback_mutations:
+        errors.append(
+            "rollback mutation closure contains unexpected transitions: "
+            + ", ".join(sorted(unexpected_rollback_mutations))
+        )
+
+    closed_rollback_states = (
+        ROLLBACK_RECOVERY_STATE_IDS | ROLLBACK_RECOVERY_TERMINAL_IDS
+    )
+    for transition_id, transition in transitions.items():
+        if transition.get("from") not in ROLLBACK_RECOVERY_STATE_IDS:
+            continue
+        for edge_name, target in (
+            ("success", transition.get("to")),
+            ("failure", valid_failure_target(transition)),
+        ):
+            if target is not None and target not in closed_rollback_states:
+                errors.append(
+                    f"rollback transition {transition_id} {edge_name} target {target} "
+                    "escapes closed recovery subgraph"
+                )
+
     for action_id, expected_risk in REQUIRED_ACTION_RISKS.items():
         action = actions.get(action_id)
         if not action:
@@ -406,6 +562,32 @@ def validate_model(model: dict[str, Any]) -> list[str]:
                 )
 
         is_mutating = transition_is_mutating(transition, actions)
+        is_system_mutating = transition_is_system_mutating(transition, actions)
+        is_rollback_mutation = transition_id in rollback_mutations
+        authorization = set(transition.get("authorization", []))
+        if is_rollback_mutation:
+            if not is_system_mutating:
+                errors.append(
+                    f"rollback transition {transition_id} must be system-mutating"
+                )
+            if "rollback_authorized" not in authorization:
+                errors.append(
+                    f"rollback mutation {transition_id} lacks rollback_authorized"
+                )
+            rollback_guards = {"rollback_permitted", "rollback_identity_current"}
+            missing_rollback_guards = rollback_guards - set(
+                transition.get("guards", [])
+            )
+            if missing_rollback_guards:
+                errors.append(
+                    f"rollback mutation {transition_id} lacks guards: "
+                    + ", ".join(sorted(missing_rollback_guards))
+                )
+        elif is_mutating and "rollback_authorized" in authorization:
+            errors.append(
+                f"non-rollback mutation {transition_id} must not use rollback_authorized"
+            )
+
         if is_mutating:
             mutating_action_ids = [
                 action_id
@@ -417,12 +599,13 @@ def validate_model(model: dict[str, Any]) -> list[str]:
                     f"transition {transition_id} combines multiple mutations: "
                     + ", ".join(mutating_action_ids)
                 )
-            authorization = set(transition.get("authorization", []))
-            is_system_mutating = transition_is_system_mutating(transition, actions)
             if is_system_mutating:
-                if not authorization & {"confirmed_plan", "rollback_authorized"}:
+                if (
+                    not is_rollback_mutation
+                    and "confirmed_plan" not in authorization
+                ):
                     errors.append(
-                        f"mutating transition {transition_id} lacks plan or rollback authorization"
+                        f"forward mutation {transition_id} lacks confirmed_plan authorization"
                     )
             elif "release_policy" not in authorization:
                 errors.append(
@@ -455,16 +638,6 @@ def validate_model(model: dict[str, Any]) -> list[str]:
                 errors.append(
                     f"confirmed mutation {transition_id} lacks plan_fingerprint_current guard"
                 )
-            if "rollback_authorized" in authorization:
-                rollback_guards = {"rollback_permitted", "rollback_identity_current"}
-                missing_rollback_guards = rollback_guards - set(
-                    transition.get("guards", [])
-                )
-                if missing_rollback_guards:
-                    errors.append(
-                        f"rollback mutation {transition_id} lacks guards: "
-                        + ", ".join(sorted(missing_rollback_guards))
-                    )
             for action_id in transition.get("actions", []):
                 action = actions.get(action_id)
                 if not action or action["risk"] not in MUTATING_RISKS:
@@ -568,8 +741,6 @@ def validate_model(model: dict[str, Any]) -> list[str]:
     for transition_id, transition in transitions.items():
         if not transition_is_system_mutating(transition, actions):
             continue
-        if "rollback_authorized" in transition.get("authorization", []):
-            continue
         source = transition["from"]
         if source != "windows.plan_confirmed" and "windows.plan_confirmed" not in dom.get(
             source, set()
@@ -577,11 +748,78 @@ def validate_model(model: dict[str, Any]) -> list[str]:
             errors.append(
                 f"mutating transition {transition_id} is reachable without plan confirmation"
             )
+        if (
+            transition_id in rollback_mutations
+            and source != ROLLBACK_MUTATION_ENTRY_STATE
+            and ROLLBACK_MUTATION_ENTRY_STATE not in dom.get(source, set())
+        ):
+            errors.append(
+                f"rollback mutation {transition_id} is reachable without "
+                f"{ROLLBACK_MUTATION_ENTRY_STATE}"
+            )
 
     for transition_id in ("arm_installer_bootnext", "arm_installed_jstack"):
         transition = transitions.get(transition_id)
         if transition and "boot_chain_trusted" not in transition.get("guards", []):
             errors.append(f"{transition_id} lacks boot_chain_trusted guard")
+
+    for transition_id, requirement in ASSURANCE_TRANSITION_REQUIREMENTS.items():
+        transition = transitions.get(transition_id)
+        if not transition:
+            errors.append(f"required assurance transition is missing: {transition_id}")
+            continue
+        guard_id = requirement["guard"]
+        if guard_id not in transition.get("guards", []):
+            errors.append(
+                f"assurance transition {transition_id} lacks evidence guard {guard_id}"
+            )
+        for precondition in requirement["preconditions"]:
+            if precondition not in transition.get("preconditions", []):
+                errors.append(
+                    f"assurance transition {transition_id} lacks precondition {precondition}"
+                )
+        for postcondition in requirement["postconditions"]:
+            if postcondition not in transition.get("postconditions", []):
+                errors.append(
+                    f"assurance transition {transition_id} lacks postcondition {postcondition}"
+                )
+
+        guard = guards.get(guard_id)
+        if not guard:
+            errors.append(f"assurance evidence guard is missing: {guard_id}")
+            continue
+        declaration = guard.get("evidence")
+        if not isinstance(declaration, dict):
+            errors.append(f"assurance evidence guard {guard_id} lacks a declaration")
+            continue
+        expected_keys = {
+            "claim",
+            "content_address",
+            "identity_fields",
+            "witness_roles",
+        }
+        if set(declaration) != expected_keys:
+            errors.append(
+                f"assurance evidence guard {guard_id} declaration fields must be exactly "
+                + ", ".join(sorted(expected_keys))
+            )
+        if declaration.get("claim") != transition_id:
+            errors.append(
+                f"assurance evidence guard {guard_id} claim must be {transition_id}"
+            )
+        if declaration.get("content_address") != "sha256":
+            errors.append(
+                f"assurance evidence guard {guard_id} must require sha256 content addresses"
+            )
+        if declaration.get("identity_fields") != list(EVIDENCE_IDENTITY_FIELDS):
+            errors.append(
+                f"assurance evidence guard {guard_id} must require the complete run identity"
+            )
+        if declaration.get("witness_roles") != list(requirement["witness_roles"]):
+            errors.append(
+                f"assurance evidence guard {guard_id} witness roles must be exactly "
+                + ", ".join(requirement["witness_roles"])
+            )
 
     for transition_id in ("arm_installer_bootnext", "arm_installer_reboot_retry"):
         transition = transitions.get(transition_id)
@@ -678,6 +916,24 @@ def validate_model(model: dict[str, Any]) -> list[str]:
             if guard not in complete.get("guards", []):
                 errors.append(f"complete_after_first_boot lacks {guard}")
 
+    unsupported_reachable = states_reaching_any(model, {"terminal.unsupported"})
+    for transition_id, transition in transitions.items():
+        if transition.get("from") not in reachable:
+            continue
+        destinations = {transition.get("to"), valid_failure_target(transition)}
+        if not any(destination in unsupported_reachable for destination in destinations):
+            continue
+        forbidden_actions = [
+            action_id
+            for action_id in transition.get("actions", [])
+            if action_id in actions and actions[action_id].get("risk") in SYSTEM_MUTATING_RISKS
+        ]
+        if forbidden_actions:
+            errors.append(
+                f"unsupported-platform path includes system mutation in {transition_id}: "
+                + ", ".join(forbidden_actions)
+            )
+
     for action_id in ("shrink_windows_ntfs", "expand_windows_ntfs"):
         action = actions.get(action_id)
         if action and action.get("platform") != "windows":
@@ -700,7 +956,262 @@ def validate_model(model: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _valid_trace_identity(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == set(EVIDENCE_IDENTITY_FIELDS)
+        and all(
+            isinstance(value.get(field), str) and DIGEST_RE.fullmatch(value[field])
+            for field in EVIDENCE_IDENTITY_FIELDS
+        )
+    )
+
+
+def validate_trace(model: dict[str, Any], trace: dict[str, Any]) -> list[str]:
+    """Validate semantic evidence/proof linkage while abstract traces stay compact."""
+
+    errors: list[str] = []
+    trace_id = trace.get("id", "<unknown>")
+    trace_kind = trace.get("trace_kind", "abstract")
+    if trace_kind not in {"abstract", "evidence"}:
+        return [f"trace {trace_id} has unknown trace_kind {trace_kind}"]
+
+    steps = trace.get("steps", [])
+    if not isinstance(steps, list):
+        return [f"trace {trace_id} steps must be an array"]
+
+    if trace_kind == "abstract":
+        for field in ("identity", "evidence", "proofs"):
+            if field in trace:
+                errors.append(
+                    f"abstract trace {trace_id} must not embed evidence field {field}"
+                )
+        for index, step in enumerate(steps):
+            if isinstance(step, dict) and "proof" in step:
+                errors.append(
+                    f"abstract trace {trace_id} step {index} must not reference a proof"
+                )
+        return errors
+
+    identity = trace.get("identity")
+    if not _valid_trace_identity(identity):
+        errors.append(f"evidence trace {trace_id} has invalid or incomplete run identity")
+
+    raw_evidence = trace.get("evidence")
+    if not isinstance(raw_evidence, list) or not raw_evidence:
+        errors.append(f"evidence trace {trace_id} requires a non-empty evidence index")
+        raw_evidence = []
+    evidence_by_id: dict[str, dict[str, Any]] = {}
+    evidence_paths: set[str] = set()
+    evidence_digests: set[str] = set()
+    for index, witness in enumerate(raw_evidence):
+        where = f"evidence trace {trace_id} witness {index}"
+        if not isinstance(witness, dict):
+            errors.append(f"{where} must be an object")
+            continue
+        witness_id = witness.get("id")
+        if not isinstance(witness_id, str) or not IDENTIFIER_RE.fullmatch(witness_id):
+            errors.append(f"{where} has invalid id")
+            continue
+        if witness_id in evidence_by_id:
+            errors.append(f"evidence trace {trace_id} has duplicate witness id {witness_id}")
+            continue
+        evidence_by_id[witness_id] = witness
+        expected_witness_keys = {"id", "role", "path", "size", "sha256", "identity"}
+        if set(witness) != expected_witness_keys:
+            errors.append(
+                f"{where} fields must be exactly "
+                + ", ".join(sorted(expected_witness_keys))
+            )
+        role = witness.get("role")
+        if not isinstance(role, str) or not IDENTIFIER_RE.fullmatch(role):
+            errors.append(f"{where} has invalid role")
+        path = witness.get("path")
+        if not isinstance(path, str) or not EVIDENCE_PATH_RE.fullmatch(path):
+            errors.append(f"{where} has invalid artifact path")
+        elif path in evidence_paths:
+            errors.append(f"{where} reuses artifact path {path}")
+        else:
+            evidence_paths.add(path)
+        size = witness.get("size")
+        if (
+            not isinstance(size, int)
+            or isinstance(size, bool)
+            or not 1 <= size <= 67108864
+        ):
+            errors.append(f"{where} has invalid artifact size")
+        digest = witness.get("sha256")
+        if not isinstance(digest, str) or not DIGEST_RE.fullmatch(digest):
+            errors.append(f"{where} lacks a lowercase sha256 content address")
+        elif digest in evidence_digests:
+            errors.append(f"{where} reuses witness content digest {digest}")
+        else:
+            evidence_digests.add(digest)
+        if witness.get("identity") != identity:
+            errors.append(f"{where} identity disagrees with the trace run identity")
+
+    raw_proofs = trace.get("proofs")
+    if not isinstance(raw_proofs, list) or not raw_proofs:
+        errors.append(f"evidence trace {trace_id} requires proof declarations")
+        raw_proofs = []
+    proofs_by_id: dict[str, dict[str, Any]] = {}
+    referenced_witnesses: set[str] = set()
+    witness_owner: dict[str, str] = {}
+    for index, proof in enumerate(raw_proofs):
+        where = f"evidence trace {trace_id} proof {index}"
+        if not isinstance(proof, dict):
+            errors.append(f"{where} must be an object")
+            continue
+        proof_id = proof.get("id")
+        if not isinstance(proof_id, str) or not IDENTIFIER_RE.fullmatch(proof_id):
+            errors.append(f"{where} has invalid id")
+            continue
+        if proof_id in proofs_by_id:
+            errors.append(f"evidence trace {trace_id} has duplicate proof id {proof_id}")
+            continue
+        proofs_by_id[proof_id] = proof
+        transition_id = proof.get("transition")
+        if transition_id not in index_by_id(model["transitions"]):
+            errors.append(f"{where} references unknown transition {transition_id}")
+        kind = proof.get("kind")
+        if kind not in {"transition", "rollback"}:
+            errors.append(f"{where} has unknown kind {kind}")
+        expected_proof_keys = {"id", "kind", "transition", "witnesses"}
+        if kind == "rollback":
+            expected_proof_keys.add("expected_terminal")
+        if set(proof) != expected_proof_keys:
+            errors.append(
+                f"{where} fields must be exactly "
+                + ", ".join(sorted(expected_proof_keys))
+            )
+        raw_witness_ids = proof.get("witnesses")
+        if not isinstance(raw_witness_ids, list) or not raw_witness_ids:
+            errors.append(f"{where} requires at least one witness")
+        witness_ids = raw_witness_ids if isinstance(raw_witness_ids, list) else []
+        witness_references_valid = not any(
+            not isinstance(witness_id, str)
+            or not IDENTIFIER_RE.fullmatch(witness_id)
+            for witness_id in witness_ids
+        )
+        if not witness_references_valid:
+            errors.append(f"{where} has invalid witness references")
+        if witness_references_valid and len(set(witness_ids)) != len(witness_ids):
+            errors.append(f"{where} contains duplicate witness references")
+        for witness_id in witness_ids if witness_references_valid else []:
+            referenced_witnesses.add(witness_id)
+            if witness_id not in evidence_by_id:
+                errors.append(f"{where} references missing witness {witness_id}")
+            previous_owner = witness_owner.get(witness_id)
+            if previous_owner is not None and previous_owner != proof_id:
+                errors.append(
+                    f"{where} reuses witness {witness_id} already owned by proof "
+                    f"{previous_owner}"
+                )
+            else:
+                witness_owner[witness_id] = proof_id
+        if kind == "transition" and "expected_terminal" in proof:
+            errors.append(f"{where} transition proof must not declare expected_terminal")
+        if kind == "rollback":
+            witness_roles = [
+                evidence_by_id[witness_id].get("role")
+                for witness_id in witness_ids
+                if witness_id in evidence_by_id
+            ]
+            roles_are_exact = all(
+                isinstance(role, str) for role in witness_roles
+            ) and Counter(witness_roles) == Counter(ROLLBACK_PROOF_WITNESS_ROLES)
+            if not roles_are_exact:
+                errors.append(
+                    f"{where} rollback witness roles must be exactly "
+                    + ", ".join(ROLLBACK_PROOF_WITNESS_ROLES)
+                )
+            expected = proof.get("expected_terminal")
+            if expected not in {"terminal.rolled_back", "terminal.manual_recovery"}:
+                errors.append(f"{where} rollback proof has invalid expected_terminal")
+            if trace.get("expected_terminal") != expected:
+                errors.append(
+                    f"{where} rollback outcome disagrees with trace expected_terminal"
+                )
+
+    used_proofs: set[str] = set()
+    transitions = index_by_id(model["transitions"])
+    for index, step in enumerate(steps):
+        if isinstance(step, str):
+            transition_id = step
+            outcome = "success"
+            proof_id = None
+        elif isinstance(step, dict):
+            transition_id = step.get("transition")
+            outcome = step.get("outcome", "success")
+            proof_id = step.get("proof")
+        else:
+            continue
+
+        requirement = ASSURANCE_TRANSITION_REQUIREMENTS.get(transition_id)
+        if requirement and outcome == "success" and not proof_id:
+            errors.append(
+                f"evidence trace {trace_id} step {index} transition {transition_id} "
+                "requires a proof reference"
+            )
+        if not proof_id:
+            continue
+        proof = proofs_by_id.get(proof_id)
+        if not proof:
+            errors.append(
+                f"evidence trace {trace_id} step {index} references missing proof {proof_id}"
+            )
+            continue
+        used_proofs.add(proof_id)
+        if proof.get("transition") != transition_id:
+            errors.append(
+                f"evidence trace {trace_id} step {index} proof {proof_id} is for "
+                f"{proof.get('transition')}, not {transition_id}"
+            )
+        if requirement and outcome == "success":
+            if proof.get("kind") != "transition":
+                errors.append(
+                    f"assurance transition {transition_id} requires a transition proof"
+                )
+            witness_roles = [
+                evidence_by_id[witness_id].get("role")
+                for witness_id in proof.get("witnesses", [])
+                if witness_id in evidence_by_id
+            ]
+            required_roles = list(requirement["witness_roles"])
+            if sorted(witness_roles) != sorted(required_roles):
+                errors.append(
+                    f"assurance transition {transition_id} proof {proof_id} witness roles "
+                    "must be exactly "
+                    + ", ".join(required_roles)
+                )
+        if proof.get("kind") == "rollback" and transition_id in transitions:
+            result = (
+                transitions[transition_id].get("to")
+                if outcome == "success"
+                else valid_failure_target(transitions[transition_id])
+                if outcome == "failure"
+                else None
+            )
+            if result != proof.get("expected_terminal"):
+                errors.append(
+                    f"rollback proof {proof_id} does not attest a step reaching "
+                    f"{proof.get('expected_terminal')}"
+                )
+
+    for proof_id in sorted(set(proofs_by_id) - used_proofs):
+        errors.append(f"evidence trace {trace_id} proof {proof_id} is not linked from a step")
+    for witness_id in sorted(set(evidence_by_id) - referenced_witnesses):
+        errors.append(
+            f"evidence trace {trace_id} witness {witness_id} is not linked from a proof"
+        )
+
+    return errors
+
+
 def simulate_trace(model: dict[str, Any], trace: dict[str, Any]) -> str:
+    trace_errors = validate_trace(model, trace)
+    if trace_errors:
+        raise AssertionError(trace_errors[0])
     transitions = index_by_id(model["transitions"])
     actions = index_by_id(model["actions"])
     current = model["initial_state"]

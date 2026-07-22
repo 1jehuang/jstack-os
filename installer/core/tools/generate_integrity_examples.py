@@ -33,6 +33,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--display", type=Path, required=True)
+    parser.add_argument("--state-model", type=Path, required=True)
     parser.add_argument("--staging-evidence", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -40,7 +41,13 @@ def main() -> int:
 
     plan = load(args.plan)
     display = load(args.display)
+    state_model = load(args.state_model)
     staging_evidence = load(args.staging_evidence)
+    graph_model_id = state_model.get("model_id")
+    if graph_model_id != "jstack-no-usb-dual-boot-v1":
+        parser.error(f"unexpected executable state-model id: {graph_model_id!r}")
+    if plan.get("body", {}).get("state_model_id") != graph_model_id:
+        parser.error("plan state_model_id does not match the executable state graph")
     confirmation = {
         "schema_version": 1,
         "plan_hash": plan["plan_hash"],

@@ -1,9 +1,21 @@
 PYTHON ?= python3
 CARGO ?= cargo
+RUSTC ?= rustc
+REQUIRED_RUSTC_VERSION := 1.85.0
+REQUIRED_CARGO_VERSION := 1.85.0
+export RUSTC
 
-.PHONY: check fmt test clippy windows-check plan inventory release examples schemas collector
+.PHONY: check toolchain fmt test clippy windows-check plan inventory release examples schemas collector
 
-check: fmt test clippy windows-check plan inventory release examples schemas collector
+check: toolchain fmt test clippy windows-check plan inventory release examples schemas collector
+
+toolchain:
+	@rustc_actual="$$( $(RUSTC) --version | awk '{print $$2}')"; \
+	cargo_actual="$$( $(CARGO) --version | awk '{print $$2}')"; \
+	if [ "$$rustc_actual" != "$(REQUIRED_RUSTC_VERSION)" ] || [ "$$cargo_actual" != "$(REQUIRED_CARGO_VERSION)" ]; then \
+		echo "error: installer core requires rustc $(REQUIRED_RUSTC_VERSION) and cargo $(REQUIRED_CARGO_VERSION) exactly; found rustc $${rustc_actual:-unknown}, cargo $${cargo_actual:-unknown}" >&2; \
+		exit 1; \
+	fi
 
 fmt:
 	$(CARGO) fmt --all -- --check
@@ -47,6 +59,7 @@ examples:
 	$(PYTHON) tools/generate_integrity_examples.py \
 		--plan generated/example-plan.json \
 		--display generated/example-plan-display.json \
+		--state-model ../model/installer-state-graph.json \
 		--staging-evidence ../staging/fixtures/staging-evidence.json \
 		--output "$$temporary"; \
 	for name in example-confirmation.json example-journal-record.json example-journal-chain.json example-handoff.json; do \

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jstack.os/schemas/installer/vm/v1/media.schema.json",
+  "title": "Immutable approved Windows installation media records",
+  "description": "Only the reviewed, stable-source media records below are valid. A metadata or provenance change requires a new record and schema update.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/windows11Enterprise25h2Evaluation"
+    },
+    {
+      "$ref": "#/$defs/windows10Pro22h2"
+    }
+  ],
+  "$defs": {
+    "windows11Enterprise25h2Evaluation": {
+      "const": {
+        "schema_version": 1,
+        "kind": "windows-install-media",
+        "record_id": "windows-11-enterprise-25h2-eval-en-us-x64",
+        "availability": "available",
+        "publisher": "Microsoft",
+        "product": {
+          "name": "Windows 11 Enterprise Evaluation",
+          "edition": "Enterprise Evaluation",
+          "release": "25H2",
+          "build": "26200.6584",
+          "architecture": "x86_64",
+          "language": "en-US",
+          "channel": "evaluation"
+        },
+        "iso": {
+          "filename": "windows-11-enterprise-25h2-eval-en-us-x64.iso",
+          "size_bytes": 7092807680,
+          "sha256": "a61adeab895ef5a4db436e0a7011c92a2ff17bb0357f58b13bbc4062e535e7b9"
+        },
+        "acquisition": {
+          "source_page_url": "https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise",
+          "resolved_download_url_retention": "forbidden"
+        },
+        "authentication": {
+          "method": "microsoft-published-sha256",
+          "published_description": "Enterprise Eval x64 Eval EN-US DVD9",
+          "published_iso_sha256": "a61adeab895ef5a4db436e0a7011c92a2ff17bb0357f58b13bbc4062e535e7b9",
+          "publication": {
+            "filename": "Verify-Download-Win11-Enterprise.pdf",
+            "source_url": "https://go.microsoft.com/fwlink/?linkid=2334901",
+            "size_bytes": 84272,
+            "sha256": "0d44bc561af90844c0a0da5ddc420f5fa84459872c02a1def6240fcfe1aac2c7"
+          }
+        },
+        "install_image": {
+          "path": "sources/install.wim",
+          "size_bytes": 6225286811,
+          "sha256": "119100d92fa9516d47c9933f9c6f4e2b1940bd685762fdca6982e6d29b353985",
+          "image_count": 1,
+          "selected_index": 1,
+          "selected_name": "Windows 11 Enterprise Evaluation",
+          "architecture": "x86_64",
+          "language": "en-US",
+          "version": {
+            "major": 10,
+            "minor": 0,
+            "build": 26200,
+            "service_pack_build": 6584
+          }
+        }
+      }
+    },
+    "windows10Pro22h2": {
+      "const": {
+        "schema_version": 1,
+        "kind": "windows-install-media",
+        "record_id": "windows-10-pro-22h2-en-us-x64",
+        "availability": "available",
+        "publisher": "Microsoft",
+        "product": {
+          "name": "Windows 10",
+          "edition": "Pro",
+          "release": "22H2",
+          "architecture": "x86_64",
+          "language": "en-US",
+          "channel": "retail-multi-edition"
+        },
+        "iso": {
+          "filename": "Win10_22H2_English_x64v1.iso",
+          "size_bytes": 6140975104,
+          "sha256": "a6f470ca6d331eb353b815c043e327a347f594f37ff525f17764738fe812852e"
+        },
+        "acquisition": {
+          "source_page_url": "https://www.microsoft.com/en-us/software-download/windows10ISO",
+          "product_edition_id": 2618,
+          "language_selection": "English",
+          "architecture_selection": "x64",
+          "sku_id": 16067,
+          "resolved_download_url_retention": "forbidden"
+        },
+        "authentication": {
+          "method": "microsoft-download-page-published-sha256",
+          "publication_url": "https://www.microsoft.com/en-us/software-download/windows10ISO",
+          "published_iso_sha256": "a6f470ca6d331eb353b815c043e327a347f594f37ff525f17764738fe812852e"
+        },
+        "install_image": {
+          "path": "sources/install.wim",
+          "size_bytes": 5181270654,
+          "sha256": "e86cfd152ecf337d53d3222558234d52e95abfdf0e2414c45c4a3b5069ea7cc5",
+          "image_count": 11,
+          "selected_index": 6,
+          "selected_name": "Windows 10 Pro",
+          "architecture": "x86_64",
+          "language": "en-US",
+          "version": {
+            "major": 10,
+            "minor": 0,
+            "build": 19041,
+            "service_pack_build": 2965
+          }
+        }
+      }
+    }
+  }
+}

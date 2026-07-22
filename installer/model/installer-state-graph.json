@@ -244,6 +244,95 @@
       "platform": "shared"
     },
     {
+      "id": "installer_boot_evidence_current",
+      "description": "Content-addressed handoff, journal, and installer guest-output witnesses prove the installer boot and agree on graph, release, acceptance, staging, plan, and disk identity.",
+      "platform": "shared",
+      "evidence": {
+        "claim": "installer_boot_observed",
+        "content_address": "sha256",
+        "identity_fields": [
+          "graph_digest",
+          "release_digest",
+          "release_acceptance_digest",
+          "staging_evidence_digest",
+          "plan_digest",
+          "disk_identity"
+        ],
+        "witness_roles": [
+          "handoff",
+          "journal",
+          "guest-output"
+        ]
+      }
+    },
+    {
+      "id": "windows_finalizer_boot_evidence_current",
+      "description": "Content-addressed handoff, journal, and Windows boot-attestation witnesses prove the finalizer boot and agree on graph, release, acceptance, staging, plan, and disk identity.",
+      "platform": "shared",
+      "evidence": {
+        "claim": "windows_finalizer_booted",
+        "content_address": "sha256",
+        "identity_fields": [
+          "graph_digest",
+          "release_digest",
+          "release_acceptance_digest",
+          "staging_evidence_digest",
+          "plan_digest",
+          "disk_identity"
+        ],
+        "witness_roles": [
+          "handoff",
+          "journal",
+          "windows-boot-attestation"
+        ]
+      }
+    },
+    {
+      "id": "jstack_boot_evidence_current",
+      "description": "Content-addressed handoff, journal, and JStack boot-attestation witnesses prove the installed-system boot and agree on graph, release, acceptance, staging, plan, and disk identity.",
+      "platform": "shared",
+      "evidence": {
+        "claim": "jstack_boot_observed",
+        "content_address": "sha256",
+        "identity_fields": [
+          "graph_digest",
+          "release_digest",
+          "release_acceptance_digest",
+          "staging_evidence_digest",
+          "plan_digest",
+          "disk_identity"
+        ],
+        "witness_roles": [
+          "handoff",
+          "journal",
+          "jstack-boot-attestation"
+        ]
+      }
+    },
+    {
+      "id": "first_boot_completion_evidence_current",
+      "description": "Content-addressed journal, Windows boot, JStack boot, and dual-boot verification witnesses prove end-to-end completion and agree on graph, release, acceptance, staging, plan, and disk identity.",
+      "platform": "shared",
+      "evidence": {
+        "claim": "complete_after_first_boot",
+        "content_address": "sha256",
+        "identity_fields": [
+          "graph_digest",
+          "release_digest",
+          "release_acceptance_digest",
+          "staging_evidence_digest",
+          "plan_digest",
+          "disk_identity"
+        ],
+        "witness_roles": [
+          "journal",
+          "windows-boot-attestation",
+          "jstack-boot-attestation",
+          "dual-boot-verification"
+        ]
+      }
+    },
+    {
       "id": "current_platform_windows",
       "description": "Recovery controller is executing under Windows.",
       "platform": "recovery"
@@ -736,6 +825,24 @@
       "description": "Each privileged consumer hashes the exact source byte stream it copies or deploys before committing the destination.",
       "enforced_by": [
         "payload_hashes_valid"
+      ]
+    },
+    {
+      "id": "content_addressed_boot_assurance",
+      "description": "Boot observations and terminal success require linked content-addressed witnesses whose graph, release, acceptance, staging, plan, and disk identities agree.",
+      "enforced_by": [
+        "installer_boot_evidence_current",
+        "windows_finalizer_boot_evidence_current",
+        "jstack_boot_evidence_current",
+        "first_boot_completion_evidence_current",
+        "validator:assurance_evidence"
+      ]
+    },
+    {
+      "id": "unsupported_staging_only",
+      "description": "Unsupported-platform rejection may follow staging reconciliation and release acceptance persistence, but never a filesystem, security, disk, boot, or reboot mutation.",
+      "enforced_by": [
+        "validator:unsupported_path_staging_only"
       ]
     }
   ],
@@ -1925,16 +2032,23 @@
       "to": "linux.installer_booted",
       "event": "installer_booted",
       "actor": "firmware",
-      "guards": [],
+      "guards": [
+        "installer_boot_evidence_current"
+      ],
       "actions": [],
       "authorization": [],
       "journal": {
         "intent_before_actions": true,
         "commit_after_postconditions": true
       },
-      "preconditions": [],
-      "postconditions": [],
-      "description": "Firmware loaded the signed installer path."
+      "preconditions": [
+        "installer_boot_witnesses_content_addressed",
+        "installer_boot_identity_agrees"
+      ],
+      "postconditions": [
+        "installer_boot_observation_committed_with_evidence"
+      ],
+      "description": "Record firmware loading the signed installer path only from linked content-addressed witnesses with matching run identity."
     },
     {
       "id": "windows_resumed_instead",
@@ -2435,7 +2549,8 @@
       "actor": "windows_finalizer",
       "guards": [
         "finalizer_registered",
-        "windows_boot_entry_present"
+        "windows_boot_entry_present",
+        "windows_finalizer_boot_evidence_current"
       ],
       "actions": [],
       "authorization": [],
@@ -2443,9 +2558,14 @@
         "intent_before_actions": true,
         "commit_after_postconditions": true
       },
-      "preconditions": [],
-      "postconditions": [],
-      "description": "Windows resumed the signed finalizer."
+      "preconditions": [
+        "windows_finalizer_boot_witnesses_content_addressed",
+        "windows_finalizer_boot_identity_agrees"
+      ],
+      "postconditions": [
+        "windows_finalizer_boot_observation_committed_with_evidence"
+      ],
+      "description": "Record Windows resuming the signed finalizer only from linked content-addressed witnesses with matching run identity."
     },
     {
       "id": "restore_windows_security",
@@ -2590,16 +2710,23 @@
       "to": "jstack.first_boot",
       "event": "jstack_booted",
       "actor": "jstack_first_boot",
-      "guards": [],
+      "guards": [
+        "jstack_boot_evidence_current"
+      ],
       "actions": [],
       "authorization": [],
       "journal": {
         "intent_before_actions": true,
         "commit_after_postconditions": true
       },
-      "preconditions": [],
-      "postconditions": [],
-      "description": "Installed JStack started from the verified boot entry."
+      "preconditions": [
+        "jstack_boot_witnesses_content_addressed",
+        "jstack_boot_identity_agrees"
+      ],
+      "postconditions": [
+        "jstack_boot_observation_committed_with_evidence"
+      ],
+      "description": "Record installed JStack starting from the verified boot entry only from linked content-addressed witnesses with matching run identity."
     },
     {
       "id": "reject_failed_first_boot",
@@ -2631,7 +2758,8 @@
       "guards": [
         "jstack_boot_entry_valid",
         "bitlocker_restored_or_not_applicable",
-        "windows_boot_entry_present"
+        "windows_boot_entry_present",
+        "first_boot_completion_evidence_current"
       ],
       "actions": [
         "verify_jstack_first_boot"
@@ -2641,9 +2769,14 @@
         "intent_before_actions": true,
         "commit_after_postconditions": true
       },
-      "preconditions": [],
-      "postconditions": [],
-      "description": "Record success only after end-to-end first-boot checks."
+      "preconditions": [
+        "first_boot_completion_witnesses_content_addressed",
+        "first_boot_completion_identity_agrees"
+      ],
+      "postconditions": [
+        "terminal_completion_committed_with_evidence"
+      ],
+      "description": "Record success only after linked content-addressed end-to-end witnesses agree with the installed run identity."
     },
     {
       "id": "dispatch_rollback_windows",

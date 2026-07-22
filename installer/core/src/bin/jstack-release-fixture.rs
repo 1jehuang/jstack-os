@@ -5,7 +5,8 @@ use ed25519_dalek::{Signer, SigningKey};
 use jstack_installer_core::{
     Architecture, ArtifactDescriptor, ArtifactRole, CONTRACT_SCHEMA_VERSION, Hash256,
     ManifestSignature, PlannerRequirements, RELEASE_PRODUCT, ReleaseAcceptanceState,
-    ReleaseChannel, ReleaseManifestBody, SignedReleaseManifest, canonical_json, signed_message,
+    ReleaseChannel, ReleaseManifestBody, SignedReleaseManifest, canonical_json,
+    executable_state_model_id, signed_message,
 };
 use sha2::{Digest, Sha256};
 
@@ -15,7 +16,7 @@ const STATE_MODEL_BYTES: &[u8] = include_bytes!("../../../model/installer-state-
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = env::args().nth(1).unwrap_or_else(|| "manifest".to_owned());
-    let body = release_body();
+    let body = release_body()?;
     let message = signed_message(&body)?;
     let manifest_digest = hash(&message);
 
@@ -36,8 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn release_body() -> ReleaseManifestBody {
-    ReleaseManifestBody {
+fn release_body() -> Result<ReleaseManifestBody, Box<dyn std::error::Error>> {
+    Ok(ReleaseManifestBody {
         schema_version: CONTRACT_SCHEMA_VERSION,
         product: RELEASE_PRODUCT.to_owned(),
         release_id: "jstack-fixture-1".to_owned(),
@@ -47,7 +48,7 @@ fn release_body() -> ReleaseManifestBody {
         architecture: Architecture::X86_64,
         issued_at_unix_secs: ISSUED_AT,
         expires_at_unix_secs: EXPIRES_AT,
-        state_model_id: "jstack-installer-v1".to_owned(),
+        state_model_id: executable_state_model_id(STATE_MODEL_BYTES)?,
         state_model_sha256: hash(STATE_MODEL_BYTES),
         installer_protocol_min: 1,
         installer_protocol_max: 1,
@@ -77,7 +78,7 @@ fn release_body() -> ReleaseManifestBody {
                 10,
             ),
         ],
-    }
+    })
 }
 
 fn signed_envelope(body: ReleaseManifestBody, message: &[u8]) -> SignedReleaseManifest {

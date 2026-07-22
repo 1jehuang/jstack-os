@@ -2,7 +2,16 @@
 
 This document records the evidence behind the v1 boundary. It is an input to the
 state graph, not permission to broaden that boundary. A platform not explicitly
-supported is rejected before any persistent mutation.
+supported is rejected before any filesystem, security, disk, boot, or reboot
+mutation. Trusted staging reconciliation and durable release-acceptance
+persistence may occur first because release policy is validated and ratcheted
+before platform planning.
+
+The unsupported result is therefore not a claim that no bytes were persisted.
+It guarantees that any persistence is confined to the trusted staging and
+anti-rollback acceptance stores. No Windows filesystem installation state,
+BitLocker state, partition table, NTFS geometry, ESP/XBOOTLDR content, firmware
+boot entry, or BootNext value may change on a path to `terminal.unsupported`.
 
 ## Supported envelope
 

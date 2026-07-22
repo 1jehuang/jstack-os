@@ -1,0 +1,2182 @@
+{
+  "$defs": {
+    "artifact": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "size": {
+                "maximum": 67108864
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "role": {
+                "const": "windows-iso"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "size": {
+                "maximum": 8589934592
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 11,
+          "pattern": "^artifacts/(?!/)(?!\\.{1,2}(?:/|$))(?!.*(?:/\\.{1,2})(?:/|$))(?!.*//)(?!.*\\\\)[^\\x00]+$",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "source-tree",
+            "state-model",
+            "release-manifest",
+            "release-acceptance",
+            "staging-evidence",
+            "confirmed-plan",
+            "disk-identity",
+            "windows-iso-hash-document",
+            "windows-iso",
+            "qemu-command-line",
+            "base-image-identity",
+            "overlay-identity",
+            "ovmf-code-identity",
+            "ovmf-vars-identity",
+            "tpm-state-identity",
+            "windows-inventory-initial",
+            "windows-inventory-final",
+            "gpt-initial",
+            "gpt-final",
+            "esp-initial",
+            "esp-final",
+            "firmware-initial",
+            "firmware-final",
+            "tpm-initial",
+            "tpm-final",
+            "bitlocker-initial",
+            "bitlocker-final",
+            "boot-data-initial",
+            "boot-data-final",
+            "journal",
+            "handoff",
+            "windows-pre-install-boot-witness",
+            "windows-post-deploy-boot-witness",
+            "jstack-first-boot-witness",
+            "cold-boot-windows-witness",
+            "cold-boot-jstack-witness",
+            "log",
+            "screenshot",
+            "serial-output",
+            "guest-output",
+            "disk-inspection-initial",
+            "disk-inspection-final",
+            "runtime",
+            "adapters",
+            "release-policy",
+            "resolved-profile-record",
+            "official-media-record",
+            "boot-artifacts",
+            "vm-harness",
+            "evidence-verifier",
+            "campaign-index"
+          ]
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 8589934592,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "path",
+        "size",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "base-run": {
+      "additionalProperties": false,
+      "properties": {
+        "base_image_reconstructed": {
+          "const": true
+        },
+        "evidence_bundle_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "evidence_bundle_digest",
+        "base_image_reconstructed"
+      ],
+      "type": "object"
+    },
+    "bitlocker-observation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "protection_on": {
+          "type": "boolean"
+        },
+        "recovery_key_confirmed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "enabled",
+        "protection_on",
+        "recovery_key_confirmed"
+      ],
+      "type": "object"
+    },
+    "campaign-base-run-claim": {
+      "additionalProperties": false,
+      "properties": {
+        "base_image_reconstructed": {
+          "const": true
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "base_image_reconstructed"
+      ],
+      "type": "object"
+    },
+    "campaign-failure-edge-run-claim": {
+      "additionalProperties": false,
+      "properties": {
+        "edge_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "recovery_outcome": {
+          "enum": [
+            "retry",
+            "advance",
+            "rollback",
+            "manual-recovery"
+          ]
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "edge_id",
+        "recovery_outcome"
+      ],
+      "type": "object"
+    },
+    "campaign-fault-run-claim": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "enospc-staging",
+            "enospc-journal",
+            "enospc-esp-xbootldr",
+            "enospc-destination-temporary-object",
+            "enospc-root-deployment",
+            "windows-sharing-violation",
+            "windows-locked-file",
+            "symlink-substitution",
+            "reparse-point-substitution",
+            "artifact-tamper",
+            "staging-evidence-tamper",
+            "handoff-tamper",
+            "journal-tamper",
+            "gpt-tamper",
+            "esp-tamper",
+            "destination-tamper",
+            "stale-disk-identity",
+            "stale-partition-identity",
+            "stale-plan-identity",
+            "stale-release-identity",
+            "stale-graph-identity",
+            "stale-boot-entry-identity",
+            "torn-record",
+            "duplicated-record",
+            "reordered-record",
+            "equivocated-record",
+            "oversized-record",
+            "corrupted-record",
+            "invalid-signature",
+            "expired-release",
+            "rollback-attempt",
+            "clock-rollback",
+            "missing-bitlocker-recovery-confirmation",
+            "insufficient-bitlocker-recovery-confirmation",
+            "secure-boot-valid-chain",
+            "secure-boot-invalid-chain",
+            "secure-boot-incomplete-chain",
+            "bootnext-failure",
+            "bootnext-bounded-rearm",
+            "bootnext-exhausted-rearm",
+            "firmware-variable-write-failure",
+            "cancel-before-mutation",
+            "rollback-request",
+            "windows-resume-failure",
+            "finalizer-failure",
+            "jstack-first-boot-failure",
+            "repeated-recovery-boots",
+            "rollback-interruption"
+          ]
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "recovery_outcome": {
+          "enum": [
+            "retry",
+            "advance",
+            "rollback",
+            "manual-recovery",
+            "rejected"
+          ]
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "class",
+        "checkpoint",
+        "recovery_outcome"
+      ],
+      "type": "object"
+    },
+    "campaign-happy-run-claim": {
+      "additionalProperties": false,
+      "properties": {
+        "fresh_overlay": {
+          "const": true
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "fresh_overlay"
+      ],
+      "type": "object"
+    },
+    "campaign-index": {
+      "additionalProperties": false,
+      "properties": {
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bundle": {
+                "$ref": "#/$defs/campaign-run-bundle"
+              },
+              "category": {
+                "enum": [
+                  "happy_path_runs",
+                  "interruption_runs",
+                  "failure_edge_runs",
+                  "mandatory_fault_runs",
+                  "fresh_base_reconstruction_runs"
+                ]
+              }
+            },
+            "required": [
+              "category",
+              "bundle"
+            ],
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "input_digest",
+        "runs"
+      ],
+      "type": "object"
+    },
+    "campaign-interruption-run-claim": {
+      "additionalProperties": false,
+      "properties": {
+        "abrupt_qemu_termination": {
+          "const": true
+        },
+        "boundary": {
+          "enum": [
+            "before-intent-persistence",
+            "after-intent-flush-before-mutation",
+            "during-mutation-before-visible-effect",
+            "during-mutation-after-partial-effect",
+            "after-mutation-before-observation",
+            "after-observation-before-commit",
+            "after-commit-before-state-advance",
+            "before-and-after-reboot-or-firmware-handoff"
+          ]
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "recovery_outcome": {
+          "enum": [
+            "retry",
+            "advance",
+            "rollback",
+            "manual-recovery"
+          ]
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "transition_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "transition_id",
+        "boundary",
+        "abrupt_qemu_termination",
+        "recovery_outcome"
+      ],
+      "type": "object"
+    },
+    "campaign-rollback": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_state_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "restored_state_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "retained_jstack_objects": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "windows_security_restored": {
+          "const": true
+        }
+      },
+      "required": [
+        "initial_state_digest",
+        "restored_state_digest",
+        "retained_jstack_objects",
+        "windows_security_restored"
+      ],
+      "type": "object"
+    },
+    "campaign-run-bundle": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "happy_path_runs",
+            "interruption_runs",
+            "failure_edge_runs",
+            "mandatory_fault_runs",
+            "fresh_base_reconstruction_runs"
+          ]
+        },
+        "contract": {
+          "const": "jstack.vm.campaign-run-bundle"
+        },
+        "identity": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_verifier_digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "graph_digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "input_digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "profile_id": {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "type": "string"
+            },
+            "run_id": {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "run_id",
+            "profile_id",
+            "input_digest",
+            "graph_digest",
+            "evidence_verifier_digest"
+          ],
+          "type": "object"
+        },
+        "rollback": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/campaign-rollback"
+            }
+          ]
+        },
+        "run": {
+          "$ref": "#/$defs/campaign-run-claim"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "trace": {
+          "additionalProperties": true,
+          "properties": {
+            "description": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "expected_terminal": {
+              "enum": [
+                "terminal.completed",
+                "terminal.cancelled",
+                "terminal.unsupported",
+                "terminal.rolled_back",
+                "terminal.manual_recovery"
+              ]
+            },
+            "id": {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "type": "string"
+            },
+            "steps": {
+              "items": {},
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "description",
+            "steps",
+            "expected_terminal"
+          ],
+          "type": "object"
+        },
+        "verification": {
+          "additionalProperties": false,
+          "properties": {
+            "trace_schema_digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "verifier_digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "verifier_digest",
+            "trace_schema_digest"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "contract",
+        "schema_version",
+        "category",
+        "run",
+        "identity",
+        "trace",
+        "rollback",
+        "verification"
+      ],
+      "type": "object"
+    },
+    "campaign-run-claim": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/campaign-happy-run-claim"
+        },
+        {
+          "$ref": "#/$defs/campaign-interruption-run-claim"
+        },
+        {
+          "$ref": "#/$defs/campaign-failure-edge-run-claim"
+        },
+        {
+          "$ref": "#/$defs/campaign-fault-run-claim"
+        },
+        {
+          "$ref": "#/$defs/campaign-base-run-claim"
+        }
+      ]
+    },
+    "coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_edge_runs": {
+          "items": {
+            "$ref": "#/$defs/failure-edge-run"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "fresh_base_reconstruction_runs": {
+          "items": {
+            "$ref": "#/$defs/base-run"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "happy_path_runs": {
+          "items": {
+            "$ref": "#/$defs/happy-run"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "inputs": {
+          "$ref": "#/$defs/coverage-inputs"
+        },
+        "interruption_runs": {
+          "items": {
+            "$ref": "#/$defs/interruption-run"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "mandatory_fault_cases": {
+          "items": {
+            "$ref": "#/$defs/fault-case"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "mandatory_fault_runs": {
+          "items": {
+            "$ref": "#/$defs/fault-run"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "modeled_failure_edges": {
+          "items": {
+            "$ref": "#/$defs/failure-edge"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "post_mutation_checkpoints": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "production_transitions": {
+          "items": {
+            "$ref": "#/$defs/transition"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "supported_profile_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "supported_profile_ids",
+        "inputs",
+        "happy_path_runs",
+        "production_transitions",
+        "interruption_runs",
+        "modeled_failure_edges",
+        "failure_edge_runs",
+        "post_mutation_checkpoints",
+        "mandatory_fault_cases",
+        "mandatory_fault_runs",
+        "fresh_base_reconstruction_runs"
+      ],
+      "type": "object"
+    },
+    "coverage-inputs": {
+      "additionalProperties": false,
+      "properties": {
+        "adapters_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "boot_artifacts_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "campaign_index_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "combined_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "evidence_verifier_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "graph_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_policy_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "runtime_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "vm_harness_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_digest",
+        "adapters_digest",
+        "graph_digest",
+        "release_policy_digest",
+        "boot_artifacts_digest",
+        "vm_harness_digest",
+        "evidence_verifier_digest",
+        "campaign_index_digest",
+        "combined_digest"
+      ],
+      "type": "object"
+    },
+    "disk-observation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "logical_sector_size": {
+          "enum": [
+            512,
+            4096
+          ]
+        },
+        "partition_table": {
+          "const": "gpt"
+        },
+        "serial": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "total_bytes": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "partition_table",
+        "logical_sector_size",
+        "total_bytes",
+        "serial"
+      ],
+      "type": "object"
+    },
+    "environment": {
+      "additionalProperties": false,
+      "properties": {
+        "base_image_artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "overlay_artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "ovmf_code_artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "ovmf_vars_artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "qemu_command_line_artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "tpm_state_artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "verified_iso_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "windows_hash_document_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "windows_iso_source_url": {
+          "minLength": 9,
+          "pattern": "^https://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "windows_iso_source_url",
+        "windows_hash_document_digest",
+        "verified_iso_digest",
+        "qemu_command_line_artifact_id",
+        "base_image_artifact_id",
+        "overlay_artifact_id",
+        "ovmf_code_artifact_id",
+        "ovmf_vars_artifact_id",
+        "tpm_state_artifact_id"
+      ],
+      "type": "object"
+    },
+    "esp-observation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "filesystem": {
+          "const": "fat32"
+        },
+        "jstack_loader_present": {
+          "type": "boolean"
+        },
+        "windows_loader_present": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "filesystem",
+        "windows_loader_present",
+        "jstack_loader_present"
+      ],
+      "type": "object"
+    },
+    "failure-edge": {
+      "additionalProperties": false,
+      "properties": {
+        "applicable_profile_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "edge_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edge_id",
+        "applicable_profile_ids"
+      ],
+      "type": "object"
+    },
+    "failure-edge-run": {
+      "additionalProperties": false,
+      "properties": {
+        "edge_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "evidence_bundle_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "recovery_outcome": {
+          "enum": [
+            "retry",
+            "advance",
+            "rollback",
+            "manual-recovery"
+          ]
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "evidence_bundle_digest",
+        "edge_id",
+        "recovery_outcome"
+      ],
+      "type": "object"
+    },
+    "fault": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "none"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "boundary_observation_artifact_id": {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "type": "string"
+            },
+            "checkpoint": {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "type": "string"
+            },
+            "class": {
+              "enum": [
+                "enospc-staging",
+                "enospc-journal",
+                "enospc-esp-xbootldr",
+                "enospc-destination-temporary-object",
+                "enospc-root-deployment",
+                "windows-sharing-violation",
+                "windows-locked-file",
+                "symlink-substitution",
+                "reparse-point-substitution",
+                "artifact-tamper",
+                "staging-evidence-tamper",
+                "handoff-tamper",
+                "journal-tamper",
+                "gpt-tamper",
+                "esp-tamper",
+                "destination-tamper",
+                "stale-disk-identity",
+                "stale-partition-identity",
+                "stale-plan-identity",
+                "stale-release-identity",
+                "stale-graph-identity",
+                "stale-boot-entry-identity",
+                "torn-record",
+                "duplicated-record",
+                "reordered-record",
+                "equivocated-record",
+                "oversized-record",
+                "corrupted-record",
+                "invalid-signature",
+                "expired-release",
+                "rollback-attempt",
+                "clock-rollback",
+                "missing-bitlocker-recovery-confirmation",
+                "insufficient-bitlocker-recovery-confirmation",
+                "secure-boot-valid-chain",
+                "secure-boot-invalid-chain",
+                "secure-boot-incomplete-chain",
+                "bootnext-failure",
+                "bootnext-bounded-rearm",
+                "bootnext-exhausted-rearm",
+                "firmware-variable-write-failure",
+                "cancel-before-mutation",
+                "rollback-request",
+                "windows-resume-failure",
+                "finalizer-failure",
+                "jstack-first-boot-failure",
+                "repeated-recovery-boots",
+                "rollback-interruption"
+              ]
+            },
+            "exact_boundary": {
+              "enum": [
+                "before-intent-persistence",
+                "after-intent-flush-before-mutation",
+                "during-mutation-before-visible-effect",
+                "during-mutation-after-partial-effect",
+                "after-mutation-before-observation",
+                "after-observation-before-commit",
+                "after-commit-before-state-advance",
+                "before-and-after-reboot-or-firmware-handoff"
+              ]
+            },
+            "mode": {
+              "const": "injected"
+            },
+            "process_exit_cause": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "recovery_observation_artifact_ids": {
+              "items": {
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 10000,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "recovery_outcome": {
+              "enum": [
+                "retry",
+                "advance",
+                "rollback",
+                "manual-recovery"
+              ]
+            },
+            "transition_id": {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "type": "string"
+            },
+            "trigger": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode",
+            "class",
+            "trigger",
+            "exact_boundary",
+            "transition_id",
+            "checkpoint",
+            "boundary_observation_artifact_id",
+            "process_exit_cause",
+            "recovery_outcome",
+            "recovery_observation_artifact_ids"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "fault-case": {
+      "additionalProperties": false,
+      "properties": {
+        "applicable_profile_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "checkpoints": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "class": {
+          "enum": [
+            "enospc-staging",
+            "enospc-journal",
+            "enospc-esp-xbootldr",
+            "enospc-destination-temporary-object",
+            "enospc-root-deployment",
+            "windows-sharing-violation",
+            "windows-locked-file",
+            "symlink-substitution",
+            "reparse-point-substitution",
+            "artifact-tamper",
+            "staging-evidence-tamper",
+            "handoff-tamper",
+            "journal-tamper",
+            "gpt-tamper",
+            "esp-tamper",
+            "destination-tamper",
+            "stale-disk-identity",
+            "stale-partition-identity",
+            "stale-plan-identity",
+            "stale-release-identity",
+            "stale-graph-identity",
+            "stale-boot-entry-identity",
+            "torn-record",
+            "duplicated-record",
+            "reordered-record",
+            "equivocated-record",
+            "oversized-record",
+            "corrupted-record",
+            "invalid-signature",
+            "expired-release",
+            "rollback-attempt",
+            "clock-rollback",
+            "missing-bitlocker-recovery-confirmation",
+            "insufficient-bitlocker-recovery-confirmation",
+            "secure-boot-valid-chain",
+            "secure-boot-invalid-chain",
+            "secure-boot-incomplete-chain",
+            "bootnext-failure",
+            "bootnext-bounded-rearm",
+            "bootnext-exhausted-rearm",
+            "firmware-variable-write-failure",
+            "cancel-before-mutation",
+            "rollback-request",
+            "windows-resume-failure",
+            "finalizer-failure",
+            "jstack-first-boot-failure",
+            "repeated-recovery-boots",
+            "rollback-interruption"
+          ]
+        }
+      },
+      "required": [
+        "class",
+        "applicable_profile_ids",
+        "checkpoints"
+      ],
+      "type": "object"
+    },
+    "fault-run": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "enospc-staging",
+            "enospc-journal",
+            "enospc-esp-xbootldr",
+            "enospc-destination-temporary-object",
+            "enospc-root-deployment",
+            "windows-sharing-violation",
+            "windows-locked-file",
+            "symlink-substitution",
+            "reparse-point-substitution",
+            "artifact-tamper",
+            "staging-evidence-tamper",
+            "handoff-tamper",
+            "journal-tamper",
+            "gpt-tamper",
+            "esp-tamper",
+            "destination-tamper",
+            "stale-disk-identity",
+            "stale-partition-identity",
+            "stale-plan-identity",
+            "stale-release-identity",
+            "stale-graph-identity",
+            "stale-boot-entry-identity",
+            "torn-record",
+            "duplicated-record",
+            "reordered-record",
+            "equivocated-record",
+            "oversized-record",
+            "corrupted-record",
+            "invalid-signature",
+            "expired-release",
+            "rollback-attempt",
+            "clock-rollback",
+            "missing-bitlocker-recovery-confirmation",
+            "insufficient-bitlocker-recovery-confirmation",
+            "secure-boot-valid-chain",
+            "secure-boot-invalid-chain",
+            "secure-boot-incomplete-chain",
+            "bootnext-failure",
+            "bootnext-bounded-rearm",
+            "bootnext-exhausted-rearm",
+            "firmware-variable-write-failure",
+            "cancel-before-mutation",
+            "rollback-request",
+            "windows-resume-failure",
+            "finalizer-failure",
+            "jstack-first-boot-failure",
+            "repeated-recovery-boots",
+            "rollback-interruption"
+          ]
+        },
+        "evidence_bundle_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "recovery_outcome": {
+          "enum": [
+            "retry",
+            "advance",
+            "rollback",
+            "manual-recovery",
+            "rejected"
+          ]
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "evidence_bundle_digest",
+        "class",
+        "checkpoint",
+        "recovery_outcome"
+      ],
+      "type": "object"
+    },
+    "firmware-observation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "secure_boot": {
+          "type": "boolean"
+        },
+        "setup_mode": {
+          "type": "boolean"
+        },
+        "uefi": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "uefi",
+        "secure_boot",
+        "setup_mode"
+      ],
+      "type": "object"
+    },
+    "gpt-observation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "backup_header_valid": {
+          "type": "boolean"
+        },
+        "partition_guids": {
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "primary_header_valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "primary_header_valid",
+        "backup_header_valid",
+        "partition_guids"
+      ],
+      "type": "object"
+    },
+    "happy-run": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_bundle_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "fresh_overlay": {
+          "const": true
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "evidence_bundle_digest",
+        "fresh_overlay"
+      ],
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "disk_identity": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "graph_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "handoff_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "journal_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "media_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "plan_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_acceptance_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_policy_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "staging_evidence_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "graph_digest",
+        "release_digest",
+        "release_acceptance_digest",
+        "staging_evidence_digest",
+        "plan_digest",
+        "disk_identity",
+        "release_policy_digest",
+        "profile_digest",
+        "media_digest",
+        "journal_digest",
+        "handoff_digest"
+      ],
+      "type": "object"
+    },
+    "interruption-run": {
+      "additionalProperties": false,
+      "properties": {
+        "abrupt_qemu_termination": {
+          "const": true
+        },
+        "boundary": {
+          "enum": [
+            "before-intent-persistence",
+            "after-intent-flush-before-mutation",
+            "during-mutation-before-visible-effect",
+            "during-mutation-after-partial-effect",
+            "after-mutation-before-observation",
+            "after-observation-before-commit",
+            "after-commit-before-state-advance",
+            "before-and-after-reboot-or-firmware-handoff"
+          ]
+        },
+        "evidence_bundle_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "input_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "recovery_outcome": {
+          "enum": [
+            "retry",
+            "advance",
+            "rollback",
+            "manual-recovery"
+          ]
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "transition_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "profile_id",
+        "input_digest",
+        "evidence_bundle_digest",
+        "transition_id",
+        "boundary",
+        "abrupt_qemu_termination",
+        "recovery_outcome"
+      ],
+      "type": "object"
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "disk_identity": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "disk_serial": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "graph_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "handoff_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "journal_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "machine_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "media_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "observed_at": {
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$",
+          "type": "string"
+        },
+        "observed_postconditions": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "observed_preconditions": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "plan_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_acceptance_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_policy_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "smbios_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "staging_evidence_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "run.created",
+            "preflight.verified",
+            "plan.confirmed",
+            "mutation.started",
+            "mutation.completed",
+            "observation.completed",
+            "handoff.committed",
+            "terminal.completed",
+            "terminal.rolled_back",
+            "recovery.started",
+            "recovery.completed",
+            "recovery.manual"
+          ]
+        },
+        "transition_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "vm_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "state",
+        "transition_id",
+        "observed_at",
+        "graph_digest",
+        "release_digest",
+        "release_acceptance_digest",
+        "staging_evidence_digest",
+        "plan_digest",
+        "disk_identity",
+        "release_policy_digest",
+        "profile_digest",
+        "media_digest",
+        "journal_digest",
+        "handoff_digest",
+        "vm_id",
+        "machine_uuid",
+        "smbios_uuid",
+        "disk_serial",
+        "observed_preconditions",
+        "observed_postconditions"
+      ],
+      "type": "object"
+    },
+    "observation-snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "bitlocker": {
+          "$ref": "#/$defs/bitlocker-observation"
+        },
+        "disk": {
+          "$ref": "#/$defs/disk-observation"
+        },
+        "disk_identity": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "disk_serial": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "esp": {
+          "$ref": "#/$defs/esp-observation"
+        },
+        "firmware": {
+          "$ref": "#/$defs/firmware-observation"
+        },
+        "gpt": {
+          "$ref": "#/$defs/gpt-observation"
+        },
+        "machine_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "observed_at": {
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$",
+          "type": "string"
+        },
+        "smbios_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "tpm": {
+          "$ref": "#/$defs/tpm-observation"
+        },
+        "vm_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_at",
+        "vm_id",
+        "machine_uuid",
+        "smbios_uuid",
+        "disk_serial",
+        "disk_identity",
+        "firmware",
+        "tpm",
+        "bitlocker",
+        "disk",
+        "gpt",
+        "esp"
+      ],
+      "type": "object"
+    },
+    "observations": {
+      "additionalProperties": false,
+      "properties": {
+        "final": {
+          "$ref": "#/$defs/observation-snapshot"
+        },
+        "initial": {
+          "$ref": "#/$defs/observation-snapshot"
+        }
+      },
+      "required": [
+        "initial",
+        "final"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "clean_tree_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "final_outcome": {
+          "enum": [
+            "terminal.completed",
+            "terminal.rolled_back",
+            "recovery.completed",
+            "recovery.manual"
+          ]
+        },
+        "finished_at": {
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "scenario_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "source_commit": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "started_at": {
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "scenario_id",
+        "profile_id",
+        "started_at",
+        "finished_at",
+        "final_outcome",
+        "source_commit",
+        "clean_tree_digest"
+      ],
+      "type": "object"
+    },
+    "tpm-observation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "version": {
+          "enum": [
+            "absent",
+            "2.0"
+          ]
+        }
+      },
+      "required": [
+        "artifact_id",
+        "present",
+        "version",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "transition": {
+      "additionalProperties": false,
+      "properties": {
+        "applicable_profile_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "boundaries": {
+          "const": [
+            "before-intent-persistence",
+            "after-intent-flush-before-mutation",
+            "during-mutation-before-visible-effect",
+            "during-mutation-after-partial-effect",
+            "after-mutation-before-observation",
+            "after-observation-before-commit",
+            "after-commit-before-state-advance",
+            "before-and-after-reboot-or-firmware-handoff"
+          ]
+        },
+        "transition_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transition_id",
+        "applicable_profile_ids",
+        "boundaries"
+      ],
+      "type": "object"
+    },
+    "vm-identity": {
+      "additionalProperties": false,
+      "properties": {
+        "disk_serial": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "machine_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "smbios_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "vm_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vm_id",
+        "machine_uuid",
+        "smbios_uuid",
+        "disk_serial"
+      ],
+      "type": "object"
+    },
+    "witness": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "boot_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "boot_volume_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "cold_boot": {
+          "type": "boolean"
+        },
+        "disk_identity": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "disk_serial": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "graph_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "handoff_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "journal_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "windows-pre-install",
+            "windows-post-deploy",
+            "jstack-first-boot",
+            "cold-boot-windows",
+            "cold-boot-jstack"
+          ]
+        },
+        "loader_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "machine_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "media_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "observed_at": {
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$",
+          "type": "string"
+        },
+        "os": {
+          "enum": [
+            "windows",
+            "jstack"
+          ]
+        },
+        "os_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "plan_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_acceptance_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "release_policy_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "smbios_uuid": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "staging_evidence_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "vm_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "artifact_id",
+        "observed_at",
+        "boot_id",
+        "os",
+        "os_version",
+        "cold_boot",
+        "loader_path",
+        "boot_volume_uuid",
+        "graph_digest",
+        "release_digest",
+        "release_acceptance_digest",
+        "staging_evidence_digest",
+        "plan_digest",
+        "disk_identity",
+        "release_policy_digest",
+        "profile_digest",
+        "media_digest",
+        "journal_digest",
+        "handoff_digest",
+        "vm_id",
+        "machine_uuid",
+        "smbios_uuid",
+        "disk_serial"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://jstack.invalid/schemas/vm-run-evidence-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Strict structural contract. verify.py additionally enforces canonical bytes, safe regular artifact paths, content hashes, immutable profiles, identity and state agreement, ordered lifecycle semantics, distinct concrete witnesses, fault outcomes, and complete campaign products.",
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/artifact"
+      },
+      "maxItems": 10000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "contract": {
+      "const": "jstack.vm.run-evidence"
+    },
+    "coverage": {
+      "$ref": "#/$defs/coverage"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "fault": {
+      "$ref": "#/$defs/fault"
+    },
+    "identity": {
+      "$ref": "#/$defs/identity"
+    },
+    "journal": {
+      "items": {
+        "$ref": "#/$defs/journal"
+      },
+      "maxItems": 10000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "observations": {
+      "$ref": "#/$defs/observations"
+    },
+    "profiles": {
+      "const": [
+        {
+          "architecture": "x86-64",
+          "bitlocker": false,
+          "firmware": "uefi",
+          "id": "windows-10-pro-22h2-en-us-x64-q35-11.0.nosecureboot-notpm-bitlocker-off",
+          "partition_table": "gpt",
+          "scenario_id": "nosecureboot-notpm-bitlocker-off",
+          "secure_boot": false,
+          "support_profile_id": "windows-10-pro-22h2-en-us-x64-q35-11.0",
+          "tpm": "absent",
+          "windows_edition": "pro",
+          "windows_family": "windows-10",
+          "windows_release": "22h2"
+        },
+        {
+          "architecture": "x86-64",
+          "bitlocker": false,
+          "firmware": "uefi",
+          "id": "windows-10-pro-22h2-en-us-x64-q35-11.0.nosecureboot-tpm-bitlocker-off",
+          "partition_table": "gpt",
+          "scenario_id": "nosecureboot-tpm-bitlocker-off",
+          "secure_boot": false,
+          "support_profile_id": "windows-10-pro-22h2-en-us-x64-q35-11.0",
+          "tpm": "2.0",
+          "windows_edition": "pro",
+          "windows_family": "windows-10",
+          "windows_release": "22h2"
+        },
+        {
+          "architecture": "x86-64",
+          "bitlocker": false,
+          "firmware": "uefi",
+          "id": "windows-10-pro-22h2-en-us-x64-q35-11.0.secureboot-tpm-bitlocker-off",
+          "partition_table": "gpt",
+          "scenario_id": "secureboot-tpm-bitlocker-off",
+          "secure_boot": true,
+          "support_profile_id": "windows-10-pro-22h2-en-us-x64-q35-11.0",
+          "tpm": "2.0",
+          "windows_edition": "pro",
+          "windows_family": "windows-10",
+          "windows_release": "22h2"
+        },
+        {
+          "architecture": "x86-64",
+          "bitlocker": true,
+          "firmware": "uefi",
+          "id": "windows-10-pro-22h2-en-us-x64-q35-11.0.secureboot-tpm-bitlocker-on",
+          "partition_table": "gpt",
+          "scenario_id": "secureboot-tpm-bitlocker-on",
+          "secure_boot": true,
+          "support_profile_id": "windows-10-pro-22h2-en-us-x64-q35-11.0",
+          "tpm": "2.0",
+          "windows_edition": "pro",
+          "windows_family": "windows-10",
+          "windows_release": "22h2"
+        },
+        {
+          "architecture": "x86-64",
+          "bitlocker": false,
+          "firmware": "uefi",
+          "id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0.nosecureboot-tpm-bitlocker-off",
+          "partition_table": "gpt",
+          "scenario_id": "nosecureboot-tpm-bitlocker-off",
+          "secure_boot": false,
+          "support_profile_id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0",
+          "tpm": "2.0",
+          "windows_edition": "enterprise-evaluation",
+          "windows_family": "windows-11",
+          "windows_release": "25h2"
+        },
+        {
+          "architecture": "x86-64",
+          "bitlocker": false,
+          "firmware": "uefi",
+          "id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0.secureboot-tpm-bitlocker-off",
+          "partition_table": "gpt",
+          "scenario_id": "secureboot-tpm-bitlocker-off",
+          "secure_boot": true,
+          "support_profile_id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0",
+          "tpm": "2.0",
+          "windows_edition": "enterprise-evaluation",
+          "windows_family": "windows-11",
+          "windows_release": "25h2"
+        },
+        {
+          "architecture": "x86-64",
+          "bitlocker": true,
+          "firmware": "uefi",
+          "id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0.secureboot-tpm-bitlocker-on",
+          "partition_table": "gpt",
+          "scenario_id": "secureboot-tpm-bitlocker-on",
+          "secure_boot": true,
+          "support_profile_id": "windows-11-enterprise-25h2-eval-en-us-x64-q35-11.0",
+          "tpm": "2.0",
+          "windows_edition": "enterprise-evaluation",
+          "windows_family": "windows-11",
+          "windows_release": "25h2"
+        }
+      ]
+    },
+    "run": {
+      "$ref": "#/$defs/run"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "vm_identity": {
+      "$ref": "#/$defs/vm-identity"
+    },
+    "witnesses": {
+      "items": {
+        "$ref": "#/$defs/witness"
+      },
+      "maxItems": 10000,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract",
+    "schema_version",
+    "run",
+    "profiles",
+    "identity",
+    "vm_identity",
+    "environment",
+    "artifacts",
+    "observations",
+    "journal",
+    "witnesses",
+    "fault",
+    "coverage"
+  ],
+  "title": "JStack canonical Windows VM run evidence bundle manifest",
+  "type": "object"
+}

@@ -11,12 +11,34 @@
   ],
   "properties": {
     "id": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/identifier"
     },
     "description": {
       "type": "string",
       "minLength": 1
+    },
+    "trace_kind": {
+      "enum": [
+        "abstract",
+        "evidence"
+      ]
+    },
+    "identity": {
+      "$ref": "#/$defs/identity"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceWitness"
+      },
+      "minItems": 1
+    },
+    "proofs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/proofDeclaration"
+      },
+      "minItems": 1
     },
     "steps": {
       "type": "array",
@@ -27,33 +49,264 @@
             "minLength": 1
           },
           {
-            "type": "object",
-            "required": [
-              "transition",
-              "outcome"
-            ],
-            "properties": {
-              "transition": {
-                "type": "string",
-                "minLength": 1
-              },
-              "outcome": {
-                "enum": [
-                  "success",
-                  "failure",
-                  "interrupted_precondition",
-                  "interrupted_postcondition",
-                  "interrupted_divergent"
-                ]
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/$defs/step"
           }
         ]
       },
       "minItems": 1
     },
     "expected_terminal": {
+      "$ref": "#/$defs/terminal"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "trace_kind"
+        ],
+        "properties": {
+          "trace_kind": {
+            "const": "evidence"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "identity",
+          "evidence",
+          "proofs"
+        ]
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "required": [
+              "identity"
+            ]
+          },
+          {
+            "required": [
+              "evidence"
+            ]
+          },
+          {
+            "required": [
+              "proofs"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "required": [
+          "trace_kind"
+        ],
+        "properties": {
+          "trace_kind": {
+            "const": "evidence"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "trace_kind"
+          ],
+          "properties": {
+            "trace_kind": {
+              "const": "evidence"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "steps": {
+            "items": {
+              "not": {
+                "type": "object",
+                "required": [
+                  "proof"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identity": {
+      "type": "object",
+      "required": [
+        "graph_digest",
+        "release_digest",
+        "release_acceptance_digest",
+        "staging_evidence_digest",
+        "plan_digest",
+        "disk_identity"
+      ],
+      "properties": {
+        "graph_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "release_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "release_acceptance_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "staging_evidence_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "plan_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "disk_identity": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceWitness": {
+      "type": "object",
+      "required": [
+        "id",
+        "role",
+        "path",
+        "size",
+        "sha256",
+        "identity"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "role": {
+          "$ref": "#/$defs/identifier"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 11,
+          "pattern": "^artifacts/(?!\\.\\.?(?:/|$))(?!.*(?:/\\.\\.?)(?:/|$))(?!.*\\\\)[^\\u0000]+$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        }
+      },
+      "additionalProperties": false
+    },
+    "proofDeclaration": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "transition",
+        "witnesses"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "transition",
+            "rollback"
+          ]
+        },
+        "transition": {
+          "$ref": "#/$defs/identifier"
+        },
+        "witnesses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "expected_terminal": {
+          "enum": [
+            "terminal.rolled_back",
+            "terminal.manual_recovery"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "rollback"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "expected_terminal"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "expected_terminal"
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "transition",
+        "outcome"
+      ],
+      "properties": {
+        "transition": {
+          "$ref": "#/$defs/identifier"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "failure",
+            "interrupted_precondition",
+            "interrupted_postcondition",
+            "interrupted_divergent"
+          ]
+        },
+        "proof": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
       "enum": [
         "terminal.completed",
         "terminal.cancelled",
@@ -62,6 +315,5 @@
         "terminal.manual_recovery"
       ]
     }
-  },
-  "additionalProperties": false
+  }
 }

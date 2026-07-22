@@ -46,13 +46,15 @@ def render_mermaid(model: dict) -> str:
 
 def render_transitions(model: dict) -> str:
     actions = index_by_id(model["actions"])
+    guards = index_by_id(model["guards"])
     lines = [
         "# Generated transition table",
         "",
         "Generated from `installer/model/installer-state-graph.json`. Do not edit manually.",
         "",
-        "| Transition | From | To | Actor | Max risk | Guards | Failure target |",
-        "|---|---|---|---|---|---|---|",
+        "| Transition | From | To | Actor | Max risk | Guards | "
+        "Evidence witnesses | Failure target |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     risk_order = {
         "read_only": 0,
@@ -68,14 +70,25 @@ def render_transitions(model: dict) -> str:
     for transition in model["transitions"]:
         risks = [actions[action]["risk"] for action in transition["actions"]]
         max_risk = max(risks, key=risk_order.get) if risks else "read_only"
+        evidence_roles = [
+            role
+            for guard_id in transition["guards"]
+            for role in guards.get(guard_id, {}).get("evidence", {}).get(
+                "witness_roles", []
+            )
+        ]
         lines.append(
-            "| `{id}` | `{from_}` | `{to}` | `{actor}` | `{risk}` | {guards} | {failure} |".format(
+            (
+                "| `{id}` | `{from_}` | `{to}` | `{actor}` | `{risk}` | "
+                "{guards} | {evidence} | {failure} |"
+            ).format(
                 id=transition["id"],
                 from_=transition["from"],
                 to=transition["to"],
                 actor=transition["actor"],
                 risk=max_risk,
                 guards=", ".join(f"`{guard}`" for guard in transition["guards"]) or "-",
+                evidence=", ".join(f"`{role}`" for role in evidence_roles) or "-",
                 failure=f"`{transition['failure_to']}`" if transition.get("failure_to") else "-",
             )
         )

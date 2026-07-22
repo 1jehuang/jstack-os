@@ -2,7 +2,8 @@ use std::{env, fs, process::ExitCode};
 
 use jstack_installer_core::{
     Architecture, Hash256, Inventory, PlanDisplay, ReleaseChannel, ReleaseTrustPolicy,
-    ReleaseVerificationMode, TrustedReleaseKey, create_install_plan, verify_release_manifest,
+    ReleaseVerificationMode, TrustedReleaseKey, create_install_plan, executable_state_model_id,
+    verify_release_manifest,
 };
 use sha2::{Digest, Sha256};
 
@@ -54,7 +55,7 @@ fn run(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let inventory: Inventory = serde_json::from_slice(&fs::read(inventory_path)?)?;
     let manifest = fs::read(manifest_path)?;
-    let policy = fixture_trust_policy();
+    let policy = fixture_trust_policy()?;
     let pending = verify_release_manifest(&manifest, &policy, ReleaseVerificationMode::Acquire)?;
     let persisted_readback = pending.required_acceptance().clone();
     let verified = pending.accept_after_persist(&persisted_readback)?;
@@ -67,11 +68,11 @@ fn run(
     }
 }
 
-fn fixture_trust_policy() -> ReleaseTrustPolicy {
-    ReleaseTrustPolicy {
+fn fixture_trust_policy() -> Result<ReleaseTrustPolicy, Box<dyn std::error::Error>> {
+    Ok(ReleaseTrustPolicy {
         channel: ReleaseChannel::Stable,
         architecture: Architecture::X86_64,
-        state_model_id: "jstack-installer-v1".to_owned(),
+        state_model_id: executable_state_model_id(STATE_MODEL_BYTES)?,
         state_model_sha256: Hash256::from_bytes(Sha256::digest(STATE_MODEL_BYTES).into()),
         installer_protocol_version: 1,
         now_unix_secs: FIXTURE_NOW,
@@ -92,5 +93,5 @@ fn fixture_trust_policy() -> ReleaseTrustPolicy {
             })
             .collect(),
         previous_acceptance: None,
-    }
+    })
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import unittest
@@ -11,17 +12,24 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from state_model import (  # noqa: E402
+    ASSURANCE_TRANSITION_REQUIREMENTS,
+    EVIDENCE_IDENTITY_FIELDS,
     MUTATING_RISKS,
+    ROLLBACK_MUTATING_TRANSITION_IDS,
+    ROLLBACK_PROOF_WITNESS_ROLES,
+    SYSTEM_MUTATING_RISKS,
     clone_model,
     index_by_id,
     load_json,
     reconcile_interruption,
+    rollback_mutating_transition_ids,
     simulate_trace,
     states_reaching_any,
     transition_is_mutating,
     transition_is_system_mutating,
     validate_against_schema,
     validate_model,
+    validate_trace,
 )
 
 
@@ -65,6 +73,73 @@ def path_to_state(model: dict, target: str) -> list[str | dict[str, str]]:
                     queue.append((next_state, next_steps))
 
     raise AssertionError(f"no executable path reaches {target}")
+
+
+def evidence_identity() -> dict[str, str]:
+    return {
+        field: hashlib.sha256(f"test-{field}".encode()).hexdigest()
+        for field in EVIDENCE_IDENTITY_FIELDS
+    }
+
+
+def evidence_trace(
+    model: dict,
+    steps: list[str | dict[str, str]],
+    expected_terminal: str,
+) -> dict:
+    identity = evidence_identity()
+    witnesses: list[dict] = []
+    proofs: list[dict] = []
+    linked_steps: list[str | dict[str, str]] = []
+    for raw_step in steps:
+        if isinstance(raw_step, str):
+            transition_id = raw_step
+            outcome = "success"
+        else:
+            transition_id = raw_step["transition"]
+            outcome = raw_step.get("outcome", "success")
+        requirement = ASSURANCE_TRANSITION_REQUIREMENTS.get(transition_id)
+        if not requirement or outcome != "success":
+            linked_steps.append(raw_step)
+            continue
+
+        proof_id = f"{transition_id}.proof"
+        witness_ids: list[str] = []
+        for role in requirement["witness_roles"]:
+            witness_id = f"{transition_id}.{role}"
+            witness_ids.append(witness_id)
+            witnesses.append(
+                {
+                    "id": witness_id,
+                    "role": role,
+                    "path": f"artifacts/{witness_id}.json",
+                    "size": 1,
+                    "sha256": hashlib.sha256(witness_id.encode()).hexdigest(),
+                    "identity": dict(identity),
+                }
+            )
+        proofs.append(
+            {
+                "id": proof_id,
+                "kind": "transition",
+                "transition": transition_id,
+                "witnesses": witness_ids,
+            }
+        )
+        linked_steps.append(
+            {"transition": transition_id, "outcome": outcome, "proof": proof_id}
+        )
+
+    return {
+        "id": "evidence_trace",
+        "description": "Proof-bearing trace with external content-addressed witnesses.",
+        "trace_kind": "evidence",
+        "identity": identity,
+        "evidence": witnesses,
+        "proofs": proofs,
+        "steps": linked_steps,
+        "expected_terminal": expected_terminal,
+    }
 
 
 class StateModelTests(unittest.TestCase):
@@ -231,7 +306,246 @@ class StateModelTests(unittest.TestCase):
         )
         transition["authorization"] = []
         errors = validate_model(unsafe)
-        self.assertTrue(any("lacks plan or rollback authorization" in error for error in errors))
+        self.assertIn(
+            "forward mutation reserve_windows_space lacks confirmed_plan authorization",
+            errors,
+        )
+
+    def test_rollback_mutation_set_is_exact_and_graph_derived(self) -> None:
+        expected = {
+            "dispatch_rollback_linux",
+            "reboot_to_windows_rollback",
+            "execute_windows_rollback",
+            "rollback_remove_esp_files",
+            "rollback_delete_partitions",
+            "rollback_expand_windows",
+            "rollback_restore_security",
+            "rollback_unregister_finalizer",
+        }
+        actions = index_by_id(self.model["actions"])
+
+        self.assertEqual(set(ROLLBACK_MUTATING_TRANSITION_IDS), expected)
+        self.assertEqual(
+            rollback_mutating_transition_ids(self.model, actions), expected
+        )
+
+    def test_validator_requires_rollback_authorization_on_rollback_mutations(
+        self,
+    ) -> None:
+        for transition_id in ROLLBACK_MUTATING_TRANSITION_IDS:
+            with self.subTest(transition=transition_id):
+                unsafe = clone_model(self.model)
+                transition = next(
+                    transition
+                    for transition in unsafe["transitions"]
+                    if transition["id"] == transition_id
+                )
+                transition["authorization"] = []
+
+                self.assertIn(
+                    f"rollback mutation {transition_id} lacks rollback_authorized",
+                    validate_model(unsafe),
+                )
+
+    def test_validator_rejects_expanded_rollback_mutation_closure(self) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "reserve_windows_space"
+        )
+        transition["from"] = "recovery.rollback_required"
+        transition["authorization"] = ["rollback_authorized"]
+        transition["guards"].extend(
+            ["rollback_permitted", "rollback_identity_current"]
+        )
+
+        errors = validate_model(unsafe)
+        closure_errors = [
+            error
+            for error in errors
+            if error.startswith(
+                "rollback mutation closure contains unexpected transitions: "
+            )
+        ]
+        self.assertEqual(len(closure_errors), 1)
+        self.assertIn("reserve_windows_space", closure_errors[0])
+
+    def test_validator_rejects_preconfirmation_failure_entry_into_rollback(
+        self,
+    ) -> None:
+        unsafe = clone_model(self.model)
+        transition = index_by_id(unsafe["transitions"])["acquire_release_manifest"]
+        transition["failure_to"] = "recovery.rollback_required"
+
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "mutating transition dispatch_rollback_linux is reachable without "
+            "plan confirmation",
+            errors,
+        )
+
+    def test_validator_rejects_preconfirmation_success_entry_into_rollback(
+        self,
+    ) -> None:
+        unsafe = clone_model(self.model)
+        transition = index_by_id(unsafe["transitions"])["acquire_release_manifest"]
+        transition["to"] = "recovery.rollback_required"
+
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "mutating transition dispatch_rollback_linux is reachable without "
+            "plan confirmation",
+            errors,
+        )
+
+    def test_validator_rejects_preconfirmation_failure_entry_mid_rollback(
+        self,
+    ) -> None:
+        unsafe = clone_model(self.model)
+        transition = index_by_id(unsafe["transitions"])["acquire_release_manifest"]
+        transition["failure_to"] = "windows.rollback_boot_entries_removed"
+
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "mutating transition rollback_remove_esp_files is reachable without "
+            "plan confirmation",
+            errors,
+        )
+        self.assertIn(
+            "rollback mutation rollback_remove_esp_files is reachable without "
+            "recovery.rollback_required",
+            errors,
+        )
+
+    def test_validator_rejects_rollback_failure_edges_escaping_to_forward_states(
+        self,
+    ) -> None:
+        for target in ("windows.plan_confirmed", "windows.preflight"):
+            with self.subTest(target=target):
+                unsafe = clone_model(self.model)
+                transition = index_by_id(unsafe["transitions"])[
+                    "rollback_remove_esp_files"
+                ]
+                transition["failure_to"] = target
+
+                errors = validate_model(unsafe)
+                self.assertIn(
+                    "rollback transition rollback_remove_esp_files failure target "
+                    f"{target} escapes closed recovery subgraph",
+                    errors,
+                )
+
+    def test_validator_rejects_rollback_success_edges_escaping_to_forward_states(
+        self,
+    ) -> None:
+        unsafe = clone_model(self.model)
+        transition = index_by_id(unsafe["transitions"])["rollback_remove_esp_files"]
+        transition["to"] = "windows.plan_confirmed"
+
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "rollback transition rollback_remove_esp_files success target "
+            "windows.plan_confirmed escapes closed recovery subgraph",
+            errors,
+        )
+
+    def test_validator_applies_rollback_authorization_across_all_edges(
+        self,
+    ) -> None:
+        for edge_name in ("to", "failure_to"):
+            with self.subTest(edge=edge_name):
+                unsafe = clone_model(self.model)
+                transition = index_by_id(unsafe["transitions"])[
+                    "rollback_remove_esp_files"
+                ]
+                transition[edge_name] = "windows.plan_confirmed"
+
+                errors = validate_model(unsafe)
+                self.assertIn(
+                    "rollback mutation reserve_windows_space lacks rollback_authorized",
+                    errors,
+                )
+                self.assertTrue(
+                    any(
+                        error.startswith(
+                            "rollback mutation closure contains unexpected "
+                            "transitions: "
+                        )
+                        and "reserve_windows_space" in error
+                        for error in errors
+                    )
+                )
+
+    def test_validator_rejects_required_rollback_mutation_outside_closed_set(
+        self,
+    ) -> None:
+        unsafe = clone_model(self.model)
+        transition = index_by_id(unsafe["transitions"])["rollback_delete_partitions"]
+        transition["from"] = "windows.plan_confirmed"
+
+        errors = validate_model(unsafe)
+        self.assertTrue(
+            any(
+                error.startswith(
+                    "rollback mutation closure lacks required transitions: "
+                )
+                and "rollback_delete_partitions" in error
+                for error in errors
+            )
+        )
+        self.assertIn(
+            "rollback mutation rollback_delete_partitions is reachable without "
+            "recovery.rollback_required",
+            errors,
+        )
+
+    def test_validator_rejects_rollback_authorization_on_forward_mutation(
+        self,
+    ) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "reserve_windows_space"
+        )
+        transition["authorization"] = ["rollback_authorized"]
+        transition["guards"].extend(
+            ["rollback_permitted", "rollback_identity_current"]
+        )
+
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "non-rollback mutation reserve_windows_space must not use rollback_authorized",
+            errors,
+        )
+        self.assertIn(
+            "forward mutation reserve_windows_space lacks confirmed_plan authorization",
+            errors,
+        )
+
+    def test_rollback_authorization_cannot_bypass_plan_dominance(self) -> None:
+        unsafe = clone_model(self.model)
+        transition = next(
+            transition
+            for transition in unsafe["transitions"]
+            if transition["id"] == "reserve_windows_space"
+        )
+        transition["from"] = unsafe["initial_state"]
+        transition["authorization"] = ["rollback_authorized"]
+        transition["guards"].extend(
+            ["rollback_permitted", "rollback_identity_current"]
+        )
+
+        errors = validate_model(unsafe)
+        self.assertIn(
+            "non-rollback mutation reserve_windows_space must not use rollback_authorized",
+            errors,
+        )
+        self.assertIn(
+            "mutating transition reserve_windows_space is reachable without plan confirmation",
+            errors,
+        )
 
     def test_validator_rejects_unauthorized_staging_mutation(self) -> None:
         unsafe = clone_model(self.model)
@@ -536,6 +850,403 @@ class StateModelTests(unittest.TestCase):
         self.assertIn(
             "arm_jstack_reboot_retry lacks jstack_rearm_not_attempted guard", errors
         )
+
+    def test_assurance_transitions_declare_concrete_identity_bound_evidence(self) -> None:
+        transitions = index_by_id(self.model["transitions"])
+        guards = index_by_id(self.model["guards"])
+        for transition_id, requirement in ASSURANCE_TRANSITION_REQUIREMENTS.items():
+            with self.subTest(transition=transition_id):
+                transition = transitions[transition_id]
+                guard_id = requirement["guard"]
+                self.assertIn(guard_id, transition["guards"])
+                self.assertTrue(
+                    set(requirement["preconditions"]).issubset(
+                        transition["preconditions"]
+                    )
+                )
+                self.assertTrue(
+                    set(requirement["postconditions"]).issubset(
+                        transition["postconditions"]
+                    )
+                )
+                declaration = guards[guard_id]["evidence"]
+                self.assertEqual(declaration["claim"], transition_id)
+                self.assertEqual(declaration["content_address"], "sha256")
+                self.assertEqual(
+                    declaration["identity_fields"], list(EVIDENCE_IDENTITY_FIELDS)
+                )
+                self.assertEqual(
+                    declaration["witness_roles"], list(requirement["witness_roles"])
+                )
+
+    def test_validator_rejects_weakened_assurance_declarations(self) -> None:
+        for transition_id, requirement in ASSURANCE_TRANSITION_REQUIREMENTS.items():
+            cases = (
+                (
+                    "guard",
+                    lambda transition, guard: transition["guards"].remove(
+                        requirement["guard"]
+                    ),
+                    f"assurance transition {transition_id} lacks evidence guard",
+                ),
+                (
+                    "precondition",
+                    lambda transition, guard: transition["preconditions"].remove(
+                        requirement["preconditions"][0]
+                    ),
+                    f"assurance transition {transition_id} lacks precondition",
+                ),
+                (
+                    "postcondition",
+                    lambda transition, guard: transition["postconditions"].remove(
+                        requirement["postconditions"][0]
+                    ),
+                    f"assurance transition {transition_id} lacks postcondition",
+                ),
+                (
+                    "claim",
+                    lambda transition, guard: guard["evidence"].update(
+                        claim="different_transition"
+                    ),
+                    f"assurance evidence guard {requirement['guard']} claim must be",
+                ),
+                (
+                    "content-address",
+                    lambda transition, guard: guard["evidence"].update(
+                        content_address="path"
+                    ),
+                    "must require sha256 content addresses",
+                ),
+                (
+                    "identity",
+                    lambda transition, guard: guard["evidence"][
+                        "identity_fields"
+                    ].pop(),
+                    "must require the complete run identity",
+                ),
+                (
+                    "roles",
+                    lambda transition, guard: guard["evidence"][
+                        "witness_roles"
+                    ].pop(),
+                    "witness roles must be exactly",
+                ),
+            )
+            for name, mutate, expected in cases:
+                with self.subTest(transition=transition_id, mutation=name):
+                    unsafe = clone_model(self.model)
+                    transition = index_by_id(unsafe["transitions"])[transition_id]
+                    guard = index_by_id(unsafe["guards"])[requirement["guard"]]
+                    mutate(transition, guard)
+                    self.assertTrue(
+                        any(expected in error for error in validate_model(unsafe))
+                    )
+
+    def test_evidence_trace_links_content_addresses_without_bloating_abstract_traces(
+        self,
+    ) -> None:
+        trace_schema = load_json(ROOT / "model" / "trace-schema.json")
+        abstract = load_json(ROOT / "traces" / "happy-path-bitlocker.json")
+        for field in ("trace_kind", "identity", "evidence", "proofs"):
+            self.assertNotIn(field, abstract)
+        self.assertEqual(validate_trace(self.model, abstract), [])
+
+        trace = evidence_trace(
+            self.model, abstract["steps"], abstract["expected_terminal"]
+        )
+        self.assertEqual(validate_against_schema(trace, trace_schema), [])
+        self.assertEqual(validate_trace(self.model, trace), [])
+        self.assertEqual(simulate_trace(self.model, trace), "terminal.completed")
+
+    def test_evidence_trace_rejects_missing_mismatched_and_unaddressed_witnesses(
+        self,
+    ) -> None:
+        abstract = load_json(ROOT / "traces" / "happy-path-bitlocker.json")
+        trace_schema = load_json(ROOT / "model" / "trace-schema.json")
+        valid = evidence_trace(
+            self.model, abstract["steps"], abstract["expected_terminal"]
+        )
+
+        for transition_id in ASSURANCE_TRANSITION_REQUIREMENTS:
+            step_index = next(
+                index
+                for index, step in enumerate(valid["steps"])
+                if isinstance(step, dict) and step["transition"] == transition_id
+            )
+            with self.subTest(transition=transition_id, attack="missing-proof"):
+                unsafe = clone_model(valid)
+                unsafe["steps"][step_index].pop("proof")
+                self.assertTrue(
+                    any(
+                        f"transition {transition_id} requires a proof reference" in error
+                        for error in validate_trace(self.model, unsafe)
+                    )
+                )
+
+            with self.subTest(transition=transition_id, attack="identity-mismatch"):
+                unsafe = clone_model(valid)
+                proof_id = unsafe["steps"][step_index]["proof"]
+                proof = next(item for item in unsafe["proofs"] if item["id"] == proof_id)
+                witness_id = proof["witnesses"][0]
+                witness = next(
+                    item for item in unsafe["evidence"] if item["id"] == witness_id
+                )
+                witness["identity"]["plan_digest"] = "f" * 64
+                self.assertTrue(
+                    any(
+                        "identity disagrees with the trace run identity" in error
+                        for error in validate_trace(self.model, unsafe)
+                    )
+                )
+
+            with self.subTest(transition=transition_id, attack="missing-role"):
+                unsafe = clone_model(valid)
+                proof_id = unsafe["steps"][step_index]["proof"]
+                proof = next(item for item in unsafe["proofs"] if item["id"] == proof_id)
+                proof["witnesses"].pop()
+                self.assertTrue(
+                    any(
+                        f"assurance transition {transition_id} proof" in error
+                        and "witness roles must be exactly" in error
+                        for error in validate_trace(self.model, unsafe)
+                    )
+                )
+
+            with self.subTest(transition=transition_id, attack="aliased-artifacts"):
+                unsafe = clone_model(valid)
+                proof_id = unsafe["steps"][step_index]["proof"]
+                proof = next(item for item in unsafe["proofs"] if item["id"] == proof_id)
+                witnesses = [
+                    next(item for item in unsafe["evidence"] if item["id"] == witness_id)
+                    for witness_id in proof["witnesses"]
+                ]
+                for witness in witnesses[1:]:
+                    witness["path"] = witnesses[0]["path"]
+                    witness["sha256"] = witnesses[0]["sha256"]
+                    witness["size"] = witnesses[0]["size"]
+                errors = validate_trace(self.model, unsafe)
+                self.assertTrue(any("reuses artifact path" in error for error in errors))
+                self.assertTrue(any("reuses witness content digest" in error for error in errors))
+
+            with self.subTest(transition=transition_id, attack="extra-role"):
+                unsafe = clone_model(valid)
+                proof_id = unsafe["steps"][step_index]["proof"]
+                proof = next(item for item in unsafe["proofs"] if item["id"] == proof_id)
+                extra = clone_model(unsafe["evidence"][0])
+                extra["id"] = f"{transition_id}.extra"
+                extra["role"] = "extra"
+                extra["path"] = f"artifacts/{transition_id}.extra.json"
+                extra["sha256"] = hashlib.sha256(extra["id"].encode()).hexdigest()
+                unsafe["evidence"].append(extra)
+                proof["witnesses"].append(extra["id"])
+                self.assertTrue(
+                    any(
+                        f"assurance transition {transition_id} proof" in error
+                        and "witness roles must be exactly" in error
+                        for error in validate_trace(self.model, unsafe)
+                    )
+                )
+
+        bad_digest = clone_model(valid)
+        bad_digest["evidence"][0]["sha256"] = "not-a-digest"
+        self.assertTrue(validate_against_schema(bad_digest, trace_schema))
+        self.assertTrue(
+            any(
+                "lacks a lowercase sha256 content address" in error
+                for error in validate_trace(self.model, bad_digest)
+            )
+        )
+
+        dangling = clone_model(valid)
+        dangling["proofs"][0]["witnesses"][0] = "missing.witness"
+        self.assertTrue(
+            any(
+                "references missing witness missing.witness" in error
+                for error in validate_trace(self.model, dangling)
+            )
+        )
+
+        shared = clone_model(valid)
+        first, second = shared["proofs"][:2]
+        second["witnesses"][0] = first["witnesses"][0]
+        self.assertTrue(
+            any(
+                "reuses witness" in error and "already owned by proof" in error
+                for error in validate_trace(self.model, shared)
+            )
+        )
+
+    def test_rollback_proof_declaration_is_schema_and_runtime_representable(self) -> None:
+        trace_schema = load_json(ROOT / "model" / "trace-schema.json")
+        trace = load_json(ROOT / "traces" / "post-shrink-failure-rollback.json")
+        identity = evidence_identity()
+        witness_id = "rollback.journal"
+        proof_id = "rollback.completion.proof"
+        trace.update(
+            {
+                "trace_kind": "evidence",
+                "identity": identity,
+                "evidence": [
+                    {
+                        "id": witness_id,
+                        "role": "journal",
+                        "path": "artifacts/rollback-journal.json",
+                        "size": 1,
+                        "sha256": hashlib.sha256(witness_id.encode()).hexdigest(),
+                        "identity": dict(identity),
+                    }
+                ],
+                "proofs": [
+                    {
+                        "id": proof_id,
+                        "kind": "rollback",
+                        "transition": "rollback_unregister_finalizer",
+                        "witnesses": [witness_id],
+                        "expected_terminal": "terminal.rolled_back",
+                    }
+                ],
+            }
+        )
+        final_index = trace["steps"].index("rollback_unregister_finalizer")
+        trace["steps"][final_index] = {
+            "transition": "rollback_unregister_finalizer",
+            "outcome": "success",
+            "proof": proof_id,
+        }
+        self.assertEqual(validate_against_schema(trace, trace_schema), [])
+        self.assertEqual(validate_trace(self.model, trace), [])
+        self.assertEqual(simulate_trace(self.model, trace), "terminal.rolled_back")
+        self.assertEqual(ROLLBACK_PROOF_WITNESS_ROLES, ("journal",))
+
+        role_attacks = {
+            "invented": lambda unsafe: unsafe["evidence"][0].update(
+                role="invented-role"
+            ),
+            "missing": lambda unsafe: unsafe["proofs"][0].update(witnesses=[]),
+        }
+        for name, attack in role_attacks.items():
+            with self.subTest(attack=name):
+                unsafe = clone_model(trace)
+                attack(unsafe)
+                self.assertTrue(
+                    any(
+                        "rollback witness roles must be exactly journal" in error
+                        for error in validate_trace(self.model, unsafe)
+                    )
+                )
+
+        for role in ("invented-role", "journal"):
+            with self.subTest(attack="extra-role", role=role):
+                unsafe = clone_model(trace)
+                extra_id = f"rollback.extra.{role}"
+                unsafe["evidence"].append(
+                    {
+                        "id": extra_id,
+                        "role": role,
+                        "path": f"artifacts/{extra_id}.json",
+                        "size": 1,
+                        "sha256": hashlib.sha256(extra_id.encode()).hexdigest(),
+                        "identity": dict(identity),
+                    }
+                )
+                unsafe["proofs"][0]["witnesses"].append(extra_id)
+                self.assertTrue(
+                    any(
+                        "rollback witness roles must be exactly journal" in error
+                        for error in validate_trace(self.model, unsafe)
+                    )
+                )
+
+        missing_outcome = clone_model(trace)
+        missing_outcome["proofs"][0].pop("expected_terminal")
+        self.assertTrue(validate_against_schema(missing_outcome, trace_schema))
+        self.assertTrue(validate_trace(self.model, missing_outcome))
+
+        wrong_transition = clone_model(trace)
+        wrong_transition["proofs"][0]["transition"] = "rollback_restore_security"
+        wrong_transition["steps"][final_index][
+            "transition"
+        ] = "rollback_restore_security"
+        self.assertTrue(
+            any(
+                "does not attest a step reaching terminal.rolled_back" in error
+                for error in validate_trace(self.model, wrong_transition)
+            )
+        )
+
+    def test_trace_schema_and_runtime_reject_the_same_new_structural_attacks(
+        self,
+    ) -> None:
+        trace_schema = load_json(ROOT / "model" / "trace-schema.json")
+        abstract = load_json(ROOT / "traces" / "happy-path-bitlocker.json")
+        valid = evidence_trace(
+            self.model, abstract["steps"], abstract["expected_terminal"]
+        )
+        attacks = {
+            "path-traversal": lambda trace: trace["evidence"][0].update(
+                path="artifacts/../escape.json"
+            ),
+            "empty-artifact": lambda trace: trace["evidence"][0].update(size=0),
+            "extra-witness-field": lambda trace: trace["evidence"][0].update(
+                unbound="value"
+            ),
+            "transition-proof-terminal": lambda trace: trace["proofs"][0].update(
+                expected_terminal="terminal.rolled_back"
+            ),
+        }
+        for name, attack in attacks.items():
+            with self.subTest(attack=name):
+                unsafe = clone_model(valid)
+                attack(unsafe)
+                self.assertTrue(validate_against_schema(unsafe, trace_schema))
+                self.assertTrue(validate_trace(self.model, unsafe))
+
+        abstract_with_proof = clone_model(abstract)
+        abstract_with_proof["steps"][0] = {
+            "transition": "begin_preflight",
+            "outcome": "success",
+            "proof": "not-allowed",
+        }
+        self.assertTrue(validate_against_schema(abstract_with_proof, trace_schema))
+        self.assertTrue(validate_trace(self.model, abstract_with_proof))
+
+    def test_unsupported_platform_path_allows_only_staging_persistence(self) -> None:
+        trace = load_json(ROOT / "traces" / "preflight-rejection.json")
+        transitions = index_by_id(self.model["transitions"])
+        actions = index_by_id(self.model["actions"])
+        path = [transitions[step] for step in trace["steps"]]
+        self.assertEqual(
+            [
+                transition["id"]
+                for transition in path
+                if transition_is_system_mutating(transition, actions)
+            ],
+            [],
+        )
+        self.assertEqual(
+            [
+                transition["id"]
+                for transition in path
+                if transition_is_mutating(transition, actions)
+            ],
+            ["begin_preflight", "persist_release_acceptance"],
+        )
+        self.assertEqual(simulate_trace(self.model, trace), "terminal.unsupported")
+
+        for action_id, action in actions.items():
+            if action["risk"] not in SYSTEM_MUTATING_RISKS:
+                continue
+            with self.subTest(forbidden_action=action_id):
+                unsafe = clone_model(self.model)
+                reject = index_by_id(unsafe["transitions"])[
+                    "reject_unsupported_platform"
+                ]
+                reject["actions"] = [action_id]
+                self.assertIn(
+                    "unsupported-platform path includes system mutation in "
+                    f"reject_unsupported_platform: {action_id}",
+                    validate_model(unsafe),
+                )
 
     def test_schema_and_documents_are_valid(self) -> None:
         model_schema = load_json(ROOT / "model" / "schema.json")

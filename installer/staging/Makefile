@@ -1,9 +1,21 @@
 PYTHON ?= python3
 CARGO ?= cargo
+RUSTC ?= rustc
+REQUIRED_RUSTC_VERSION := 1.85.0
+REQUIRED_CARGO_VERSION := 1.85.0
+export RUSTC
 
-.PHONY: check fmt test clippy windows-check contracts
+.PHONY: check toolchain fmt test clippy windows-check contracts
 
-check: fmt test clippy windows-check contracts
+check: toolchain fmt test clippy windows-check contracts
+
+toolchain:
+	@rustc_actual="$$( $(RUSTC) --version | awk '{print $$2}')"; \
+	cargo_actual="$$( $(CARGO) --version | awk '{print $$2}')"; \
+	if [ "$$rustc_actual" != "$(REQUIRED_RUSTC_VERSION)" ] || [ "$$cargo_actual" != "$(REQUIRED_CARGO_VERSION)" ]; then \
+		echo "error: installer staging requires rustc $(REQUIRED_RUSTC_VERSION) and cargo $(REQUIRED_CARGO_VERSION) exactly; found rustc $${rustc_actual:-unknown}, cargo $${cargo_actual:-unknown}" >&2; \
+		exit 1; \
+	fi
 
 fmt:
 	$(CARGO) fmt --all -- --check

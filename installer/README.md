@@ -13,6 +13,10 @@ parallel workflows.
 The checks require Python 3.11 or newer, `python-jsonschema`, Python
 `cryptography` for the independent Ed25519 known-answer vectors, and PowerShell
 (`pwsh` or `powershell`) for collector AST validation and mocked execution.
+Rust commands below are selected by `rust-toolchain.toml` and fail unless both
+`rustc` and `cargo` are exactly 1.85.0. Command-line `CARGO=/path/to/cargo` and
+`RUSTC=/path/to/rustc` overrides remain supported, but both selected tools must
+still report exactly 1.85.0.
 
 ```sh
 cd installer
@@ -54,6 +58,10 @@ and TPM production gates are documented in `docs/installer/STAGING.md`.
 The current proof boundary, platform-independent work, disposable VM campaign,
 and physical-hardware gates are tracked in
 `docs/installer/ASSURANCE_MATRIX.md`.
+
+The end-to-end Windows acceptance criteria, evidence requirements, fault
+campaign, and host real-drive interlock are defined in
+`docs/installer/VM_PROOF.md`. The file-only QEMU/KVM harness lives in `vm/`.
 
 ## v1 scope
 

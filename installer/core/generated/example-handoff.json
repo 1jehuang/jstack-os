@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "graph_model_id": "jstack-installer-v1",
+  "graph_model_id": "jstack-no-usb-dual-boot-v1",
   "control_state": "windows.reboot_to_installer_pending",
-  "journal_head_hash": "10b4a24968122172bc1374ec87c2dfd0f99651162917de71fb391e809b001a98",
-  "release_manifest_hash": "f14d85ef135acefd5c3e1c8f8bcae4cac17780cdfd962c93b72311e79690b55f",
-  "staging_evidence_hash": "fa20e93dec1c8d282b7611f33a476540e08b3ffc80afcae3f30c598bb131b95f",
-  "plan_hash": "507ad6077e48ba43406671a47ecf5ffc4179fc30a3834b2163300a1d3e2224b6",
+  "journal_head_hash": "328328a145e349339dc0f0cef9a9615e201d0ba4b52505752cfe2412608973cb",
+  "release_manifest_hash": "c3f4abaf3ffffa45085e1e9404743b840c931360821ff5161149af4b74338669",
+  "staging_evidence_hash": "cfd7abe3283906bf1146ac9ac01bad0a3faa0bf253560b027de6cd8721bee4fd",
+  "plan_hash": "c558b122396cde57c2ec9937a9d599ed4176867d8cef8ec3d762d3cf3c3bcd56",
   "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "partition_phase": "windows_handoff",
-  "partition_fingerprint": "a660597812edb26c538267b2f731493201bbeecbb7256e1b1a23782285d25e26",
+  "partition_fingerprint": "4494f0f4133ad0516593a820417cf126840e7063eb24ef6a9b5d10de71452bd5",
   "intended_boot_target": "installer",
   "nonce": "fixture-nonce-1"
 }

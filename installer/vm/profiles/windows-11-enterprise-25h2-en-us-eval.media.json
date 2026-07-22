@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "kind": "windows-install-media",
+  "record_id": "windows-11-enterprise-25h2-eval-en-us-x64",
+  "availability": "available",
+  "publisher": "Microsoft",
+  "product": {
+    "name": "Windows 11 Enterprise Evaluation",
+    "edition": "Enterprise Evaluation",
+    "release": "25H2",
+    "build": "26200.6584",
+    "architecture": "x86_64",
+    "language": "en-US",
+    "channel": "evaluation"
+  },
+  "iso": {
+    "filename": "windows-11-enterprise-25h2-eval-en-us-x64.iso",
+    "size_bytes": 7092807680,
+    "sha256": "a61adeab895ef5a4db436e0a7011c92a2ff17bb0357f58b13bbc4062e535e7b9"
+  },
+  "acquisition": {
+    "source_page_url": "https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise",
+    "resolved_download_url_retention": "forbidden"
+  },
+  "authentication": {
+    "method": "microsoft-published-sha256",
+    "published_description": "Enterprise Eval x64 Eval EN-US DVD9",
+    "published_iso_sha256": "a61adeab895ef5a4db436e0a7011c92a2ff17bb0357f58b13bbc4062e535e7b9",
+    "publication": {
+      "filename": "Verify-Download-Win11-Enterprise.pdf",
+      "source_url": "https://go.microsoft.com/fwlink/?linkid=2334901",
+      "size_bytes": 84272,
+      "sha256": "0d44bc561af90844c0a0da5ddc420f5fa84459872c02a1def6240fcfe1aac2c7"
+    }
+  },
+  "install_image": {
+    "path": "sources/install.wim",
+    "size_bytes": 6225286811,
+    "sha256": "119100d92fa9516d47c9933f9c6f4e2b1940bd685762fdca6982e6d29b353985",
+    "image_count": 1,
+    "selected_index": 1,
+    "selected_name": "Windows 11 Enterprise Evaluation",
+    "architecture": "x86_64",
+    "language": "en-US",
+    "version": {
+      "major": 10,
+      "minor": 0,
+      "build": 26200,
+      "service_pack_build": 6584
+    }
+  }
+}
