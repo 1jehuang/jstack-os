@@ -22,6 +22,10 @@ path = "src/bin/jstack-inventory.rs"
 name = "jstack-release-fixture"
 path = "src/bin/jstack-release-fixture.rs"
 
+[[bin]]
+name = "jstack-firmware"
+path = "src/bin/jstack-firmware.rs"
+
 [dependencies]
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["alloc", "zeroize"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -31,4 +35,7 @@ thiserror = "2.0.19"
 uuid = { version = "1.24.0", features = ["serde"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59.0", features = ["Win32_System_SystemInformation"] }
+windows-sys = { version = "0.59.0", features = [
+    "Win32_System_WindowsProgramming",
+    "Win32_System_SystemInformation",
+] }

@@ -5,9 +5,9 @@ REQUIRED_RUSTC_VERSION := 1.85.0
 REQUIRED_CARGO_VERSION := 1.85.0
 export RUSTC
 
-.PHONY: check toolchain fmt test clippy windows-check plan inventory release examples schemas collector
+.PHONY: check toolchain fmt test clippy windows-check plan inventory release examples schemas collector adapters
 
-check: toolchain fmt test clippy windows-check plan inventory release examples schemas collector
+check: toolchain fmt test clippy windows-check plan inventory release examples schemas collector adapters
 
 toolchain:
 	@rustc_actual="$$( $(RUSTC) --version | awk '{print $$2}')"; \
@@ -73,3 +73,6 @@ schemas:
 collector:
 	$(PYTHON) tools/validate_windows_collector.py
 	$(PYTHON) tools/test_windows_collector_mock.py
+
+adapters:
+	$(PYTHON) tools/validate_windows_adapters.py
