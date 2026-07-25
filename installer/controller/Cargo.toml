@@ -10,6 +10,10 @@ description = "Verified typed state-graph loader and pure trace simulator for th
 name = "jstack_installer_controller"
 path = "src/lib.rs"
 
+[[bin]]
+name = "jstack-installer"
+path = "src/bin/jstack-installer.rs"
+
 [dependencies]
 jstack-installer-core = { path = "../core" }
 serde = { version = "1.0.229", features = ["derive"] }
