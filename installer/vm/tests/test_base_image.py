@@ -327,3 +327,90 @@ class ReadinessTests(BaseImageTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostIdentityTests(BaseImageTestCase):
+    """PH-11 host-scoped inputs must be resolvable without a VM launch.
+
+    `lab.py init` refuses to run below the 6 GiB VM memory gate, which is right
+    for launching a VM but wrong for reading digests off disk. These cases pin
+    the separation so a future change cannot re-couple them.
+    """
+
+    def test_every_host_scoped_input_resolves_on_this_machine(self) -> None:
+        identities = base_image.collect_host_identities()
+        self.assertEqual(set(identities), set(base_image.HOST_SCOPED_INPUTS))
+        for key, value in identities.items():
+            with self.subTest(input=key):
+                self.assertTrue(value["resolved"], f"{key}: {value.get('reason')}")
+                self.assertEqual(len(value["sha256"]), 64)
+                self.assertGreater(value["size_bytes"], 0)
+                self.assertTrue(Path(value["path"]).is_file())
+
+    def test_digests_match_an_independent_hash_of_the_same_file(self) -> None:
+        """The collector must not be its own oracle."""
+        for key, value in base_image.collect_host_identities().items():
+            if not value["resolved"]:
+                continue
+            with self.subTest(input=key):
+                expected = digest(Path(value["path"]).read_bytes())
+                self.assertEqual(value["sha256"], expected)
+
+    def test_collection_does_not_require_the_vm_memory_envelope(self) -> None:
+        """This is the whole point: it works on a busy host.
+
+        `lab.host_evidence` raises below the memory gate. Collection must not,
+        because a read-only digest cannot exhaust memory.
+        """
+        source = Path(base_image.__file__).read_text()
+        body = "\n".join(
+            line for line in source.splitlines() if not line.strip().startswith("#")
+        )
+        function = body.split("def collect_host_identities(")[1].split("\ndef ")[0]
+        for coupled in (
+            "MIN_AVAILABLE_MEMORY_BYTES",
+            "available_memory_bytes",
+            "host_evidence",
+            "/dev/kvm",
+        ):
+            self.assertNotIn(
+                coupled,
+                function,
+                f"collection must not depend on {coupled}",
+            )
+
+    def test_host_scoped_inputs_are_exactly_the_profiles_host_scope_entries(self) -> None:
+        """The collector's coverage is derived from the profiles, not guessed."""
+        scopes = base_image.profile_input_scopes()
+        self.assertEqual(len(scopes), 2)
+        for profile, entries in scopes.items():
+            with self.subTest(profile=profile):
+                declared = {
+                    key for key, scope in entries.items() if scope == "host-acquisition"
+                }
+                self.assertEqual(
+                    declared,
+                    set(base_image.HOST_SCOPED_INPUTS),
+                    "the collector must cover exactly the host-acquisition inputs",
+                )
+
+    def test_the_remaining_inputs_are_base_image_or_release_scoped(self) -> None:
+        """Everything the collector cannot resolve has a named reason."""
+        scopes = base_image.profile_input_scopes()
+        for profile, entries in scopes.items():
+            for key, scope in entries.items():
+                if key in base_image.HOST_SCOPED_INPUTS:
+                    continue
+                with self.subTest(profile=profile, input=key):
+                    self.assertIn(
+                        scope,
+                        {"base-image-acquisition", "release-build"},
+                        f"{key} is neither host-scoped nor a known blocked scope",
+                    )
+
+    def test_a_set_id_executable_would_be_refused(self) -> None:
+        """The collector applies the same set-id refusal as the rest of the harness."""
+        source = Path(base_image.__file__).read_text()
+        function = source.split("def collect_host_identities(")[1].split("\ndef ")[0]
+        self.assertIn("S_ISUID", function)
+        self.assertIn("set-id command is forbidden", function)

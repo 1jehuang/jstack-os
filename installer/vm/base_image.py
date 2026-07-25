@@ -337,6 +337,89 @@ def build_answer_media(
     }
 
 
+# The profile required-inputs whose evidence is host-scoped. These are pure
+# digests of files and executables already on this machine, so they can be
+# resolved with no ISO and no VM launch.
+HOST_SCOPED_INPUTS = {
+    "qemu-binary-sha256": ("executable", "qemu-system-x86_64"),
+    "swtpm-binary-sha256": ("executable", "swtpm"),
+    "ovmf-code-sha256": ("firmware", "ovmf_secure_code"),
+    "ovmf-nonsecure-code-sha256": ("firmware", "ovmf_code"),
+    "ovmf-fixed-vars-sha256": ("firmware", "ovmf_vars"),
+}
+
+FIRMWARE_PATHS = {
+    "ovmf_code": lab.OVMF_CODE,
+    "ovmf_secure_code": lab.OVMF_SECURE_CODE,
+    "ovmf_vars": lab.OVMF_VARS,
+}
+
+
+def _sha256_path(path: Path) -> str:
+    descriptor = lab.open_regular_nofollow(path)
+    try:
+        return lab.sha256_fd(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def collect_host_identities() -> dict[str, Any]:
+    """Resolve every host-scoped profile input, with no VM launch.
+
+    `lab.py init` deliberately refuses to run unless the host can actually host a
+    VM, which is correct for launching one but wrong for collecting read-only
+    digests: it makes resolving these identities impossible on a busy machine for
+    no safety benefit. This function collects exactly the host-scoped digests and
+    imposes no memory or KVM requirement, so PH-11's host-scope inputs can be
+    resolved independently of PH-12.
+
+    Executables are hashed through the same set-id-refusing, symlink-refusing
+    path the rest of the harness uses, and each digest is bound to the exact
+    resolved path it came from.
+    """
+    identities: dict[str, Any] = {}
+    for input_id, (kind, name) in sorted(HOST_SCOPED_INPUTS.items()):
+        if kind == "executable":
+            found = shutil.which(name, path=lab.SYSTEM_PATH)
+            if not found:
+                identities[input_id] = {"resolved": False, "reason": f"{name} not found"}
+                continue
+            executable = Path(found).resolve(strict=True)
+            metadata = executable.stat()
+            if metadata.st_mode & (stat.S_ISUID | stat.S_ISGID):
+                raise BaseImageError(f"set-id command is forbidden: {executable}")
+            identities[input_id] = {
+                "resolved": True,
+                "path": str(executable),
+                "sha256": _sha256_path(executable),
+                "size_bytes": metadata.st_size,
+            }
+        else:
+            path = FIRMWARE_PATHS[name]
+            if not path.is_file():
+                identities[input_id] = {"resolved": False, "reason": f"{path} is absent"}
+                continue
+            identities[input_id] = {
+                "resolved": True,
+                "path": str(path),
+                "sha256": _sha256_path(path),
+                "size_bytes": path.stat().st_size,
+            }
+    return identities
+
+
+def profile_input_scopes() -> dict[str, dict[str, str]]:
+    """Map every profile required-input id to its declared evidence scope."""
+    scopes: dict[str, dict[str, str]] = {}
+    for path in sorted(PROFILES.glob("*.profile.json")):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        for entry in document.get("required_inputs", []):
+            scopes.setdefault(path.stem.replace(".profile", ""), {})[
+                str(entry["id"])
+            ] = str(entry.get("evidence_scope", ""))
+    return scopes
+
+
 @dataclass(frozen=True)
 class Readiness:
     """One PH-12 precondition and its current state."""
@@ -410,6 +493,22 @@ def assess_readiness(workspace: Path) -> list[Readiness]:
             )
         )
 
+    # Host-scoped profile identities. These are resolvable now, so they are
+    # reported as satisfied rather than lumped in with the ISO blockers.
+    for input_id, value in collect_host_identities().items():
+        checks.append(
+            Readiness(
+                name=f"identity:{input_id}",
+                satisfied=bool(value["resolved"]),
+                detail=(
+                    f"{value['path']} sha256 {value['sha256']}"
+                    if value["resolved"]
+                    else str(value.get("reason", "unresolved"))
+                ),
+                remedy="install the missing firmware or executable",
+            )
+        )
+
     # Host envelope.
     available = lab.available_memory_bytes()
     checks.append(
@@ -444,6 +543,12 @@ def parser() -> argparse.ArgumentParser:
     )
     readiness.set_defaults(handler="readiness")
 
+    identities = subcommands.add_parser(
+        "host-identities",
+        help="resolve host-scoped profile inputs without launching a VM",
+    )
+    identities.set_defaults(handler="host-identities")
+
     verify = subcommands.add_parser("verify-media", help="verify an ISO against its record")
     verify.add_argument("--record", required=True, help="media record key")
     verify.set_defaults(handler="verify-media")
@@ -476,6 +581,23 @@ def main() -> int:
         )
         sys.stdout.write("\n")
         return 0 if not blocked else 1
+
+    if arguments.handler == "host-identities":
+        identities = collect_host_identities()
+        unresolved = [key for key, value in identities.items() if not value["resolved"]]
+        json.dump(
+            {
+                "resolved": len(identities) - len(unresolved),
+                "total": len(identities),
+                "unresolved": unresolved,
+                "identities": identities,
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=True,
+        )
+        sys.stdout.write("\n")
+        return 0 if not unresolved else 1
 
     records = load_media_records()
     if arguments.record not in records:
