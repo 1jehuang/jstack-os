@@ -1,7 +1,7 @@
 PYTHON ?= python3
 LAB ?= $(JCODE_SCRATCH_DIR)/jstack-windows-vm
 
-.PHONY: check full-check test host-check init readiness host-identities
+.PHONY: check full-check test host-check init readiness host-identities release-identities
 
 check: test
 
@@ -24,3 +24,8 @@ readiness:
 # memory envelope, so it works on a busy machine.
 host-identities:
 	@$(PYTHON) base_image.py --workspace "$(LAB)" host-identities
+
+# Resolve the release-build-scoped profile inputs. Pass the boot-artifact
+# manifest digest from a real artifacts build to resolve the fourth.
+release-identities:
+	@$(PYTHON) base_image.py --workspace "$(LAB)" release-identities

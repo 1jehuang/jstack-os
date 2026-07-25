@@ -348,6 +348,21 @@ HOST_SCOPED_INPUTS = {
     "ovmf-fixed-vars-sha256": ("firmware", "ovmf_vars"),
 }
 
+# The profile required-inputs whose evidence is release-build scoped. Each is a
+# digest of something this repository builds, so they are resolvable without any
+# Windows media: the installer binary, the executable state graph, the signed
+# release manifest, and the signed boot-artifact manifest.
+RELEASE_SCOPED_INPUTS = (
+    "installer-sha256",
+    "installer-graph-sha256",
+    "release-manifest-sha256",
+    "boot-artifacts-sha256",
+)
+
+INSTALLER_ROOT = Path(__file__).resolve().parent.parent
+STATE_GRAPH = INSTALLER_ROOT / "model" / "installer-state-graph.json"
+RELEASE_MANIFEST = INSTALLER_ROOT / "core" / "fixtures" / "signed-release-manifest.json"
+
 FIRMWARE_PATHS = {
     "ovmf_code": lab.OVMF_CODE,
     "ovmf_secure_code": lab.OVMF_SECURE_CODE,
@@ -405,6 +420,76 @@ def collect_host_identities() -> dict[str, Any]:
                 "sha256": _sha256_path(path),
                 "size_bytes": path.stat().st_size,
             }
+    return identities
+
+
+def collect_release_identities(
+    installer_binary: Path | None = None,
+    boot_artifact_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Resolve the release-build-scoped profile inputs.
+
+    Three of the four are digests of files this repository already contains or
+    builds: the executable state graph, the signed release manifest, and the
+    installer binary. The fourth is the boot-artifact manifest digest, which
+    `artifacts.build_test_artifact_set` produces; callers pass it in rather than
+    having this module rebuild artifacts, so the digest is always the one that was
+    actually published.
+    """
+    identities: dict[str, Any] = {}
+
+    for input_id, path in (
+        ("installer-graph-sha256", STATE_GRAPH),
+        ("release-manifest-sha256", RELEASE_MANIFEST),
+    ):
+        if not path.is_file():
+            identities[input_id] = {"resolved": False, "reason": f"{path} is absent"}
+            continue
+        identities[input_id] = {
+            "resolved": True,
+            "path": str(path),
+            "sha256": _sha256_path(path),
+            "size_bytes": path.stat().st_size,
+        }
+
+    candidate = installer_binary
+    if candidate is None:
+        # The release installer is the controller CLI. Prefer a release build,
+        # fall back to a debug build, and report unresolved rather than guessing.
+        for profile in ("release", "debug"):
+            probe = (
+                INSTALLER_ROOT / "controller" / "target" / profile / "jstack-installer"
+            )
+            if probe.is_file():
+                candidate = probe
+                break
+    if candidate is not None and candidate.is_file():
+        identities["installer-sha256"] = {
+            "resolved": True,
+            "path": str(candidate),
+            "sha256": _sha256_path(candidate),
+            "size_bytes": candidate.stat().st_size,
+        }
+    else:
+        identities["installer-sha256"] = {
+            "resolved": False,
+            "reason": "build the installer with `cargo build --bin jstack-installer`",
+        }
+
+    if boot_artifact_manifest_sha256:
+        if len(boot_artifact_manifest_sha256) != 64:
+            raise BaseImageError("boot-artifact manifest digest must be SHA-256 hex")
+        identities["boot-artifacts-sha256"] = {
+            "resolved": True,
+            "sha256": boot_artifact_manifest_sha256.lower(),
+            "source": "artifacts.build_test_artifact_set manifest",
+        }
+    else:
+        identities["boot-artifacts-sha256"] = {
+            "resolved": False,
+            "reason": "run artifacts.build_test_artifact_set and pass its manifest digest",
+        }
+
     return identities
 
 
@@ -509,6 +594,52 @@ def assess_readiness(workspace: Path) -> list[Readiness]:
             )
         )
 
+    # Release-build identities. The boot-artifact manifest is a build output, so
+    # readiness builds it rather than reporting a resolvable input as blocked:
+    # a checklist that cries wolf is worse than no checklist.
+    boot_artifacts_digest: str | None = None
+    kernel = Path("/boot/vmlinuz-linux")
+    if kernel.is_file():
+        try:
+            import artifacts
+
+            scratch = workspace / "readiness-artifacts"
+            shutil.rmtree(scratch, ignore_errors=True)
+            scratch.mkdir(parents=True, exist_ok=True)
+            os.chmod(scratch, 0o700)
+            artifact_set = artifacts.build_test_artifact_set(
+                scratch, kernel, "0" * 64, "0" * 64
+            )
+            boot_artifacts_digest = artifact_set.manifest_sha256
+        except Exception:
+            # A build failure must not crash the checklist; the check simply
+            # reports unresolved with its remedy.
+            boot_artifacts_digest = None
+        finally:
+            shutil.rmtree(workspace / "readiness-artifacts", ignore_errors=True)
+
+    for input_id, value in sorted(
+        collect_release_identities(
+            boot_artifact_manifest_sha256=boot_artifacts_digest
+        ).items()
+    ):
+        checks.append(
+            Readiness(
+                name=f"identity:{input_id}",
+                satisfied=bool(value["resolved"]),
+                detail=(
+                    f"{value.get('path', value.get('source', ''))} sha256 {value['sha256']}"
+                    if value["resolved"]
+                    else str(value.get("reason", "unresolved"))
+                ),
+                remedy=str(
+                    value.get(
+                        "reason", "rebuild the release inputs to refresh this digest"
+                    )
+                ),
+            )
+        )
+
     # Host envelope.
     available = lab.available_memory_bytes()
     checks.append(
@@ -549,6 +680,13 @@ def parser() -> argparse.ArgumentParser:
     )
     identities.set_defaults(handler="host-identities")
 
+    release = subcommands.add_parser(
+        "release-identities", help="resolve release-build-scoped profile inputs"
+    )
+    release.add_argument("--installer-binary")
+    release.add_argument("--boot-artifacts-sha256")
+    release.set_defaults(handler="release-identities")
+
     verify = subcommands.add_parser("verify-media", help="verify an ISO against its record")
     verify.add_argument("--record", required=True, help="media record key")
     verify.set_defaults(handler="verify-media")
@@ -581,6 +719,26 @@ def main() -> int:
         )
         sys.stdout.write("\n")
         return 0 if not blocked else 1
+
+    if arguments.handler == "release-identities":
+        identities = collect_release_identities(
+            Path(arguments.installer_binary) if arguments.installer_binary else None,
+            arguments.boot_artifacts_sha256,
+        )
+        unresolved = [key for key, value in identities.items() if not value["resolved"]]
+        json.dump(
+            {
+                "resolved": len(identities) - len(unresolved),
+                "total": len(identities),
+                "unresolved": unresolved,
+                "identities": identities,
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=True,
+        )
+        sys.stdout.write("\n")
+        return 0 if not unresolved else 1
 
     if arguments.handler == "host-identities":
         identities = collect_host_identities()

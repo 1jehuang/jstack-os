@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import artifacts  # noqa: E402
 import base_image  # noqa: E402
 import images  # noqa: E402
 import lab  # noqa: E402
@@ -414,3 +415,107 @@ class HostIdentityTests(BaseImageTestCase):
         function = source.split("def collect_host_identities(")[1].split("\ndef ")[0]
         self.assertIn("S_ISUID", function)
         self.assertIn("set-id command is forbidden", function)
+
+
+class ReleaseIdentityTests(BaseImageTestCase):
+    """PH-11 release-build inputs are digests of things this repo builds.
+
+    None of them needs Windows media, so all four must be resolvable now.
+    """
+
+    def test_the_graph_and_manifest_digests_resolve_from_the_repository(self) -> None:
+        identities = base_image.collect_release_identities()
+        for key in ("installer-graph-sha256", "release-manifest-sha256"):
+            with self.subTest(input=key):
+                value = identities[key]
+                self.assertTrue(value["resolved"], value.get("reason"))
+                self.assertEqual(len(value["sha256"]), 64)
+                # Independent hash of the same file.
+                self.assertEqual(
+                    value["sha256"], digest(Path(value["path"]).read_bytes())
+                )
+
+    def test_the_graph_digest_matches_the_value_the_release_manifest_pins(self) -> None:
+        """A drift here would mean the signed release names a different graph."""
+        identities = base_image.collect_release_identities()
+        graph_digest = identities["installer-graph-sha256"]["sha256"]
+        manifest = json.loads(base_image.RELEASE_MANIFEST.read_text())
+        self.assertEqual(
+            graph_digest,
+            manifest["signed"]["state_model_sha256"],
+            "the signed release must pin exactly this state graph",
+        )
+
+    def test_the_boot_artifact_digest_is_accepted_only_as_a_real_sha256(self) -> None:
+        identities = base_image.collect_release_identities(
+            boot_artifact_manifest_sha256="c" * 64
+        )
+        self.assertTrue(identities["boot-artifacts-sha256"]["resolved"])
+        self.assertEqual(identities["boot-artifacts-sha256"]["sha256"], "c" * 64)
+
+        with self.assertRaises(base_image.BaseImageError):
+            base_image.collect_release_identities(boot_artifact_manifest_sha256="short")
+
+    def test_an_absent_boot_artifact_digest_reports_how_to_produce_it(self) -> None:
+        identities = base_image.collect_release_identities()
+        value = identities["boot-artifacts-sha256"]
+        self.assertFalse(value["resolved"])
+        self.assertIn("build_test_artifact_set", value["reason"])
+
+    def test_a_missing_installer_binary_reports_the_build_command(self) -> None:
+        identities = base_image.collect_release_identities(
+            installer_binary=self.workspace / "does-not-exist"
+        )
+        value = identities["installer-sha256"]
+        self.assertFalse(value["resolved"])
+        self.assertIn("cargo build", value["reason"])
+
+    def test_all_four_release_inputs_resolve_with_a_real_artifact_manifest(self) -> None:
+        """The full release-scope set, using a genuinely built manifest."""
+        kernel = Path("/boot/vmlinuz-linux")
+        if not kernel.is_file():
+            self.skipTest("no kernel available")
+        artifact_set = artifacts.build_test_artifact_set(
+            self.workspace, kernel, "a" * 64, "b" * 64
+        )
+        installer = (
+            base_image.INSTALLER_ROOT / "controller" / "target" / "debug" / "jstack-installer"
+        )
+        if not installer.is_file():
+            self.skipTest("installer binary is not built")
+
+        identities = base_image.collect_release_identities(
+            installer_binary=installer,
+            boot_artifact_manifest_sha256=artifact_set.manifest_sha256,
+        )
+        unresolved = [key for key, value in identities.items() if not value["resolved"]]
+        self.assertEqual(unresolved, [], "every release input must resolve")
+        self.assertEqual(set(identities), set(base_image.RELEASE_SCOPED_INPUTS))
+
+    def test_release_scoped_inputs_are_exactly_the_profiles_release_entries(self) -> None:
+        """Coverage is derived from the profiles, not hardcoded independently."""
+        for profile, entries in base_image.profile_input_scopes().items():
+            with self.subTest(profile=profile):
+                declared = {
+                    key for key, scope in entries.items() if scope == "release-build"
+                }
+                self.assertEqual(declared, set(base_image.RELEASE_SCOPED_INPUTS))
+
+    def test_only_base_image_inputs_remain_unresolvable(self) -> None:
+        """After host and release scopes, the only gap is the base image itself.
+
+        This is the precise statement of what the missing ISOs still block.
+        """
+        covered = set(base_image.HOST_SCOPED_INPUTS) | set(
+            base_image.RELEASE_SCOPED_INPUTS
+        )
+        for profile, entries in base_image.profile_input_scopes().items():
+            remaining = {key for key in entries if key not in covered}
+            with self.subTest(profile=profile):
+                self.assertTrue(remaining, "something must still be blocked")
+                for key in remaining:
+                    self.assertEqual(
+                        entries[key],
+                        "base-image-acquisition",
+                        f"{key} should be base-image scoped",
+                    )

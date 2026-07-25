@@ -312,3 +312,77 @@ class ReadinessGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadinessHonestyTests(unittest.TestCase):
+    """The checklist must not report a resolvable input as blocked.
+
+    A checklist that cries wolf is worse than no checklist: an operator who sees
+    a false blocker stops trusting the real ones. These cases assert that every
+    remaining blocker is genuinely outside this repository's control.
+    """
+
+    def setUp(self) -> None:
+        scratch = lab.require_scratch_root()
+        self.workspace = scratch / "jstack-windows-vm"
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.workspace, 0o700)
+
+    def test_every_remaining_blocker_is_media_or_host_capacity(self) -> None:
+        """Only the ISOs and the host envelope may remain blocked.
+
+        Every profile input in host or release scope is resolvable by this
+        repository, so if one of those shows up blocked it is a defect here, not
+        a missing prerequisite.
+        """
+        blocked = [
+            check
+            for check in base_image.assess_readiness(self.workspace)
+            if not check.satisfied
+        ]
+        for check in blocked:
+            with self.subTest(check=check.name):
+                self.assertTrue(
+                    check.name.startswith("media:") or check.name.startswith("host:"),
+                    f"{check.name} should be resolvable by this repository: {check.detail}",
+                )
+
+    def test_all_host_and_release_scoped_identities_are_reported_satisfied(self) -> None:
+        checks = {
+            check.name: check for check in base_image.assess_readiness(self.workspace)
+        }
+        expected = set(base_image.HOST_SCOPED_INPUTS) | set(
+            base_image.RELEASE_SCOPED_INPUTS
+        )
+        for input_id in expected:
+            name = f"identity:{input_id}"
+            with self.subTest(input=input_id):
+                self.assertIn(name, checks, f"{input_id} must appear in readiness")
+                self.assertTrue(
+                    checks[name].satisfied,
+                    f"{input_id} should be resolvable: {checks[name].detail}",
+                )
+
+    def test_satisfied_identity_checks_report_a_real_digest(self) -> None:
+        """A satisfied identity must show the digest, not just say 'ok'."""
+        for check in base_image.assess_readiness(self.workspace):
+            if not check.name.startswith("identity:") or not check.satisfied:
+                continue
+            with self.subTest(check=check.name):
+                self.assertIn("sha256", check.detail)
+                # A 64-hex token is present somewhere in the detail.
+                tokens = [
+                    token
+                    for token in check.detail.replace("/", " ").split()
+                    if len(token) == 64 and all(c in "0123456789abcdef" for c in token)
+                ]
+                self.assertTrue(tokens, f"{check.name} detail has no digest: {check.detail}")
+
+    def test_readiness_leaves_no_temporary_artifacts_behind(self) -> None:
+        """Building the boot-artifact digest must not litter the workspace."""
+        before = {path.name for path in self.workspace.iterdir()}
+        base_image.assess_readiness(self.workspace)
+        after = {path.name for path in self.workspace.iterdir()}
+        self.assertEqual(
+            after - before, set(), "readiness must clean up what it builds"
+        )
