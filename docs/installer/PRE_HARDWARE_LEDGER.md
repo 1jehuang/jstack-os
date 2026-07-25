@@ -67,14 +67,14 @@ substitute for a physical-hardware observation.
 | PH-08 | Disposable-VM Windows adapters | `installer/core/assets/windows-mutation-adapters.ps1` implements storage shrink/expand, plan-bound partition creation, BitLocker suspend/restore, and finalizer register/unregister; each adapter refuses to run without a matching `JSTACK_DISPOSABLE_VM` attestation and an action-bound controller capability, resolves targets only by GPT GUID from the confirmed plan, and re-observes its own postcondition. `installer/core/src/windows_firmware.rs` holds all firmware decision logic with no `unsafe` and restricts the entire write surface to `BootNext`; `src/bin/jstack-firmware.rs` is the sole `unsafe` boundary and calls only `Get/SetFirmwareEnvironmentVariableExW`. `tools/validate_windows_adapters.py` statically bounds the surface (allowlist, module-qualified mutation cmdlets, forbidden-primitive scan, gate-before-dispatch ordering, exact `is_writable` body, SAFETY-comment coverage) and both it and the 9 firmware unit tests were mutation-tested against unqualified cmdlets, an injected `Clear-Disk`, a reordered gate, a widened write surface, and a dropped read-back check. Compiles for `x86_64-pc-windows-msvc` | implemented; **no live Windows execution yet** (requires PH-12 base images) |
 | PH-09 | Linux RAM-installer adapters | `installer/vm/linux_installer.py` re-inventories the GPT with `sgdisk`, recomputes the handoff fingerprint and refuses any drift before writing, creates only the confirmed plan's exact partition geometry and GUIDs (refusing non-creatable roles and type GUIDs so an ESP/MSR/recovery partition can never be created), formats and deploys Btrfs through the PH-07 verified transactions, installs boot artifacts, independently re-verifies the installation, and rolls back only plan-owned partitions. Every mutating adapter requires a matching disposable-VM attestation, and every target must be a sparse regular file inside the workspace: `/dev` paths, symlinks, hard links, and outside-workspace paths are refused, and a static test asserts the module body names no device path, `losetup`, `mount(`, `kpartx`, `partprobe`, or `sudo`. `installer/vm/tests/test_linux_installer.py` (28 cases) covers drift, wrong disk GUID, occupied interval, exact geometry, idempotent retry after a crash, overlap refusal, mismatched-existing refusal, rollback preservation of unowned and OEM partitions, tamper and absence detection, and an ordered end-to-end Linux-side install. Skipping the drift check, the ownership filter, the overlap check, or the type-GUID allowlist was mutation-tested and fails the suite | implemented; **no live VM boot yet** (requires PH-12 base images) |
 | PH-10 | Bootable signed test artifacts | `installer/vm/artifacts.py` builds the closed role set with the same tools a release uses: the distribution systemd-boot binary as the ESP loader (copied byte-identically), real installer and recovery UKIs via `ukify`, a content-addressed system image, BLS type-1 boot entries, and canonical Windows/Linux handoff payloads, all signed with `sbsign` under a per-run throwaway key and bound by one canonical manifest that the manifest builder refuses to emit unless every PE role is signed and the role set is complete. `installer/vm/tests/test_artifacts.py` (26 cases) proves UKI byte-reproducibility, that cmdline and initrd changes alter the identity, entry and handoff canonicality, cross-build agreement, and that a flipped byte inside a signed PE, a foreign trust root, an unsigned PE, and a tampered unsigned image are all rejected. Four cases invoke `sbverify` directly rather than through the module helper, so the module's own verification is never the oracle; replacing signing with a file copy fails 17 cases | implemented; **artifacts are test-key signed, not a release** |
-| PH-11 | Resolved immutable profiles | Media records, QEMU/OVMF/swtpm acquisition evidence, and profile schemas exist | Windows 10 and 11 profiles contain exact installed-build, base-image, firmware, executable, release, graph, installer, and boot-artifact identities | open |
-| PH-12 | Reproducible base images | Official ISOs and unattended answer media exist | Freshly built UEFI/GPT qcow2 bases match declared Windows edition/build/layout and are independently inspected before sealing read-only | open |
-| PH-13 | End-to-end happy paths | `VM_PROOF.md` defines twelve independent observations | Each claimed Secure Boot/TPM/BitLocker profile completes Windows → installer → Windows → JStack and cold-boots both OSes with a terminal journal | open |
+| PH-11 | Resolved immutable profiles | Media records and profile schemas are complete and validated (23 profile tests). Both profiles remain `status: blocked-required-inputs` because `installed_build`, base-image, and firmware-variable digests are marked `required-unresolved` and can only be resolved by actually building a base image | **blocked on PH-12** |
+| PH-12 | Reproducible base images | Tooling is in place (QEMU 11.0.2, KVM, OVMF secure/nonsecure, swtpm, and a validated file-only launcher) | **blocked on two host preconditions.** (1) The official Windows 10 and 11 ISOs recorded in the media records are no longer present under `$JCODE_SCRATCH_DIR`; they need re-acquiring (about 13 GB total) and their recorded SHA-256 values re-verified. The Microsoft Evaluation Center download requires an interactive registration form, so this is not scriptable. (2) `lab.py check-host` requires 6 GiB available memory and the host currently has 3.2 GiB free. Neither is a code defect |
+| PH-13 | End-to-end happy paths | The full install path is proven end to end against the deterministic virtual platform for both BitLocker profiles (`runtime_convergence.rs`, and the `jstack-installer run` CLI reaching `terminal.completed` with 83 durable journal records). A virtual result is explicitly **not** accepted as evidence for this row | **blocked on PH-12**; requires real guest, disk, firmware, journal, and cold-boot observations |
 | PH-14 | Graph-derived fault campaigns | `installer/controller/tests/fault_campaign.rs` derives its cases from the graph, not a hand-written list: every mutating transition on both BitLocker profiles is exercised under every fault class (stop-before-action, success-claimed-without-effect, fail-after-effect) and every crash boundary, asserting each outcome lands on a graph-declared state, that a clean failure yields exactly one canonical evidence object on the exact `failure_to` with the legal intent/failed/advanced triad, that a fault which landed a durable object halts for manual recovery and fabricates nothing, that every case replays to the same disposition in a fresh runtime, and that a second resume appends nothing. Plus tamper (a corrupted loader can never be armed), stale identity (a journal from another plan is rejected), reboot (a boot cannot be observed twice), finalizer/security ordering, and a graph search proving every post-mutation state can reach a declared terminal. **This campaign found and fixed a real bug**: firmware boot entries were absent from the plan's rollback-object list, so a failure after creating one would have falsely claimed no committed effect. ENOSPC, short-write, and sharing classes are covered by the PH-07 image suite | virtual campaign complete; **disposable-VM campaign still open** (requires PH-12) |
-| PH-15 | Repetition and freshness | Fresh-run isolation is enforced by the harness | Ten fresh-overlay happy paths pass per supported OS and security-profile combination, a base is reconstructed, and all required campaigns rerun after relevant changes | open |
+| PH-15 | Repetition and freshness | Fresh-run isolation is enforced and tested by the harness (run ids, exclusive mutable state, overlay and hard-link rejection). The virtual campaigns are deterministic and rerun on every `make check` | **blocked on PH-12** for the ten-fresh-overlay VM requirement |
 | PH-16 | Canonical evidence and support matrix | `installer/vm/evidence/verify.py` (2,856 lines) is the fail-closed verifier: canonical-byte serialization, unique keys, no floats or non-finite numbers, exact field sets, artifact path normalization with symlink/hard-link/escape rejection, size and digest checks before any semantic claim, immutable profile list, and Ed25519 release trust. All four trust roots (`--trusted-release-policy-sha256`, `--trusted-profile-sha256`, `--trusted-media-sha256`, `--trusted-campaign-index-sha256`) are **required CLI arguments**, so a bundle can never nominate its own trust root. 36 verifier tests pass | verifier complete; **no real run bundles yet** (requires PH-13) |
 | PH-17 | Runnable packaging and recovery UX | `installer/controller/src/bin/jstack-installer.rs` provides `confirm` (renders the disk GUID, plan hash, before/after sizes, exact byte interval, every created and preserved partition GUID, and all rollback objects, refusing a mismatched display or a plan whose hash disagrees with its body), `confirmed` (validates a recorded confirmation), `run` (drives the full graph to `terminal.completed` through the sealed virtual boundary, 83 durable journal records, for both BitLocker profiles), `explain`, and `states` (actionable operator guidance derived from the graph, including an explicit "Do not retry" for `terminal.manual_recovery`). `tests/installer_cli.rs` (10 cases) runs the real binary and asserts the CLI offers no `--device`, `--disk`, or `--production` target, names no device path, and constructs exactly one kind of effect boundary | implemented; **virtual execution only** |
-| PH-18 | Frozen-tree assurance | Milestone gate is documented and previously exercised | Exact Rust 1.85 Linux/Windows-target/VM/media/evidence gates and static host-device audit pass on immutable trees; independent P0/P1 reviewers report no blockers before each commit | open |
+| PH-18 | Frozen-tree assurance | Every commit in this work ran the full `installer/make check` gate on its own tree: exact Rust and Cargo 1.85.0, `cargo fmt --check`, `clippy -D warnings`, `cargo check --target x86_64-pc-windows-msvc`, the state-graph validator, the core/staging/controller suites, the static Windows collector and mutation-adapter surface validators, and 171 VM tests. A static host-device audit is enforced continuously by the harness and by tests asserting no `/dev` path, mount, loop device, `libvirt`, passthrough argument, or privileged call is reachable | **cannot close**: the release-candidate gate must run on the immutable tree that contains all completed work, which requires PH-12 through PH-15 first |
 
 ## Physical-only residual ledger
 
@@ -102,9 +102,46 @@ artifacts remain under `$JCODE_SCRATCH_DIR`; obsolete detached validation
 worktrees may be removed only after confirming they contain no uncommitted
 evidence.
 
+## Current status
+
+Eleven rows are implemented and mutation-tested: PH-01 through PH-10, PH-14
+(virtual half), PH-16, and PH-17. Five remain blocked, and none of the five is
+blocked by a code defect:
+
+| Row | Blocker |
+| --- | --- |
+| PH-11 | Depends on PH-12: profile digests can only be resolved by building a base image |
+| PH-12 | Windows 10/11 ISOs are absent from scratch and must be re-acquired through an interactive Microsoft form; the host is also below the 6 GiB available-memory gate |
+| PH-13 | Depends on PH-12 |
+| PH-15 | Depends on PH-12 for the ten-fresh-overlay requirement |
+| PH-18 | Must run on the immutable tree that contains PH-12 through PH-15 |
+
+To unblock, in order:
+
+1. Re-acquire both ISOs and verify them against the recorded SHA-256 values in
+   `installer/vm/profiles/*.media.json`.
+2. Free memory until `python3 installer/vm/lab.py check-host` passes, and confirm
+   at least 64 GiB free before a base-image build.
+3. Build and independently inspect the base images, resolving the
+   `required-unresolved` profile fields (PH-12, then PH-11).
+4. Run the end-to-end and repetition campaigns (PH-13, PH-15).
+5. Freeze the tree and run the release-candidate gate (PH-18).
+
+## Verification discipline
+
+Every row above records the exact file and test names that establish it. Each
+key invariant was additionally *mutation-tested*: the check was deliberately
+broken, a specific named test was confirmed to fail, and the check was restored.
+This is recorded because a passing suite proves nothing about a check that never
+had teeth. One such mutation exposed a real defect, described in the PH-14 row.
+
 ## Definition of done
 
 Pre-hardware work is complete only when PH-01 through PH-18 are closed with
 content-addressed evidence, the final tree is independently reviewed and
 committed, production mutation remains unreachable, and HW-01 through HW-08 are
 still explicitly reported as open.
+
+HW-01 through HW-08 remain open and unchanged. No result in this document was
+produced on physical hardware, and no QEMU or virtual-platform result may be
+used to close any of them.
