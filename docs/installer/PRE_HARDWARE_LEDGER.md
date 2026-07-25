@@ -119,7 +119,12 @@ memory, not on any code defect:
 
 To unblock, in order:
 
-1. Run `make -C installer/vm readiness` to see the current blocker list.
+1. Run the readiness gate to see the current blocker list. Its stdout is pure
+   JSON and it exits nonzero while anything is blocked, so it can be scripted:
+
+   ```sh
+   make --no-print-directory -C installer/vm readiness
+   ```
 2. Download both ISOs into `$JCODE_SCRATCH_DIR/jstack-windows-vm` (the remedy
    field prints the exact filename and page for each), then verify each with
    `python3 installer/vm/base_image.py --workspace <lab> verify-media --record <key>`.
@@ -131,6 +136,21 @@ To unblock, in order:
    profile fields (PH-12, then PH-11).
 5. Run the end-to-end and repetition campaigns (PH-13, PH-15).
 6. Freeze the tree and run the release-candidate gate (PH-18).
+
+## Composition
+
+The per-row rows above each prove one component. `installer/vm/tests/test_end_to_end.py`
+proves they compose: one plan, produced by the real planner from the real signed
+release manifest, flows through the artifact builder, the Linux adapters, and the
+image transactions, and the result verifies. It asserts the planner's output
+parses under the adapters' strict creatable-role and creatable-type-GUID rules,
+that the display document the operator approves agrees with the plan field by
+field, that partitions land at the planner's byte offsets exactly, that the boot
+artifacts read back out of the FAT32 image are still the signed originals, that
+rollback removes exactly the plan's partitions, that a drifted disk stops the
+install before anything is written, and that the readiness gate emits pure JSON
+and exits nonzero while blocked. This is where a component that passes its own
+tests but disagrees with its neighbour is caught.
 
 ## Verification discipline
 

@@ -16,5 +16,6 @@ host-check:
 init:
 	$(PYTHON) lab.py init --workspace "$(LAB)"
 
+# Silent so stdout is pure JSON and can be piped into jq or a test.
 readiness:
-	$(PYTHON) base_image.py --workspace "$(LAB)" readiness
+	@$(PYTHON) base_image.py --workspace "$(LAB)" readiness
