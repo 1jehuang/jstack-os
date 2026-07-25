@@ -284,10 +284,27 @@ impl VirtualPlatform {
         &self.partitions
     }
 
-    /// Residual objects that currently exist and are owned by the plan. This is
-    /// the raw material for a no-committed-effect proof.
+    /// Residual objects that currently exist and are owned by this install.
+    ///
+    /// This is the raw material for a no-committed-effect proof, so it must
+    /// report *every* durable object the installer brought into existence. The
+    /// confirmed plan's `rollback_objects` list does not enumerate firmware boot
+    /// entries (their numbers are assigned by firmware, not by the plan), so the
+    /// entries this install created are reported alongside the plan-owned
+    /// objects. Omitting them would let a failure after creating a boot entry
+    /// falsely claim that no effect survived.
     pub fn residual_objects(&self) -> Vec<RollbackObject> {
         let mut residual = Vec::new();
+        for entry in &self.boot_entries {
+            // "windows" is the pre-existing entry, not something we created.
+            if entry == "windows" {
+                continue;
+            }
+            residual.push(RollbackObject {
+                kind: RollbackObjectKind::BootEntry,
+                stable_id: format!("uefi:{entry}"),
+            });
+        }
         for object in &self.plan_rollback_objects {
             let present = match object.kind {
                 RollbackObjectKind::Partition => self
