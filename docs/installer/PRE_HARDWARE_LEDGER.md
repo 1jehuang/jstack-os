@@ -29,7 +29,9 @@ The following restrictions remain unconditional throughout this work:
 
 ## Verified baseline
 
-Implementation baseline commit: `eed4d6b301ed890d3db5f902fa514fea9ead4a6a`.
+Implementation baseline commit: `eed4d6b301ed890d3db5f902fa514fea9ead4a6a`. PH-01 and
+PH-05 controller logic landed afterward and is exposed from the controller
+crate root; `installer/make check` passes on that tree.
 This ledger was introduced by `1cdab4c1f5ab1acb2bc9ec4af7fa62a82866859f`.
 Neither commit is the future PH-18 release candidate: that gate records and
 validates the exact immutable tree that contains all completed work.
@@ -55,11 +57,11 @@ substitute for a physical-hardware observation.
 
 | ID | Requirement | Existing evidence | Pre-hardware exit criterion | Status |
 | --- | --- | --- | --- | --- |
-| PH-01 | Typed capability issuance | Authorization classes and evidence identities exist in the graph and core contracts | Non-forgeable release-policy, confirmed-plan, user-confirmation, rollback, staging, actor, and guard capabilities are issued only by successful validators | open |
+| PH-01 | Typed capability issuance | `installer/controller/src/authority.rs` issues private-field, non-`Clone`, non-`Deserialize` release-policy, confirmed-plan, user-confirmation, rollback, staging, actor, and guard capabilities only from successful validators, and `tests/authority.rs` proves fail-closed behavior for missing, wrong-actor, extra, ambiguous, and rejected-validator cases | implemented; awaiting PH-18 frozen-tree confirmation |
 | PH-02 | Deterministic runtime selection | `GraphModel::select_enabled` fails on zero or multiple candidates | Every transition is selected from current state, event, verified guards, actor, and authorization; no parallel workflow exists | open |
 | PH-03 | Restart-safe controller execution | Durable journal replay derives all current dispositions | `step`, `resume`, and `reconcile` execute graph actions through a sealed virtual effect boundary and converge after every durable boundary | open |
 | PH-04 | Verified failure admission | Strict `FailureEvidence` and `ActionFailed` records exist | Each mutating action class recomputes a no-committed-effect proof or recovers forward; callers cannot choose a failure target | open |
-| PH-05 | Replicated cross-OS state | Handoff and journal schemas bind graph, plan, release, disk, and journal head | At least two authenticated durable virtual replicas reconcile exactly; confirmation and handoff objects are authenticated; handoff nonces are single-use; graph-aware handoff accepts only legal actor changes | open |
+| PH-05 | Replicated cross-OS state | `installer/controller/src/replica.rs` requires two authenticated replicas, binds journal identity to graph/plan/release/journal head, authenticates confirmation and handoff objects, enforces a durable single-use nonce ledger, and rejects illegal actor changes; `tests/replica.rs` covers forks, stale and mixed identities, duplicate locations, cross-authority tokens, and replay after restore | implemented; awaiting PH-18 frozen-tree confirmation |
 | PH-06 | Deterministic virtual platform | Graph actions and guards define required state | Private state models GPT, filesystems, firmware, boot targets, BitLocker, power, replicas, and independently observable pre/postconditions for all applicable actions | open |
 | PH-07 | FAT32 and Btrfs image transactions | Same-stream private regular-file simulator proves the core protocol | Descriptor-confined transactions write only plan-derived ESP/XBOOTLDR/Btrfs locations in sparse images and pass short-write, ENOSPC, crash, case, link, tamper, and replay tests | open |
 | PH-08 | Disposable-VM Windows adapters | Read-only collector and Windows-target compile checks pass | Storage shrink/expand, partition creation, BitLocker suspend/restore, finalizer, BootNext, and reboot adapters run only in disposable VMs and consume controller capabilities | open |
