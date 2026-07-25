@@ -1,7 +1,7 @@
 PYTHON ?= python3
 LAB ?= $(JCODE_SCRATCH_DIR)/jstack-windows-vm
 
-.PHONY: check full-check test host-check init
+.PHONY: check full-check test host-check init readiness
 
 check: test
 
@@ -15,3 +15,6 @@ host-check:
 
 init:
 	$(PYTHON) lab.py init --workspace "$(LAB)"
+
+readiness:
+	$(PYTHON) base_image.py --workspace "$(LAB)" readiness
