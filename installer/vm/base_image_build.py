@@ -59,6 +59,45 @@ import lab
 INSTALL_TIMEOUT_SECONDS = 90 * 60
 POLL_INTERVAL_SECONDS = 5.0
 
+# Windows UEFI installation media boots through a stub that prints
+# "Press any key to boot from CD or DVD" and gives up after roughly five
+# seconds. An unattended build must therefore supply that keypress; without it
+# firmware falls through to "No bootable option or device was found" and the
+# guest sits at the boot manager until the build times out. Keys are sent
+# through QMP rather than by patching the ISO, because the media must stay
+# byte-identical to the record that was verified.
+#
+# The window is short and keypresses are NOT harmless once it closes: a stray
+# Return reaches Windows setup's own UI, where it activated the Cancel button
+# and raised "Are you sure you want to quit?" mid-install. So the keys stop as
+# soon as the guest writes to its disk, which is the earliest unambiguous signal
+# that the boot stub handed off to setup. Sending keys for a fixed duration
+# instead was tried first and corrupted the run.
+BOOT_PROMPT_KEY_ATTEMPTS = 12
+BOOT_PROMPT_KEY_INTERVAL_SECONDS = 0.75
+
+# A fresh qcow2 is a few hundred KiB of metadata. Once setup begins writing the
+# install image the file grows by megabytes, so this threshold distinguishes
+# "still at the boot prompt" from "setup has taken over" without guessing.
+DISK_WRITE_PROGRESS_BYTES = 8 * 1024 * 1024
+
+# QEMU installs a SIGTERM handler and shuts the machine down *cleanly*, exiting
+# zero. So an exit code cannot distinguish "the unattended install finished and
+# the guest powered itself off" from "something on the host killed the VM
+# mid-install". This actually happened: earlyoom reclaimed the guest at roughly
+# 40% of a Windows 11 install, QEMU exited zero, and the build proceeded to
+# inspect a half-written disk and reported
+# `parted: unrecognised disk label` -- a true statement about the disk that
+# said nothing about the cause. QEMU does announce the signal on stderr before
+# leaving, so the log is the evidence, and it is now consulted.
+TERMINATION_NOTICE = re.compile(r"terminating on signal (\d+)(?: from pid (\d+)[^\n]*)?")
+
+# A guest needs its own memory plus room for the host to keep working. Starting
+# a 45-minute install into a host that is already close to its limit is not a
+# build, it is a coin flip against the OOM reaper, and the coin came up wrong
+# once already. The floor is the guest envelope plus a host reserve.
+HOST_MEMORY_RESERVE_BYTES = 2 * 1024**3
+
 # Matches the fixed topology the launch runner enforces, so a base image built
 # here is valid for the profile the campaign will later run.
 MACHINE = "pc-q35-11.0"
@@ -76,6 +115,136 @@ WINDOWS_PARTITION_TYPES = {
 
 class BaseImageBuildError(RuntimeError):
     """Raised when a base image cannot be built or fails its own inspection."""
+
+
+class QMPMonitor:
+    """A minimal QMP client, used only to send the boot-prompt keypress.
+
+    Deliberately tiny: the build needs exactly one capability from QEMU's
+    monitor, and a broad client would be a broad surface. It cannot issue
+    block-graph or migration commands because it never implements them.
+    """
+
+    def __init__(self, socket_path: Path, timeout_seconds: float = 30.0) -> None:
+        self._path = socket_path
+        self._timeout = timeout_seconds
+        self._socket: Any = None
+
+    def connect(self) -> None:
+        import socket as socket_module
+
+        deadline = time.monotonic() + self._timeout
+        while time.monotonic() < deadline:
+            if self._path.exists():
+                try:
+                    connection = socket_module.socket(socket_module.AF_UNIX)
+                    connection.settimeout(self._timeout)
+                    connection.connect(str(self._path))
+                except OSError:
+                    time.sleep(0.1)
+                    continue
+                self._socket = connection
+                self._receive()
+                self._execute("qmp_capabilities")
+                return
+            time.sleep(0.1)
+        raise BaseImageBuildError("the QEMU monitor socket never became ready")
+
+    def _receive(self) -> str:
+        return self._socket.recv(65536).decode("utf-8", errors="replace")
+
+    def _execute(self, command: str, **arguments: Any) -> str:
+        payload: dict[str, Any] = {"execute": command}
+        if arguments:
+            payload["arguments"] = arguments
+        self._socket.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+        return self._receive()
+
+    def send_key(self, key: str = "ret") -> None:
+        self._execute(
+            "send-key", keys=[{"type": "qcode", "data": key}]
+        )
+
+    def close(self) -> None:
+        if self._socket is not None:
+            try:
+                self._socket.close()
+            finally:
+                self._socket = None
+
+
+def press_boot_prompt_key(
+    monitor: QMPMonitor,
+    process: subprocess.Popen[Any],
+    disk: Path,
+    attempts: int = BOOT_PROMPT_KEY_ATTEMPTS,
+    interval: float = BOOT_PROMPT_KEY_INTERVAL_SECONDS,
+) -> int:
+    """Send keypresses until the boot prompt is satisfied, then stop immediately.
+
+    The prompt appears when firmware hands off to the ISO's boot stub, and the
+    exact moment depends on host load, so a single well-timed key would be a
+    race. But keys must stop the instant setup takes over, because Windows setup
+    reads them as UI input: an earlier version kept sending Return on a fixed
+    schedule and pressed Cancel, raising a quit confirmation over a 40% install.
+
+    Disk growth is the stopping signal. It is the guest's own behaviour rather
+    than a timer, so it cannot drift with host load.
+    """
+
+    baseline = os.stat(disk).st_size
+    sent = 0
+    for _ in range(attempts):
+        if process.poll() is not None:
+            break
+        if os.stat(disk).st_size - baseline > DISK_WRITE_PROGRESS_BYTES:
+            # Setup is writing. The prompt is behind us; further keys would be
+            # delivered to the installer's UI.
+            break
+        try:
+            monitor.send_key()
+            sent += 1
+        except OSError:
+            # The monitor closing means QEMU is gone; the wait below reports it.
+            break
+        time.sleep(interval)
+    return sent
+
+
+def termination_signal(diagnostics: str) -> tuple[int, int | None] | None:
+    """Return the signal QEMU said it died on, or None if it left on its own.
+
+    Reads QEMU's own words rather than inferring from an exit code, because the
+    exit code is zero either way.
+    """
+
+    match = TERMINATION_NOTICE.search(diagnostics)
+    if match is None:
+        return None
+    killer = match.group(2)
+    return int(match.group(1)), int(killer) if killer else None
+
+
+def require_memory_envelope(
+    required_bytes: int = MEMORY_MIB * 1024**2 + HOST_MEMORY_RESERVE_BYTES,
+) -> int:
+    """Refuse to start a build the host cannot hold for its whole duration.
+
+    An install runs for the better part of an hour and is not resumable, so a
+    host that is already short of memory should fail here, in a second, rather
+    than 40 minutes in when the reaper arrives. Returns the observed figure so
+    the caller can record what the decision was made on.
+    """
+
+    available = lab.available_memory_bytes()
+    if available < required_bytes:
+        raise BaseImageBuildError(
+            f"the guest needs {MEMORY_MIB} MiB plus a host reserve, so at least "
+            f"{required_bytes} available bytes; the host has {available}. A build "
+            "killed by the OOM reaper mid-install wastes the whole run, so it is "
+            "refused up front."
+        )
+    return available
 
 
 @dataclass(frozen=True)
@@ -182,7 +351,34 @@ def create_disk(workspace: Path, name: str, virtual_size_bytes: int) -> Path:
     return destination
 
 
-def build_qemu_argv(inputs: BuildInputs, monitor_socket: Path) -> list[str]:
+def build_swtpm_argv(swtpm_socket: Path, state_directory: Path) -> list[str]:
+    """Return the swtpm command line for a fresh TPM 2.0 device.
+
+    Windows 11 setup hard-refuses to install without TPM 2.0, so a base image
+    build needs one. The emulator state is fresh per build and lives inside the
+    workspace: a base image must not inherit sealed secrets from an earlier run.
+
+    Matches the launch runner's flags exactly, so the TPM a campaign later sees
+    behaves the same as the one the image was installed against.
+    """
+
+    return [
+        _tool("swtpm"),
+        "socket",
+        "--tpm2",
+        "--tpmstate",
+        f"dir={state_directory}",
+        "--ctrl",
+        f"type=unixio,path={swtpm_socket}",
+        "--flags",
+        "not-need-init,startup-clear",
+        "--terminate",
+    ]
+
+
+def build_qemu_argv(
+    inputs: BuildInputs, monitor_socket: Path, swtpm_socket: Path | None = None
+) -> list[str]:
     """Return the exact QEMU command line for an unattended install.
 
     Written as one explicit list rather than assembled from fragments so the
@@ -230,16 +426,32 @@ def build_qemu_argv(inputs: BuildInputs, monitor_socket: Path) -> list[str]:
         f"if=none,id=install-iso,format=raw,readonly=on,file={inputs.iso}",
         "-device",
         "ide-cd,drive=install-iso,bootindex=2",
+        # The controller must be declared before the device that attaches to it,
+        # or QEMU refuses to start with "No 'usb-bus' bus found".
+        "-device",
+        "qemu-xhci,id=xhci",
         "-drive",
         f"if=none,id=answer,format=raw,readonly=on,file={inputs.answer_media}",
         "-device",
-        "usb-storage,drive=answer,removable=on",
-        "-device",
-        "qemu-xhci,id=xhci",
+        "usb-storage,bus=xhci.0,drive=answer,removable=on",
         # A base image must be a function of the ISO alone. No network.
         "-nic",
         "none",
-    ]
+    ] + (
+        # Windows 11 refuses to install without TPM 2.0. The profile mandates
+        # tpm-crb, so the base image is built against the same device model the
+        # campaign will present.
+        [
+            "-chardev",
+            f"socket,id=chrtpm,path={swtpm_socket}",
+            "-tpmdev",
+            "emulator,id=tpm0,chardev=chrtpm",
+            "-device",
+            "tpm-crb,tpmdev=tpm0",
+        ]
+        if swtpm_socket is not None
+        else []
+    )
 
 
 def inspect_disk(disk: Path, profile: dict[str, Any], scratch: Path | None = None) -> dict[str, Any]:
@@ -445,30 +657,98 @@ def build(workspace: Path, record_key: str, timeout_seconds: int = INSTALL_TIMEO
         raise BaseImageBuildError(f"workspace must already exist: {workspace}")
     lab.require_private_workspace(workspace)
 
+    memory_available = require_memory_envelope()
+
     inputs = prepare_inputs(workspace, record_key)
     monitor = workspace / f"build-{record_key}.qmp"
     if monitor.exists():
         monitor.unlink()
 
-    argv = build_qemu_argv(inputs, monitor)
+    swtpm_socket = workspace / f"swtpm-{record_key}.sock"
+    swtpm_state = workspace / f"swtpm-state-{record_key}"
+    swtpm_socket.unlink(missing_ok=True)
+    shutil.rmtree(swtpm_state, ignore_errors=True)
+    swtpm_state.mkdir(mode=0o700)
+
+    argv = build_qemu_argv(inputs, monitor, swtpm_socket)
     started = time.time_ns()
-    process = subprocess.Popen(
-        argv,
+
+    # swtpm must be listening before QEMU connects to its chardev.
+    tpm = subprocess.Popen(
+        build_swtpm_argv(swtpm_socket, swtpm_state),
         close_fds=True,
         cwd=workspace,
         env=lab.subprocess_environment(workspace),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    try:
-        exit_code = wait_for_shutdown(process, timeout_seconds)
-    finally:
-        monitor.unlink(missing_ok=True)
+    deadline = time.monotonic() + 30.0
+    while not swtpm_socket.exists():
+        if tpm.poll() is not None:
+            raise BaseImageBuildError("swtpm exited before creating its socket")
+        if time.monotonic() >= deadline:
+            tpm.terminate()
+            raise BaseImageBuildError("swtpm socket did not become ready")
+        time.sleep(0.05)
+    # QEMU's diagnostics go to a file rather than a pipe: a build runs for the
+    # better part of an hour, and a full pipe buffer would deadlock the guest.
+    # An exit code alone is not actionable, so the reason is always retained.
+    log = workspace / f"build-{record_key}.qemu.log"
+    keys_sent = 0
+    with log.open("wb") as diagnostics:
+        process = subprocess.Popen(
+            argv,
+            close_fds=True,
+            cwd=workspace,
+            env=lab.subprocess_environment(workspace),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=diagnostics,
+            start_new_session=True,
+        )
+        client = QMPMonitor(monitor)
+        try:
+            client.connect()
+            keys_sent = press_boot_prompt_key(client, process, inputs.disk)
+        finally:
+            client.close()
+        try:
+            exit_code = wait_for_shutdown(process, timeout_seconds)
+        finally:
+            monitor.unlink(missing_ok=True)
+            if tpm.poll() is None:
+                tpm.terminate()
+                try:
+                    tpm.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    tpm.kill()
+            swtpm_socket.unlink(missing_ok=True)
 
+    diagnostics_text = log.read_text(encoding="utf-8", errors="replace").strip()
     if exit_code != 0:
-        raise BaseImageBuildError(f"QEMU exited {exit_code} during the install")
+        raise BaseImageBuildError(
+            f"QEMU exited {exit_code} during the install: "
+            f"{diagnostics_text[-600:] or 'no diagnostics were produced'}"
+        )
+
+    # A zero exit is not proof the install finished. QEMU exits zero when it is
+    # signalled too, so the guest may have been killed mid-write. Ask QEMU what
+    # happened before trusting the disk it left behind, otherwise the failure
+    # resurfaces later as an inspection error that blames the wrong thing.
+    killed = termination_signal(diagnostics_text)
+    if killed is not None:
+        signal_number, killer_pid = killed
+        by = f" by pid {killer_pid}" if killer_pid is not None else ""
+        raise BaseImageBuildError(
+            f"the guest was terminated on signal {signal_number}{by} during the "
+            "install, so the disk it left behind is a partial write and is not a "
+            f"base image. QEMU exits zero when signalled, so this is not visible "
+            f"in the exit code. Host memory available at launch was "
+            f"{memory_available} bytes; if the killer was earlyoom or the kernel "
+            "OOM reaper, free memory and run the build again."
+        )
 
     # The guest shutting down cleanly is necessary but not sufficient. Inspect
     # the disk it left behind.
@@ -486,6 +766,9 @@ def build(workspace: Path, record_key: str, timeout_seconds: int = INSTALL_TIMEO
         "install_seconds": round((time.time_ns() - started) / 1e9, 1),
         "secure_boot": True,
         "network": "none",
+        "boot_prompt_keys_sent": keys_sent,
+        "tpm": "2.0",
+        "memory_available_bytes_at_launch": memory_available,
     }
 
 

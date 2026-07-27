@@ -21,6 +21,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -266,6 +267,218 @@ class InspectionTests(unittest.TestCase):
         self.assertIn("guestfish", literals)
 
 
+class BootPromptKeyTests(unittest.TestCase):
+    """Keys must satisfy the boot prompt and then stop immediately.
+
+    Regression coverage for a real defect: an earlier version sent Return on a
+    fixed schedule, which kept typing into Windows setup's own UI after the
+    prompt was gone, activated Cancel, and raised a quit confirmation over a 40%
+    install. Disk growth is now the stopping signal.
+    """
+
+    def setUp(self) -> None:
+        self.workspace = Path(tempfile.mkdtemp(prefix="bib-keys-"))
+        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        self.disk = self.workspace / "d.qcow2"
+        self.disk.write_bytes(b"\0" * 1024)
+
+    class FakeMonitor:
+        def __init__(self) -> None:
+            self.sent = 0
+
+        def send_key(self, key: str = "ret") -> None:
+            self.sent += 1
+
+    class FakeProcess:
+        def __init__(self, alive: bool = True) -> None:
+            self._alive = alive
+
+        def poll(self):
+            return None if self._alive else 0
+
+    def test_keys_stop_once_the_guest_starts_writing(self) -> None:
+        monitor = self.FakeMonitor()
+        disk = self.disk
+
+        original = os.stat
+
+        calls = {"n": 0}
+
+        def growing(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if Path(path) == disk:
+                calls["n"] += 1
+                if calls["n"] > 2:
+                    # Simulate setup writing the install image.
+                    class Grown:
+                        st_size = 1024 + 64 * 1024 * 1024
+
+                    return Grown()
+            return result
+
+        with mock.patch.object(base_image_build.os, "stat", side_effect=growing):
+            sent = base_image_build.press_boot_prompt_key(
+                monitor, self.FakeProcess(), disk, attempts=20, interval=0
+            )
+        self.assertGreater(sent, 0, "the boot prompt must receive at least one key")
+        self.assertLess(sent, 20, "keys must stop once the guest starts writing")
+
+    def test_keys_stop_when_the_guest_exits(self) -> None:
+        monitor = self.FakeMonitor()
+        sent = base_image_build.press_boot_prompt_key(
+            monitor, self.FakeProcess(alive=False), self.disk, attempts=20, interval=0
+        )
+        self.assertEqual(sent, 0)
+
+    def test_the_attempt_budget_is_bounded(self) -> None:
+        """Even with no disk growth, keys cannot be sent forever."""
+
+        monitor = self.FakeMonitor()
+        sent = base_image_build.press_boot_prompt_key(
+            monitor, self.FakeProcess(), self.disk, attempts=5, interval=0
+        )
+        self.assertEqual(sent, 5)
+
+    def test_a_closed_monitor_does_not_raise(self) -> None:
+        class Broken:
+            def send_key(self, key: str = "ret") -> None:
+                raise OSError("monitor gone")
+
+        sent = base_image_build.press_boot_prompt_key(
+            Broken(), self.FakeProcess(), self.disk, attempts=5, interval=0
+        )
+        self.assertEqual(sent, 0)
+
+
+class TpmTests(unittest.TestCase):
+    """Windows 11 refuses to install without TPM 2.0."""
+
+    def test_the_tpm_device_matches_the_profile(self) -> None:
+        profile = base_image_build.load_profile(PROFILE_KEY)
+        self.assertEqual(profile["security"]["tpm"]["version"], "2.0")
+        argv = base_image_build.build_swtpm_argv(
+            Path("/w/t.sock"), Path("/w/state")
+        )
+        self.assertIn("--tpm2", argv)
+        self.assertIn("socket", argv)
+
+    @unittest.skipUnless(have("qemu-system-x86_64"), "qemu is unavailable")
+    def test_the_guest_is_given_the_profiles_tpm_model(self) -> None:
+        profile = base_image_build.load_profile(PROFILE_KEY)
+        inputs = base_image_build.BuildInputs(
+            record_key=PROFILE_KEY,
+            iso=Path("/w/a.iso"),
+            answer_media=Path("/w/a.img"),
+            firmware_code=Path("/f/c.fd"),
+            firmware_vars=Path("/w/v.fd"),
+            disk=Path("/w/d.qcow2"),
+            virtual_size_bytes=1,
+        )
+        argv = base_image_build.build_qemu_argv(
+            inputs, Path("/w/q.sock"), Path("/w/t.sock")
+        )
+        self.assertIn(profile["security"]["tpm"]["model"], " ".join(argv))
+
+    @unittest.skipUnless(have("qemu-system-x86_64"), "qemu is unavailable")
+    def test_the_usb_controller_precedes_the_device_that_needs_it(self) -> None:
+        """Regression: QEMU refuses to start if usb-storage comes first."""
+
+        inputs = base_image_build.BuildInputs(
+            record_key=PROFILE_KEY,
+            iso=Path("/w/a.iso"),
+            answer_media=Path("/w/a.img"),
+            firmware_code=Path("/f/c.fd"),
+            firmware_vars=Path("/w/v.fd"),
+            disk=Path("/w/d.qcow2"),
+            virtual_size_bytes=1,
+        )
+        argv = base_image_build.build_qemu_argv(inputs, Path("/w/q.sock"))
+        joined = " ".join(argv)
+        self.assertLess(joined.index("qemu-xhci"), joined.index("usb-storage"))
+        self.assertIn("bus=xhci.0", joined)
+
+
+class TerminationTests(unittest.TestCase):
+    """A signalled guest must be reported as signalled.
+
+    Regression coverage for a real defect: earlyoom reclaimed a Windows 11
+    install at roughly 40%, QEMU handled SIGTERM and exited *zero*, and the
+    build inspected the half-written disk and reported
+    `parted: unrecognised disk label`. That message was true and useless: it
+    described the symptom on the disk and named nothing about the cause.
+    """
+
+    def test_a_sigterm_notice_is_recognised(self) -> None:
+        observed = base_image_build.termination_signal(
+            "qemu-system-x86_64: terminating on signal 15 from pid 923 "
+            "(/usr/bin/earlyoom)"
+        )
+        self.assertEqual(observed, (15, 923))
+
+    def test_a_signal_without_a_named_killer_is_still_recognised(self) -> None:
+        observed = base_image_build.termination_signal(
+            "qemu-system-x86_64: terminating on signal 15"
+        )
+        self.assertEqual(observed, (15, None))
+
+    def test_an_ordinary_log_is_not_mistaken_for_a_kill(self) -> None:
+        """A build that really finished must not be failed by this check."""
+
+        for benign in ("", "warning: TCG doesn't support requested feature\n"):
+            with self.subTest(log=benign):
+                self.assertIsNone(base_image_build.termination_signal(benign))
+
+    def test_the_build_consults_the_log_before_trusting_the_disk(self) -> None:
+        """The check must precede inspection, or it cannot prevent the misreport."""
+
+        body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
+        builder = body[body.index("def build(") :]
+        self.assertLess(
+            builder.index("termination_signal("),
+            builder.index("inspect_disk("),
+            "a signalled guest must be caught before its disk is inspected",
+        )
+
+
+class MemoryEnvelopeTests(unittest.TestCase):
+    """An unresumable 45-minute install must not start into an OOM."""
+
+    def test_a_starved_host_is_refused(self) -> None:
+        with mock.patch.object(
+            base_image_build.lab, "available_memory_bytes", return_value=512 * 1024**2
+        ):
+            with self.assertRaises(base_image_build.BaseImageBuildError) as raised:
+                base_image_build.require_memory_envelope()
+        self.assertIn("536870912", str(raised.exception))
+
+    def test_a_healthy_host_is_allowed_and_the_figure_is_returned(self) -> None:
+        plenty = 64 * 1024**3
+        with mock.patch.object(
+            base_image_build.lab, "available_memory_bytes", return_value=plenty
+        ):
+            self.assertEqual(base_image_build.require_memory_envelope(), plenty)
+
+    def test_the_floor_exceeds_the_guest_envelope(self) -> None:
+        """A floor equal to the guest size would leave the host nothing."""
+
+        guest = base_image_build.MEMORY_MIB * 1024**2
+        floor = guest + base_image_build.HOST_MEMORY_RESERVE_BYTES
+        with mock.patch.object(
+            base_image_build.lab, "available_memory_bytes", return_value=guest
+        ):
+            with self.assertRaises(base_image_build.BaseImageBuildError):
+                base_image_build.require_memory_envelope(floor)
+
+    def test_the_build_checks_memory_before_launching_anything(self) -> None:
+        body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
+        builder = body[body.index("def build(") :]
+        self.assertLess(
+            builder.index("require_memory_envelope("),
+            builder.index("subprocess.Popen("),
+            "the envelope must be checked before a process is started",
+        )
+
+
 class StaticSafetyTests(unittest.TestCase):
     def test_the_module_names_no_privileged_or_device_primitive(self) -> None:
         body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
@@ -283,7 +496,18 @@ class StaticSafetyTests(unittest.TestCase):
 
     def test_a_nonzero_qemu_exit_is_a_failure(self) -> None:
         body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
-        self.assertIn('raise BaseImageBuildError(f"QEMU exited {exit_code}', body)
+        self.assertIn("QEMU exited {exit_code}", body)
+
+    def test_a_failed_build_reports_qemus_own_diagnostics(self) -> None:
+        """An exit code alone is not actionable.
+
+        The first real failure here was QEMU refusing to start because a USB
+        device preceded its controller, and the error said only "exited 1".
+        """
+
+        body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
+        self.assertIn("diagnostics_text[-600:]", body)
+        self.assertIn("no diagnostics were produced", body)
 
     def test_building_as_root_is_refused(self) -> None:
         body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
