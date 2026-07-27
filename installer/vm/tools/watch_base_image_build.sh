@@ -14,9 +14,25 @@
 # them, and turns an hour of silence into a picture of the dialog.
 set -uo pipefail
 
+# Bash re-reads a script file as it executes, so editing this file while a build
+# is running corrupts the running copy. That happened: a mid-run edit killed a
+# Windows 10 install at ten gigabytes. A watcher that supervises a
+# forty-minute job must therefore be immune to its own source being edited, so
+# it re-executes from a private snapshot and runs the rest from there.
+if [ "${JSTACK_WATCH_PINNED:-0}" != "1" ]; then
+    snapshot="$(mktemp -t jstack-watch-XXXXXX.sh)"
+    cat "${BASH_SOURCE[0]}" >"$snapshot"
+    trap 'rm -f "$snapshot"' EXIT
+    JSTACK_WATCH_PINNED=1 JSTACK_WATCH_ORIGIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" \
+        bash "$snapshot" "$@"
+    exit $?
+fi
+
 record="${1:?record key required}"
 workspace="${2:?workspace required}"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolved from the origin the snapshot recorded, since the snapshot itself lives
+# in a temporary directory and knows nothing about the tree.
+here="$(cd "${JSTACK_WATCH_ORIGIN}/.." && pwd)"
 # The disk is named for the media record's *record_id*, not its key, and the
 # two differ. Ask the module rather than guessing: an incorrect path made the
 # watcher report "no-disk" while the guest was 3 GiB into its install.
