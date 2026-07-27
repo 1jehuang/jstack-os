@@ -1,7 +1,7 @@
 PYTHON ?= python3
 LAB ?= $(JCODE_SCRATCH_DIR)/jstack-windows-vm
 
-.PHONY: check full-check test host-check init readiness host-identities release-identities boot-proof
+.PHONY: check full-check test host-check init readiness host-identities release-identities boot-proof wim-editions
 
 check: test
 
@@ -30,6 +30,13 @@ init:
 # Silent so stdout is pure JSON and can be piped into jq or a test.
 readiness:
 	@$(PYTHON) base_image.py --workspace "$(LAB)" readiness
+
+# Confirm each record's declared edition really is the one in its ISO. Windows
+# setup matches /IMAGE/NAME exactly and stops on its edition picker when it
+# cannot, which in an unattended build is not an error but a ninety-minute
+# timeout. Excluded from the default gate because it extracts six gigabytes.
+wim-editions:
+	@$(PYTHON) tools/check_wim_editions.py --workspace "$(LAB)"
 
 # Resolve the host-scoped profile inputs. Unlike `init`, this needs no VM
 # memory envelope, so it works on a busy machine.
