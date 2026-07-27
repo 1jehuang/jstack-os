@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import unittest
@@ -253,6 +254,44 @@ class AutounattendTests(BaseImageTestCase):
     def test_an_undersized_base_disk_is_refused(self) -> None:
         with self.assertRaises(base_image.BaseImageError):
             base_image.build_autounattend(self.record(), 8 * 1024**3)
+
+    def test_the_answer_file_asks_the_guest_to_power_off(self) -> None:
+        """The build's only success signal is a guest-initiated shutdown.
+
+        Regression coverage for a real defect: the answer file autologged on and
+        left the guest sitting at the desktop, so a *successful* install was
+        indistinguishable from a wedged one and could only ever end in the
+        build's timeout. An observed run held a byte-identical disk for 25
+        minutes after the install was complete.
+        """
+
+        answer = base_image.build_autounattend(self.record(), 64 * 1024**3).decode()
+        self.assertIn("<FirstLogonCommands>", answer)
+        self.assertIn("shutdown /s /t 0 /f", answer)
+
+    def test_the_shutdown_is_not_in_a_pass_it_would_abort(self) -> None:
+        """A shutdown during specialize would abort the pass running it."""
+
+        answer = base_image.build_autounattend(self.record(), 64 * 1024**3).decode()
+        oobe_at = answer.index('<settings pass="oobeSystem">')
+        self.assertGreater(
+            answer.index("shutdown /s /t 0 /f"),
+            oobe_at,
+            "the shutdown must run in oobeSystem, after specialize has finished",
+        )
+
+    def test_the_shutdown_is_the_last_ordered_command(self) -> None:
+        """Anything ordered after a shutdown would never run."""
+
+        answer = base_image.build_autounattend(self.record(), 64 * 1024**3).decode()
+        block = answer[
+            answer.index("<FirstLogonCommands>") : answer.index("</FirstLogonCommands>")
+        ]
+        orders = re.findall(r"<Order>(\d+)</Order>", block)
+        commands = re.findall(r"<CommandLine>([^<]+)</CommandLine>", block)
+        self.assertEqual(len(orders), len(commands))
+        latest = commands[orders.index(max(orders, key=int))]
+        self.assertIn("shutdown", latest)
 
     def test_the_answer_media_carries_the_verified_answer_file(self) -> None:
         record = self.record()

@@ -306,6 +306,27 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
         "        <Password><Value>jstack-lab-only</Value>"
         "<PlainText>true</PlainText></Password>",
         "      </AutoLogon>",
+        # The build's success signal is the guest powering itself off, so the
+        # answer file has to actually ask for it. Without this the install
+        # completes, autologons, and idles at the desktop until the build's
+        # timeout, which is indistinguishable from a wedged installer: an
+        # observed run sat with a byte-identical disk for 25 minutes at the end
+        # of a *successful* install.
+        #
+        # It runs at first logon rather than in `specialize`, because a shutdown
+        # during specialize would abort the pass it is running inside. Ordering
+        # is explicit so a later command cannot be appended after the shutdown
+        # and silently never run.
+        "      <FirstLogonCommands>",
+        '        <SynchronousCommand wcm:action="add"'
+        ' xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">',
+        "          <Order>1</Order>",
+        "          <Description>signal the build that the install finished"
+        "</Description>",
+        "          <CommandLine>cmd /c shutdown /s /t 0 /f</CommandLine>",
+        "          <RequiresUserInput>false</RequiresUserInput>",
+        "        </SynchronousCommand>",
+        "      </FirstLogonCommands>",
         "    </component>",
         "  </settings>",
         "</unattend>",
