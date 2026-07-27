@@ -74,6 +74,10 @@ class MediaRecord:
     selected_index: int
     selected_name: str
     source_page_url: str
+    # Retail multi-edition media requires a key to pick an edition. The Windows
+    # 11 Enterprise Evaluation image does not, so this is optional rather than
+    # required: a record that needs no key must not be forced to invent one.
+    product_key: str | None = None
 
     @classmethod
     def load(cls, path: Path) -> MediaRecord:
@@ -97,6 +101,9 @@ class MediaRecord:
             selected_index=int(install["selected_index"]),
             selected_name=str(install["selected_name"]),
             source_page_url=str(document["acquisition"]["source_page_url"]),
+            product_key=(
+                str(install["product_key"]) if install.get("product_key") else None
+            ),
         )
 
 
@@ -270,6 +277,22 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
         "        </OSImage>",
         "      </ImageInstall>",
         "      <UserData>",
+        # Retail multi-edition media refuses to proceed without a key: setup
+        # raises "Windows cannot read the <ProductKey> setting from the unattend
+        # answer file" and waits on a modal OK, which in an unattended build is a
+        # full timeout. Emitted only when the record declares one, because the
+        # Evaluation image needs none and an invented key would be worse than
+        # its absence.
+        *(
+            [
+                "        <ProductKey>",
+                f"          <Key>{record.product_key}</Key>",
+                "          <WillShowUI>OnError</WillShowUI>",
+                "        </ProductKey>",
+            ]
+            if record.product_key
+            else []
+        ),
         "        <AcceptEula>true</AcceptEula>",
         "      </UserData>",
         "    </component>",

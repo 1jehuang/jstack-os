@@ -255,6 +255,33 @@ class AutounattendTests(BaseImageTestCase):
         with self.assertRaises(base_image.BaseImageError):
             base_image.build_autounattend(self.record(), 8 * 1024**3)
 
+    def test_retail_media_carries_the_edition_selection_key(self) -> None:
+        """Retail multi-edition media refuses to install without one.
+
+        Regression coverage for an observed failure: Windows 10 setup raised
+        "Windows cannot read the <ProductKey> setting from the unattend answer
+        file" on a modal dialog and waited, which in an unattended build is a
+        full timeout with nothing written to the disk.
+        """
+
+        records = base_image.load_media_records()
+        retail = records["windows-10-pro-22h2-en-us"]
+        self.assertIsNotNone(retail.product_key, "retail media needs a key")
+        answer = base_image.build_autounattend(retail, 64 * 1024**3).decode()
+        self.assertIn(f"<Key>{retail.product_key}</Key>", answer)
+        # The key belongs in UserData with the EULA acceptance, in windowsPE,
+        # since setup reads it while choosing the image to apply.
+        self.assertLess(answer.index("<ProductKey>"), answer.index("<AcceptEula>"))
+
+    def test_evaluation_media_is_not_given_an_invented_key(self) -> None:
+        """A key the medium does not need would be a fabricated claim."""
+
+        records = base_image.load_media_records()
+        evaluation = records["windows-11-enterprise-25h2-en-us-eval"]
+        self.assertIsNone(evaluation.product_key)
+        answer = base_image.build_autounattend(evaluation, 64 * 1024**3).decode()
+        self.assertNotIn("<ProductKey>", answer)
+
     def test_oobe_declares_the_locale_in_its_own_pass(self) -> None:
         """windowsPE localises setup; OOBE asks its own region question.
 

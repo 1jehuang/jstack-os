@@ -311,7 +311,7 @@
         },
         "media": {
           "record_path": "profiles/windows-10-pro-22h2-en-us.media.json",
-          "record_sha256": "cd11e4b2314039feeca17bd149bf2368a9c91c617703c86f2f2abe6f34fd6296"
+          "record_sha256": "8805d3fa8a0301530753e668c255cd727e0e3caba908fec73f76dc75fa4cb71c"
         },
         "qemu": {
           "binary": "qemu-system-x86_64",
