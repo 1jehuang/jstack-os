@@ -254,7 +254,7 @@ class RunnerSafetyTests(unittest.TestCase):
         }
 
     def prepare_synthetic_plan(
-        self, scenario: dict[str, str], run_id: str
+        self, scenario: dict[str, str], run_id: str, control_media=None
     ) -> runner.LaunchPlan:
         base = self.workspace / "images" / f"{run_id}-base.qcow2"
         base.write_bytes(b"immutable-base")
@@ -364,6 +364,7 @@ class RunnerSafetyTests(unittest.TestCase):
                 resolved_inputs=resolved,
                 input_files=input_files,
                 run_id=run_id,
+                control_media=control_media,
             )
 
     def test_prepare_launch_emits_only_fixed_qemu_topology_and_fresh_fdsets(self) -> None:
@@ -1083,3 +1084,101 @@ class RunnerSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ControlMediaAttachmentTests(RunnerSafetyTests):
+    """The control medium must widen the guest's inputs and nothing else.
+
+    It is the only device added to a deliberately fixed topology, so the tests
+    are about what it must *not* become: bootable, writable, or present when it
+    was not asked for.
+    """
+
+    def control_image(self, name: str = "control.img") -> Path:
+        image = self.workspace / name
+        image.write_bytes(b"\0" * 4096)
+        image.chmod(0o400)
+        return image
+
+    def test_a_launch_without_one_is_unchanged(self) -> None:
+        """The sealed default must stay exactly as it was."""
+
+        scenario = {
+            "id": "secureboot-tpm-bitlocker-off",
+            "secure_boot": "enabled",
+            "tpm": "2.0",
+            "bitlocker": "disabled",
+        }
+        plan = self.prepare_synthetic_plan(scenario, "no-control")
+        self.addCleanup(plan.close)
+        argv = " ".join(plan.qemu_argv)
+        self.assertNotIn("control-media", argv)
+        self.assertNotIn("control-media", plan.block_nodes)
+
+    def test_the_medium_is_attached_read_only(self) -> None:
+        scenario = {
+            "id": "secureboot-tpm-bitlocker-off",
+            "secure_boot": "enabled",
+            "tpm": "2.0",
+            "bitlocker": "disabled",
+        }
+        plan = self.prepare_synthetic_plan(
+            scenario, "with-control", control_media=self.control_image()
+        )
+        self.addCleanup(plan.close)
+        argv = " ".join(plan.qemu_argv)
+        self.assertIn("drive=control-media", argv)
+        # Both the file and raw nodes must declare read-only, or the guest could
+        # rewrite the action it was handed. Parsed from the blockdev options
+        # rather than matched as a substring, so the check does not depend on how
+        # the JSON happens to be spaced.
+        import json as _json
+
+        nodes = {}
+        for index, item in enumerate(plan.qemu_argv):
+            if item != "-blockdev":
+                continue
+            option = _json.loads(plan.qemu_argv[index + 1])
+            nodes[option["node-name"]] = option
+        for name in ("control-media-file", "control-media"):
+            with self.subTest(node=name):
+                self.assertIn(name, nodes)
+                self.assertIs(nodes[name].get("read-only"), True)
+        for node in ("control-media-file", "control-media"):
+            self.assertIn(node, plan.block_nodes)
+
+    def test_the_medium_can_never_be_a_boot_source(self) -> None:
+        """A bootable medium could change what the machine runs, not just what
+        it is asked to do."""
+
+        scenario = {
+            "id": "secureboot-tpm-bitlocker-off",
+            "secure_boot": "enabled",
+            "tpm": "2.0",
+            "bitlocker": "disabled",
+        }
+        plan = self.prepare_synthetic_plan(
+            scenario, "no-boot", control_media=self.control_image()
+        )
+        self.addCleanup(plan.close)
+        argv = " ".join(plan.qemu_argv)
+        self.assertNotIn("drive=control-media,bootindex", argv)
+        self.assertNotIn("bootindex=3", argv)
+
+    def test_a_writable_medium_is_refused(self) -> None:
+        """A writable input is one the guest could edit and re-present."""
+
+        scenario = {
+            "id": "secureboot-tpm-bitlocker-off",
+            "secure_boot": "enabled",
+            "tpm": "2.0",
+            "bitlocker": "disabled",
+        }
+        writable = self.workspace / "writable-control.img"
+        writable.write_bytes(b"\0" * 4096)
+        writable.chmod(0o600)
+        with self.assertRaises(lab.LabSafetyError) as raised:
+            self.prepare_synthetic_plan(
+                scenario, "writable-control", control_media=writable
+            )
+        self.assertIn("read-only", str(raised.exception))

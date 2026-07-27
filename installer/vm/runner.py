@@ -913,6 +913,7 @@ def prepare_launch(
     resolved_inputs: dict[str, str] | None,
     input_files: dict[str, str | Path] | None,
     run_id: str | None = None,
+    control_media: str | Path | None = None,
 ) -> LaunchPlan:
     scratch = lab.require_scratch_root()
     workspace = lab.safe_workspace(workspace_value, scratch)
@@ -1043,6 +1044,29 @@ def prepare_launch(
         iso_pin.close()
         raise
 
+    # An optional read-only control medium carrying one authorised action. It is
+    # attached exactly as the ISO is -- opened read-only, pinned by descriptor,
+    # never bootable -- because it must not widen the launch surface. The guest
+    # gains a file to read; the host gains nothing reachable. Without one the
+    # launch is byte-identical to before, so the sealed default is unchanged.
+    control_pin: PinnedFile | None = None
+    if control_media is not None:
+        try:
+            control_path = _regular_path(
+                control_media, label="control medium", workspace=workspace
+            )
+            control_pin = _open_pinned(
+                control_path, writable=False, label="control medium"
+            )
+            if control_pin.metadata.st_mode & 0o222:
+                control_pin.close()
+                raise lab.LabSafetyError(
+                    f"control medium must be read-only: {control_path}"
+                )
+        except BaseException:
+            iso_pin.close()
+            raise
+
     try:
         allocated_run_id, run_directory, evidence_directory = _create_run_directory(
             workspace, run_id
@@ -1062,9 +1086,13 @@ def prepare_launch(
         _create_overlay(base, overlay, qemu_img, workspace)
     except BaseException:
         iso_pin.close()
+        if control_pin is not None:
+            control_pin.close()
         raise
 
     pins: list[PinnedFile] = [iso_pin]
+    if control_pin is not None:
+        pins.append(control_pin)
     try:
         disk_chain = validate_and_pin_qcow2(
             overlay, workspace, qemu_img, require_backing=True
@@ -1198,6 +1226,37 @@ def prepare_launch(
                 "ide-cd,drive=install-iso,bootindex=2",
             ]
         )
+        if control_pin is not None:
+            control_fd_path = _add_pin(qemu_argv, control_pin, next_fdset)
+            next_fdset += 1
+            qemu_argv.extend(
+                [
+                    "-blockdev",
+                    _json_option(
+                        {
+                            "driver": "file",
+                            "filename": control_fd_path,
+                            "node-name": "control-media-file",
+                            "read-only": True,
+                        }
+                    ),
+                    "-blockdev",
+                    _json_option(
+                        {
+                            "driver": "raw",
+                            "file": "control-media-file",
+                            "node-name": "control-media",
+                            "read-only": True,
+                        }
+                    ),
+                    # Deliberately no bootindex: the medium carries an action for
+                    # an already-running guest and must never become a boot
+                    # source, or a malformed one could change what the machine
+                    # runs rather than only what it is asked to do.
+                    "-device",
+                    "usb-storage,bus=xhci.0,drive=control-media,removable=on",
+                ]
+            )
         if secure_boot:
             qemu_argv.extend(
                 ["-global", "driver=cfi.pflash01,property=secure,value=on"]
@@ -1239,6 +1298,8 @@ def prepare_launch(
             "ovmf-vars",
         }
         block_nodes.update({"install-iso-file", "install-iso"})
+        if control_pin is not None:
+            block_nodes.update({"control-media-file", "control-media"})
         return LaunchPlan(
             workspace,
             qemu_argv,
@@ -1599,6 +1660,13 @@ def parser() -> argparse.ArgumentParser:
         help="JSON object mapping canonical artifact roles to immutable files",
     )
     result.add_argument("--run-id", help="unique caller-owned run ID; generated if omitted")
+    result.add_argument(
+        "--control-media",
+        help=(
+            "optional read-only image carrying one authorised action. Attached "
+            "without a bootindex, so it can never become a boot source"
+        ),
+    )
     return result
 
 
@@ -1623,6 +1691,7 @@ def main() -> int:
             resolved_inputs=resolved_inputs,
             input_files=input_files,
             run_id=arguments.run_id,
+            control_media=arguments.control_media,
         )
         if arguments.command == "dry-run":
             print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
