@@ -166,7 +166,13 @@
     },
     "base_image_sha256_input": "base-image-sha256",
     "base_image_gpt_sha256_input": "base-image-gpt-sha256",
-    "serial": "JSTACKLAB0001"
+    "serial": "JSTACKLAB0001",
+    "base_image_reproducibility": {
+      "byte_identical_across_builds": false,
+      "structurally_identical_across_builds": true,
+      "why": "Windows setup writes timestamps, freshly generated partition and machine GUIDs, and entropy that no answer file can pin. Measured by building the Windows 10 profile twice from byte-identical inputs: same partition roles, order, and type GUIDs; different image and GPT digests.",
+      "identity_meaning": "base-image-sha256 and base-image-gpt-sha256 pin one specific produced image so a campaign can prove which image it started from. They are not an assertion that a rebuild reproduces them."
+    }
   },
   "artifacts": {
     "installer_sha256_input": "installer-sha256",

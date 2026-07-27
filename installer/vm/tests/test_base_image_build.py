@@ -400,6 +400,53 @@ class TpmTests(unittest.TestCase):
         self.assertIn("bus=xhci.0", joined)
 
 
+class ReproducibilityScopeTests(unittest.TestCase):
+    """A base image is structurally reproducible, not byte-reproducible.
+
+    Measured rather than assumed: the Windows 10 profile was built twice from
+    byte-identical inputs, and the two images carried the same partition roles in
+    the same order while their image and GPT digests, sizes, and durations all
+    differed. Windows setup writes timestamps and freshly generated GUIDs that no
+    answer file can pin.
+
+    The distinction matters because `base-image-sha256` looks like a
+    reproducibility claim and is not one. It pins one produced image so a campaign
+    can prove which image it started from, exactly as PH-19 records
+    `reproducible=false` for the enrolled firmware store.
+    """
+
+    def profiles(self) -> list[dict]:
+        return [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(base_image.PROFILES.glob("*.profile.json"))
+        ]
+
+    def test_every_profile_records_the_measured_semantics(self) -> None:
+        for profile in self.profiles():
+            with self.subTest(profile=profile["profile_id"]):
+                note = profile["storage"]["base_image_reproducibility"]
+                self.assertFalse(note["byte_identical_across_builds"])
+                self.assertTrue(note["structurally_identical_across_builds"])
+
+    def test_the_pinned_digest_is_documented_as_an_identity(self) -> None:
+        """A reader must not mistake the pin for a reproducibility guarantee."""
+
+        for profile in self.profiles():
+            with self.subTest(profile=profile["profile_id"]):
+                meaning = profile["storage"]["base_image_reproducibility"][
+                    "identity_meaning"
+                ]
+                self.assertIn("not", meaning)
+                self.assertIn("base-image-sha256", meaning)
+
+    def test_the_verifier_checks_structure_not_only_digests(self) -> None:
+        """Structure is the part that actually repeats, so it must be checked."""
+
+        body = (ROOT / "tools" / "verify_base_image.py").read_text(encoding="utf-8")
+        self.assertIn("inspect_disk(", body)
+        self.assertIn("recompute", body.lower())
+
+
 class StallDiagnosticTests(unittest.TestCase):
     """A stalled build must produce evidence, not just silence.
 
