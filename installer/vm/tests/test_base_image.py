@@ -279,6 +279,43 @@ class AutounattendTests(BaseImageTestCase):
         # payload identity is what must be stable.
         self.assertEqual(first["autounattend_bytes"], second["autounattend_bytes"])
 
+    def test_both_supported_records_can_be_built_into_one_workspace(self) -> None:
+        """Regression: a fixed answer.img made the second profile unbuildable.
+
+        Both supported profiles are prepared in the same lab workspace, so a
+        shared default filename collided with the no-clobber rule. The worse
+        outcome it invited is silent: an image built for one edition being used
+        to install the other. Names are now derived from the record id.
+        """
+
+        built = {}
+        for key, record in sorted(self.records.items()):
+            evidence = base_image.build_answer_media(self.workspace, record, 64 * 1024**3)
+            built[key] = evidence
+
+        paths = [evidence["image"] for evidence in built.values()]
+        self.assertEqual(len(set(paths)), len(paths), "answer media must not share a path")
+        for evidence in built.values():
+            self.assertTrue(Path(evidence["image"]).is_file())
+
+        # The two profiles pin different editions, so identical answer payloads
+        # would mean the record is not actually reaching the answer file.
+        digests = {evidence["autounattend_sha256"] for evidence in built.values()}
+        self.assertEqual(len(digests), len(built), "each record needs its own answer file")
+
+    def test_the_answer_media_name_is_derived_from_the_record(self) -> None:
+        for record in self.records.values():
+            with self.subTest(record=record.record_id):
+                self.assertIn(record.record_id, base_image.answer_media_name(record))
+
+    def test_rebuilding_the_same_record_refuses_to_clobber(self) -> None:
+        """The no-clobber rule must still hold now that names are derived."""
+
+        record = self.record()
+        base_image.build_answer_media(self.workspace, record, 64 * 1024**3)
+        with self.assertRaises(FileExistsError):
+            base_image.build_answer_media(self.workspace, record, 64 * 1024**3)
+
 
 class ReadinessTests(BaseImageTestCase):
     def test_readiness_reports_every_precondition_with_a_remedy(self) -> None:

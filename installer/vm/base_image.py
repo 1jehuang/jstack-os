@@ -313,8 +313,24 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def answer_media_name(record: MediaRecord) -> str:
+    """Return the per-record answer-media filename.
+
+    The name is derived from the record id rather than fixed, because the two
+    supported profiles pin different editions and disk layouts. A shared
+    ``answer.img`` would either collide (the second build fails against the
+    no-clobber rule) or, worse, silently boot one profile with the other's
+    answer file. Deriving the name makes the wrong pairing unrepresentable.
+    """
+
+    return f"answer-{record.record_id}.img"
+
+
 def build_answer_media(
-    workspace: Path, record: MediaRecord, disk_size_bytes: int, name: str = "answer.img"
+    workspace: Path,
+    record: MediaRecord,
+    disk_size_bytes: int,
+    name: str | None = None,
 ) -> dict[str, Any]:
     """Build the FAT32 image that carries Autounattend.xml.
 
@@ -323,7 +339,8 @@ def build_answer_media(
     through the verified PH-07 transaction. Every byte is read back and hashed.
     """
     answer = build_autounattend(record, disk_size_bytes)
-    image = images.create_sparse_image(workspace / name, ANSWER_IMAGE_BYTES, workspace)
+    image_name = name if name is not None else answer_media_name(record)
+    image = images.create_sparse_image(workspace / image_name, ANSWER_IMAGE_BYTES, workspace)
     images.make_fat32(image, workspace, label="JSTACKANS")
     evidence = images.fat32_transaction(
         image, workspace, [images.Placement("/Autounattend.xml", answer)]
