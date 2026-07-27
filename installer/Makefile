@@ -1,9 +1,9 @@
 PYTHON ?= python3
 MODEL := model/installer-state-graph.json
 
-.PHONY: check toolchain validate test docs core staging controller vm-test vm-host
+.PHONY: check toolchain validate test docs core staging controller vm-test vm-host progress progress-full
 
-check: toolchain validate test docs core staging controller vm-test
+check: toolchain validate test docs core staging controller vm-test progress
 
 toolchain:
 	$(MAKE) -C core toolchain
@@ -34,3 +34,14 @@ vm-test:
 
 vm-host:
 	$(MAKE) -C vm host-check
+
+# Computed pre-hardware progress. The baseline is a ratchet: if a probe that used
+# to pass stops passing, this fails the build rather than quietly lowering the
+# reported score.
+progress:
+	$(PYTHON) tools/ledger_status.py --no-commands --require-implemented 18
+
+# The same report including command probes, which actually run the readiness and
+# identity-resolution gates. Slower and host-dependent, so it is not in `check`.
+progress-full:
+	$(PYTHON) tools/ledger_status.py --require-implemented 18

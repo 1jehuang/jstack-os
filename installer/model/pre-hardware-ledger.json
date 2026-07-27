@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "kind": "pre-hardware-completion-ledger",
+  "comment": [
+    "Machine-readable form of docs/installer/PRE_HARDWARE_LEDGER.md.",
+    "The prose document holds the rationale; this file holds the status, and the",
+    "status is COMPUTED by tools/ledger_status.py rather than asserted here.",
+    "Each requirement names the evidence that establishes it and the probes that",
+    "must pass for it to count as closed. A row whose probes do not pass is",
+    "reported open no matter what any document claims.",
+    "Adding a row without probes is rejected: an unprovable claim is not progress."
+  ],
+  "assurance_levels": {
+    "A0": "Architecture or state-model requirement only. No runtime adapter exists.",
+    "A1": "Pure implementation checked by schemas, deterministic vectors, and unit or property tests.",
+    "A2": "Runtime contract checked with adversarial mocks and deterministic fault injection.",
+    "A3": "Cross-target compile plus static platform-surface allowlist checks.",
+    "A4": "Production adapter passes destructive tests in a disposable UEFI VM.",
+    "A5": "Signed release candidate passes the supported physical-hardware matrix."
+  },
+  "probe_kinds": {
+    "file": "Path exists relative to the installer directory.",
+    "grep": "Regex occurs in the named file.",
+    "absent": "Regex does NOT occur in the named file. Used for negative safety claims.",
+    "command": "Command exits zero. Used for gates that must actually run."
+  },
+  "requirements": [
+    {
+      "id": "PH-01",
+      "title": "Typed capability issuance",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": [
+        "controller/src/authority.rs",
+        "controller/tests/authority.rs"
+      ],
+      "probes": [
+        { "kind": "file", "path": "controller/src/authority.rs" },
+        { "kind": "file", "path": "controller/tests/authority.rs" },
+        {
+          "kind": "absent",
+          "path": "controller/src/authority.rs",
+          "pattern": "derive\\([^)]*\\bDeserialize\\b",
+          "why": "capabilities must not be forgeable by deserialization"
+        },
+        {
+          "kind": "absent",
+          "path": "controller/src/authority.rs",
+          "pattern": "derive\\([^)]*\\bClone\\b",
+          "why": "capabilities must not be copyable into a second use"
+        }
+      ]
+    },
+    {
+      "id": "PH-02",
+      "title": "Deterministic runtime selection",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": ["controller/tests/selection_totality.rs"],
+      "probes": [
+        { "kind": "file", "path": "controller/tests/selection_totality.rs" },
+        {
+          "kind": "grep",
+          "path": "controller/tests/selection_totality.rs",
+          "pattern": "authorize_transition",
+          "why": "totality is established through the real authorization entry point"
+        }
+      ]
+    },
+    {
+      "id": "PH-03",
+      "title": "Restart-safe controller execution",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": [
+        "controller/src/runtime.rs",
+        "controller/tests/runtime_convergence.rs"
+      ],
+      "probes": [
+        { "kind": "file", "path": "controller/src/runtime.rs" },
+        { "kind": "grep", "path": "controller/src/runtime.rs", "pattern": "EffectBoundary" },
+        { "kind": "file", "path": "controller/tests/runtime_convergence.rs" }
+      ]
+    },
+    {
+      "id": "PH-04",
+      "title": "Verified failure admission",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": ["controller/src/runtime.rs", "controller/tests/runtime_convergence.rs"],
+      "probes": [
+        {
+          "kind": "grep",
+          "path": "controller/tests/runtime_convergence.rs",
+          "pattern": "manual_recovery",
+          "why": "a surviving effect must halt rather than claim a clean failure"
+        }
+      ]
+    },
+    {
+      "id": "PH-05",
+      "title": "Replicated cross-OS state",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": ["controller/src/replica.rs", "controller/tests/replica.rs"],
+      "probes": [
+        { "kind": "file", "path": "controller/src/replica.rs" },
+        { "kind": "file", "path": "controller/tests/replica.rs" }
+      ]
+    },
+    {
+      "id": "PH-06",
+      "title": "Deterministic virtual platform",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": ["controller/src/platform.rs"],
+      "probes": [
+        { "kind": "file", "path": "controller/src/platform.rs" },
+        {
+          "kind": "absent",
+          "path": "controller/src/platform.rs",
+          "pattern": "\\bunsafe\\b",
+          "why": "the virtual platform performs no I/O and needs no unsafe code"
+        },
+        {
+          "kind": "absent",
+          "path": "controller/src/platform.rs",
+          "pattern": "/dev/",
+          "why": "the virtual platform must name no host device"
+        }
+      ]
+    },
+    {
+      "id": "PH-07",
+      "title": "FAT32 and Btrfs image transactions",
+      "level": "A3",
+      "blocked_by": [],
+      "evidence": ["vm/images.py", "vm/tests/test_images.py"],
+      "probes": [
+        { "kind": "file", "path": "vm/images.py" },
+        { "kind": "file", "path": "vm/tests/test_images.py" },
+        {
+          "kind": "absent",
+          "path": "vm/images.py",
+          "pattern": "losetup|partprobe|kpartx|\\bsudo\\b",
+          "why": "image transactions stay unprivileged and never touch loop devices"
+        }
+      ]
+    },
+    {
+      "id": "PH-08",
+      "title": "Disposable-VM Windows adapters",
+      "level": "A3",
+      "required_level": "A4",
+      "blocked_by": ["PH-12"],
+      "evidence": [
+        "core/assets/windows-mutation-adapters.ps1",
+        "core/src/windows_firmware.rs",
+        "tools/validate_windows_adapters.py"
+      ],
+      "probes": [
+        { "kind": "file", "path": "core/assets/windows-mutation-adapters.ps1" },
+        { "kind": "file", "path": "core/src/windows_firmware.rs" },
+        {
+          "kind": "grep",
+          "path": "core/assets/windows-mutation-adapters.ps1",
+          "pattern": "JSTACK_DISPOSABLE_VM",
+          "why": "every mutation adapter is gated on a disposable-VM attestation"
+        },
+        {
+          "kind": "absent",
+          "path": "core/assets/windows-mutation-adapters.ps1",
+          "pattern": "Clear-Disk|Format-Volume\\s|Remove-Partition\\s+-DiskNumber",
+          "why": "no unbounded destructive cmdlet is reachable"
+        }
+      ],
+      "open_boundary": "No live Windows execution yet; requires PH-12 base images."
+    },
+    {
+      "id": "PH-09",
+      "title": "Linux RAM-installer adapters",
+      "level": "A3",
+      "required_level": "A4",
+      "blocked_by": ["PH-12"],
+      "evidence": ["vm/linux_installer.py", "vm/tests/test_linux_installer.py"],
+      "probes": [
+        { "kind": "file", "path": "vm/linux_installer.py" },
+        { "kind": "file", "path": "vm/tests/test_linux_installer.py" },
+        {
+          "kind": "absent",
+          "path": "vm/linux_installer.py",
+          "pattern": "losetup|partprobe|kpartx|\\bsudo\\b|mount\\(",
+          "why": "the Linux adapters write only sparse regular files in the workspace"
+        }
+      ],
+      "open_boundary": "No live VM boot yet; requires PH-12 base images."
+    },
+    {
+      "id": "PH-10",
+      "title": "Bootable signed test artifacts",
+      "level": "A4",
+      "blocked_by": [],
+      "evidence": ["vm/artifacts.py", "vm/boot_proof.py", "vm/tests/bootproof_suite.py"],
+      "probes": [
+        { "kind": "file", "path": "vm/artifacts.py" },
+        { "kind": "file", "path": "vm/boot_proof.py" },
+        { "kind": "file", "path": "vm/tests/bootproof_suite.py" },
+        {
+          "kind": "grep",
+          "path": "vm/boot_proof.py",
+          "pattern": "Access Denied|AccessDenied|access denied",
+          "why": "Secure Boot enforcement is settled by a firmware refusal, not an assertion"
+        }
+      ],
+      "note": "Artifacts remain test-key signed. This is the only row settled by real firmware behaviour."
+    },
+    {
+      "id": "PH-11",
+      "title": "Resolved immutable profiles",
+      "level": "A3",
+      "blocked_by": ["PH-12"],
+      "evidence": ["vm/base_image.py", "vm/profiles", "vm/tests/test_profiles.py"],
+      "probes": [
+        { "kind": "file", "path": "vm/tests/test_profiles.py" },
+        {
+          "kind": "command",
+          "argv": ["python3", "vm/base_image.py", "--workspace", "{workspace}", "host-identities"],
+          "why": "the five host-scoped inputs resolve without a VM launch"
+        },
+        {
+          "kind": "command",
+          "argv": [
+            "python3",
+            "vm/base_image.py",
+            "--workspace",
+            "{workspace}",
+            "release-identities",
+            "--boot-artifacts-sha256",
+            "{boot_artifacts_sha256}"
+          ],
+          "why": "the four release-build inputs resolve from the repository once the boot-artifact manifest digest is supplied"
+        }
+      ],
+      "open_boundary": "The three base-image-scoped inputs resolve only once PH-12 builds the images."
+    },
+    {
+      "id": "PH-12",
+      "title": "Reproducible base images",
+      "level": "A3",
+      "blocked_by": [],
+      "evidence": ["vm/base_image.py", "vm/tests/test_base_image.py"],
+      "probes": [
+        { "kind": "file", "path": "vm/base_image.py" },
+        { "kind": "file", "path": "vm/tests/test_base_image.py" },
+        {
+          "kind": "command",
+          "argv": ["python3", "vm/base_image.py", "--workspace", "{workspace}", "readiness"],
+          "why": "the readiness gate exits nonzero while any of its 21 preconditions is blocked"
+        }
+      ],
+      "open_boundary": "Readiness green means the inputs exist; the images themselves are still unbuilt."
+    },
+    {
+      "id": "PH-13",
+      "title": "End-to-end happy paths",
+      "level": "A2",
+      "required_level": "A4",
+      "blocked_by": ["PH-12"],
+      "evidence": ["controller/tests/runtime_convergence.rs", "controller/tests/installer_cli.rs"],
+      "probes": [
+        { "kind": "file", "path": "controller/tests/installer_cli.rs" }
+      ],
+      "open_boundary": "A virtual result is explicitly not accepted here. Requires real guest, disk, firmware, journal, and cold-boot observations.",
+      "requires_vm_observation": true
+    },
+    {
+      "id": "PH-14",
+      "title": "Graph-derived fault campaigns",
+      "level": "A2",
+      "required_level": "A4",
+      "blocked_by": ["PH-12"],
+      "evidence": ["controller/tests/fault_campaign.rs"],
+      "probes": [
+        { "kind": "file", "path": "controller/tests/fault_campaign.rs" },
+        {
+          "kind": "absent",
+          "path": "controller/tests/fault_campaign.rs",
+          "pattern": "const CASES|HAND_WRITTEN",
+          "why": "cases are derived from the graph, never from a hand-written list"
+        }
+      ],
+      "open_boundary": "The virtual campaign is complete; the disposable-VM campaign is open.",
+      "requires_vm_observation": true
+    },
+    {
+      "id": "PH-15",
+      "title": "Repetition and freshness",
+      "level": "A2",
+      "required_level": "A4",
+      "blocked_by": ["PH-12"],
+      "evidence": ["controller/tests/repetition.rs"],
+      "probes": [
+        { "kind": "file", "path": "controller/tests/repetition.rs" }
+      ],
+      "open_boundary": "Virtual repetition is complete; the ten-fresh-overlay VM runs are open.",
+      "requires_vm_observation": true
+    },
+    {
+      "id": "PH-16",
+      "title": "Canonical evidence and support matrix",
+      "level": "A3",
+      "blocked_by": ["PH-13"],
+      "evidence": ["vm/evidence/verify.py", "vm/tests/test_evidence.py"],
+      "probes": [
+        { "kind": "file", "path": "vm/evidence/verify.py" },
+        { "kind": "file", "path": "vm/tests/test_evidence.py" },
+        {
+          "kind": "grep",
+          "path": "vm/evidence/verify.py",
+          "pattern": "trusted-release-policy-sha256",
+          "why": "trust roots are required CLI arguments so a bundle cannot nominate its own"
+        }
+      ],
+      "open_boundary": "The verifier is complete; no real run bundles exist yet."
+    },
+    {
+      "id": "PH-17",
+      "title": "Runnable packaging and recovery UX",
+      "level": "A2",
+      "blocked_by": [],
+      "evidence": [
+        "controller/src/bin/jstack-installer.rs",
+        "controller/tests/installer_cli.rs"
+      ],
+      "probes": [
+        { "kind": "file", "path": "controller/src/bin/jstack-installer.rs" },
+        {
+          "kind": "absent",
+          "path": "controller/src/bin/jstack-installer.rs",
+          "pattern": "--device|--production|/dev/",
+          "exclude_lines": "^\\s*(//|\\*)",
+          "why": "the shipped CLI offers no production mutation target; doc comments that merely say so are excluded"
+        }
+      ],
+      "open_boundary": "Virtual execution only."
+    },
+    {
+      "id": "PH-18",
+      "title": "Frozen-tree assurance",
+      "level": "A3",
+      "blocked_by": ["PH-12", "PH-13", "PH-14", "PH-15"],
+      "evidence": ["Makefile", "vm/Makefile"],
+      "probes": [
+        { "kind": "grep", "path": "Makefile", "pattern": "^check:" }
+      ],
+      "open_boundary": "Must run on the immutable tree containing all completed work.",
+      "requires_clean_tree": true
+    }
+  ],
+  "physical_only": [
+    { "id": "HW-01", "observation": "Firmware Boot#### creation, BootNext reliability, bounded rearm, and reset behaviour on each declared device" },
+    { "id": "HW-02", "observation": "Secure Boot chain and key-enrollment behaviour of each vendor firmware" },
+    { "id": "HW-03", "observation": "TPM-backed BitLocker suspend, recovery, restoration, and PCR behaviour across real reboots" },
+    { "id": "HW-04", "observation": "NVMe/storage-driver resize, flush, discard, power-loss, and sharing semantics" },
+    { "id": "HW-05", "observation": "OEM ESP, MSR, recovery, diagnostics, and vendor partition preservation" },
+    { "id": "HW-06", "observation": "Real AC/battery readiness, unexpected reset, firmware update, and pending-servicing interactions" },
+    { "id": "HW-07", "observation": "Actual Windows and JStack bootability, networking, graphics/session prerequisites, and recovery UX" },
+    { "id": "HW-08", "observation": "Signed release-candidate repetition on a small explicitly supported hardware matrix using sacrificial storage" }
+  ]
+}

@@ -68,7 +68,7 @@ substitute for a physical-hardware observation.
 | PH-09 | Linux RAM-installer adapters | `installer/vm/linux_installer.py` re-inventories the GPT with `sgdisk`, recomputes the handoff fingerprint and refuses any drift before writing, creates only the confirmed plan's exact partition geometry and GUIDs (refusing non-creatable roles and type GUIDs so an ESP/MSR/recovery partition can never be created), formats and deploys Btrfs through the PH-07 verified transactions, installs boot artifacts, independently re-verifies the installation, and rolls back only plan-owned partitions. Every mutating adapter requires a matching disposable-VM attestation, and every target must be a sparse regular file inside the workspace: `/dev` paths, symlinks, hard links, and outside-workspace paths are refused, and a static test asserts the module body names no device path, `losetup`, `mount(`, `kpartx`, `partprobe`, or `sudo`. `installer/vm/tests/test_linux_installer.py` (28 cases) covers drift, wrong disk GUID, occupied interval, exact geometry, idempotent retry after a crash, overlap refusal, mismatched-existing refusal, rollback preservation of unowned and OEM partitions, tamper and absence detection, and an ordered end-to-end Linux-side install. Skipping the drift check, the ownership filter, the overlap check, or the type-GUID allowlist was mutation-tested and fails the suite | implemented; **no live VM boot yet** (requires PH-12 base images) |
 | PH-10 | Bootable signed test artifacts | `installer/vm/artifacts.py` builds the closed role set with the same tools a release uses: the distribution systemd-boot binary as the ESP loader (copied byte-identically), real installer and recovery UKIs via `ukify`, a content-addressed system image, BLS type-1 boot entries, and canonical Windows/Linux handoff payloads, all signed with `sbsign` under a per-run throwaway key and bound by one canonical manifest that the manifest builder refuses to emit unless every PE role is signed and the role set is complete. `installer/vm/tests/test_artifacts.py` (26 cases) proves UKI byte-reproducibility, that cmdline and initrd changes alter the identity, entry and handoff canonicality, cross-build agreement, and that a flipped byte inside a signed PE, a foreign trust root, an unsigned PE, and a tampered unsigned image are all rejected. Four cases invoke `sbverify` directly rather than through the module helper, so the module's own verification is never the oracle; replacing signing with a file copy fails 17 cases. **The artifacts are also proven to actually boot**, which no digest check establishes: `installer/vm/boot_proof.py` (run by `make -C installer/vm boot-proof`, 12 cases) enrolls the test certificate as PK/KEK/db in a per-run OVMF variable copy, enables Secure Boot, and boots the artifact three times on real firmware with a network-less, device-less guest. Observed on the serial console: the **signed** UKI reaches the in-guest marker; a **single flipped byte** deep inside the signed PE is refused by firmware with `Access Denied` and never reaches the marker; and an **unsigned** image is likewise refused, which is the control proving Secure Boot is genuinely enforcing rather than the harness being broken. Static cases assert the guest gets no network or host device, firmware code is opened read-only, the variable store is a per-run copy, and every boot is hard-timeout capped | implemented and **boot-verified on real firmware**; artifacts remain test-key signed, not a release |
 | PH-11 | Resolved immutable profiles | Media records and profile schemas are complete and validated. Of the twelve required inputs per profile, the **five host-scoped ones are now resolved**: `base_image.py host-identities` (also `make -C installer/vm host-identities`) digests the QEMU and swtpm executables and the three OVMF firmware files, refusing set-id binaries and binding each digest to its exact resolved path. This deliberately does **not** go through `lab.py init`, which gates read-only digest collection behind the 6 GiB VM-launch memory envelope and so could not resolve these on a busy host; a test asserts collection never references that gate, `available_memory_bytes`, `host_evidence`, or `/dev/kvm`. Coverage is derived from the profiles themselves, not hardcoded: a test asserts the collector covers exactly the `host-acquisition` inputs and that every remaining input is `base-image-acquisition` or `release-build` scoped. Digests are checked against an independent hash of the same file so the collector is not its own oracle. Dropping an input, faking a digest, or re-coupling to the memory gate were each mutation-tested and fail the suite **9 of 12 inputs resolved.** The four release-build inputs also resolve now via `base_image.py release-identities`: the state-graph and signed-release digests come straight from the repository (and a test asserts the graph digest equals the value the signed manifest pins, so a drift between them is caught), the installer digest comes from the built `jstack-installer`, and the boot-artifact digest comes from a real `build_test_artifact_set` manifest. A test asserts the only inputs left uncovered are exactly the `base-image-acquisition` ones, which is the precise statement of what the absent ISOs still block. The remaining 3 are **blocked on PH-12** |
-| PH-12 | Reproducible base images | `installer/vm/base_image.py` provides the three inputs a base-image build needs, all testable without the ISO: (a) `verify-media` accepts an ISO only when its size, SHA-256, **and** ISO 9660 structure all match the immutable media record, checking size before hashing and refusing symlinks, hard links, and out-of-workspace paths; (b) `answer-media` builds a byte-reproducible `Autounattend.xml` pinning the exact edition, locale, and the exact ESP/MSR/extended-Windows UEFI-GPT layout with no recovery partition, published into a FAT32 image through the verified PH-07 transaction; (c) `make readiness` reports all 12 preconditions with an actionable remedy for each. `tests/test_base_image.py` (23 cases) proves the recorded Windows 10 and 11 digests match the values Microsoft publishes, that a flipped byte, a wrong size, and a non-ISO file with a forged matching record are each refused, and that the answer file is well-formed and reproducible. Skipping the digest, magic, or size check, or adding a recovery partition, were each mutation-tested and fail the suite. **`make readiness` currently reports 18/21 satisfied**, with the three real blockers being both absent ISOs and the host memory gate; the Microsoft download requires an interactive page selection (confirmed: the scripted API path is rejected by Microsoft's Sentinel, and the page cannot be driven headlessly), so acquiring the media is a manual step |
+| PH-12 | Reproducible base images | `installer/vm/base_image.py` provides the three inputs a base-image build needs, all testable without the ISO: (a) `verify-media` accepts an ISO only when its size, SHA-256, **and** ISO 9660 structure all match the immutable media record, checking size before hashing and refusing symlinks, hard links, and out-of-workspace paths; (b) `answer-media` builds a byte-reproducible `Autounattend.xml` pinning the exact edition, locale, and the exact ESP/MSR/extended-Windows UEFI-GPT layout with no recovery partition, published into a FAT32 image through the verified PH-07 transaction; (c) `make readiness` reports all 12 preconditions with an actionable remedy for each. `tests/test_base_image.py` (23 cases) proves the recorded Windows 10 and 11 digests match the values Microsoft publishes, that a flipped byte, a wrong size, and a non-ISO file with a forged matching record are each refused, and that the answer file is well-formed and reproducible. Skipping the digest, magic, or size check, or adding a recovery partition, were each mutation-tested and fail the suite. **Both ISOs are now acquired and verified, and `make readiness` reports 21/21 with `ready: true`.** Each was accepted by `verify-media` on size, SHA-256, and ISO 9660 structure against its immutable record. The Windows 11 Enterprise 25H2 Evaluation image resolves from a stable `go.microsoft.com/fwlink` redirect whose advertised length matches the recorded 7,092,807,680 bytes exactly, so that one is scriptable. The Windows 10 retail image still is not: its download URL is minted per session behind Microsoft's Sentinel bot defence, so the page selection must be performed in a real browser and the resulting signed URL handed to the downloader. The base images themselves are still unbuilt; readiness green means every input a build needs is present and authenticated |
 | PH-13 | End-to-end happy paths | The full install path is proven end to end against the deterministic virtual platform for both BitLocker profiles (`runtime_convergence.rs`, and the `jstack-installer run` CLI reaching `terminal.completed` with 83 durable journal records). A virtual result is explicitly **not** accepted as evidence for this row | **blocked on PH-12**; requires real guest, disk, firmware, journal, and cold-boot observations |
 | PH-14 | Graph-derived fault campaigns | `installer/controller/tests/fault_campaign.rs` derives its cases from the graph, not a hand-written list: every mutating transition on both BitLocker profiles is exercised under every fault class (stop-before-action, success-claimed-without-effect, fail-after-effect) and every crash boundary, asserting each outcome lands on a graph-declared state, that a clean failure yields exactly one canonical evidence object on the exact `failure_to` with the legal intent/failed/advanced triad, that a fault which landed a durable object halts for manual recovery and fabricates nothing, that every case replays to the same disposition in a fresh runtime, and that a second resume appends nothing. Plus tamper (a corrupted loader can never be armed), stale identity (a journal from another plan is rejected), reboot (a boot cannot be observed twice), finalizer/security ordering, and a graph search proving every post-mutation state can reach a declared terminal. **This campaign found and fixed a real bug**: firmware boot entries were absent from the plan's rollback-object list, so a failure after creating one would have falsely claimed no committed effect. ENOSPC, short-write, and sharing classes are covered by the PH-07 image suite | virtual campaign complete; **disposable-VM campaign still open** (requires PH-12) |
 | PH-15 | Repetition and freshness | Fresh-run isolation is enforced and tested by the harness (run ids, exclusive mutable state, overlay and hard-link rejection). `installer/controller/tests/repetition.rs` establishes the property that makes a ten-overlay VM campaign meaningful rather than ten repetitions of one accident: ten fresh runs per supported profile are byte-identical in terminal state, whole-machine digest, and journal length; the two profiles reach genuinely different machines, so that determinism is not an artifact of the profile being ignored; interleaving profiles repeatedly changes nothing; a failing run between two successful ones does not contaminate them; a fresh machine has all 22 should-be-false conditions false and the should-be-true ones true; and a fresh machine is a pure function of the plan and profile. Excluding BitLocker from the machine digest, or leaking one field of start state, were each mutation-tested and fail the suite | virtual repetition complete; the **ten-fresh-overlay VM requirement is blocked on PH-12** |
@@ -104,39 +104,74 @@ evidence.
 
 ## Current status
 
-Twelve rows are implemented and mutation-tested: PH-01 through PH-10, PH-12
-(preparation and verification), PH-14 (virtual half), PH-16, and PH-17, and PH-11
-is mostly resolved (9 of 12 inputs). The
-remaining work is blocked only on acquiring the Windows install media and on host
-memory, not on any code defect:
+**Do not read the status from this section. Compute it.**
+
+```sh
+make -C installer progress        # static probes, part of `make check`
+make -C installer progress-full   # also runs the readiness and identity gates
+```
+
+`installer/tools/ledger_status.py` evaluates every row in
+`installer/model/pre-hardware-ledger.json` by running probes against the tree:
+does the evidence file exist, does the named safety property still hold, does the
+gate still exit zero. A row is reported open whenever its probes fail, regardless
+of what any prose says. That is deliberate. A status column in a document is a
+claim about the past; a probe is a measurement of the present. This section
+records the interpretation, and the tool records the truth.
+
+Three numbers are reported, and conflating them is the mistake the separation
+exists to prevent:
+
+| Number | Current | Meaning |
+| --- | --- | --- |
+| implemented | 18/18 | The code exists and its static safety properties hold |
+| pre-hardware closed | 10/18 | Implemented *and* every named virtual or firmware observation exists |
+| hardware closed | 0/8 | Physical observations. QEMU can never close one of these |
+
+`implemented` reaching 18/18 is not completion. Eight rows remain open because
+they name an observation that source code cannot supply: PH-08 and PH-09 need a
+live guest, PH-13 through PH-15 need real VM runs, PH-16 needs a real evidence
+bundle, PH-11 needs the built base images, and PH-18 must run on the frozen tree.
+The tracker refuses to close those from unit tests, and
+`tests/test_ledger_status.py` mutation-tests that refusal by removing the gate and
+confirming the row would otherwise close.
+
+The baseline is a ratchet. `make progress` fails if fewer than 18 rows are
+implemented, so a regression that would previously have been a quietly edited
+table is now a build failure.
 
 | Row | Blocker |
 | --- | --- |
-| PH-11 | 9 of 12 required inputs are resolved. The other 3 are base-image scoped and depend on PH-12 |
-| PH-12 | Tooling, media verification, answer media, and a readiness report are all complete and tested. `make readiness` reports 18/21: the two ISOs must be downloaded manually and the host is below the 6 GiB memory gate |
-| PH-13 | Depends on PH-12 |
-| PH-15 | Virtual repetition is complete; only the ten-fresh-overlay VM runs depend on PH-12 |
+| PH-08, PH-09 | Adapters are implemented and statically bounded; no live guest execution yet |
+| PH-11 | 9 of 12 inputs resolved. The other 3 are base-image scoped and depend on PH-12 |
+| PH-12 | Inputs are complete: readiness is 21/21 `ready: true` and both ISOs are digest-verified. The base images themselves are still unbuilt |
+| PH-13, PH-14, PH-15 | Virtual halves complete; real VM observations outstanding |
+| PH-16 | Verifier complete; no real run bundle exists to verify |
 | PH-18 | Must run on the immutable tree that contains PH-12 through PH-15 |
 
 To unblock, in order:
 
-1. Run the readiness gate to see the current blocker list. Its stdout is pure
-   JSON and it exits nonzero while anything is blocked, so it can be scripted:
+1. Run the readiness gate. Its stdout is pure JSON and it exits nonzero while
+   anything is blocked, so it can be scripted:
 
    ```sh
    make --no-print-directory -C installer/vm readiness
    ```
-2. Download both ISOs into `$JCODE_SCRATCH_DIR/jstack-windows-vm` (the remedy
-   field prints the exact filename and page for each), then verify each with
+2. Both ISOs are already acquired and verified. If the workspace is ever rebuilt,
+   note that the Windows 11 Enterprise Evaluation image downloads from a stable
+   `go.microsoft.com/fwlink` redirect and can be scripted, while the Windows 10
+   retail image cannot: its URL is minted per session behind Microsoft's Sentinel
+   bot defence, so the edition and language selection must happen in a real
+   browser and the resulting signed URL be handed to the downloader. Verify each
+   with
    `python3 installer/vm/base_image.py --workspace <lab> verify-media --record <key>`.
-   This is manual: Microsoft's download API rejects scripted requests via
-   Sentinel, and the page cannot be driven headlessly.
-3. Free memory until `readiness` reports `host:memory` satisfied.
-4. Build the answer media with `base_image.py ... answer-media`, then build and
+3. Build the answer media with `base_image.py ... answer-media`, then build and
    independently inspect the base images, resolving the `required-unresolved`
    profile fields (PH-12, then PH-11).
-5. Run the end-to-end and repetition campaigns (PH-13, PH-15).
-6. Freeze the tree and run the release-candidate gate (PH-18).
+4. Run the end-to-end and repetition campaigns (PH-13, PH-15) and the
+   disposable-VM fault campaign (PH-14), which also exercises PH-08 and PH-09
+   against a live guest and produces the first PH-16 evidence bundle.
+5. Freeze the tree and run the release-candidate gate (PH-18).
 
 ## Firmware-observed evidence
 
