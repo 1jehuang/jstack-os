@@ -83,6 +83,43 @@ class BoundsTests(unittest.TestCase):
         self.assertLessEqual(reader.MAX_OBSERVATION_BYTES, 1024 * 1024)
 
 
+class LiveGuestTests(unittest.TestCase):
+    """A live overlay must be refused by name, not by a confusing proxy error.
+
+    Reading a running guest's qcow2 fails on its write lock, and the raw failure
+    blames `qemu-img info exited with error status 1`. That is a true statement
+    about the wrong component, which is the exact misattribution that has already
+    cost this build path hours.
+    """
+
+    def test_a_locked_overlay_is_reported_as_a_running_guest(self) -> None:
+        from unittest import mock
+
+        with mock.patch.object(reader, "_overlay_is_in_use", return_value=True):
+            with mock.patch.object(Path, "is_file", return_value=True):
+                with self.assertRaises(reader.ObservationError) as raised:
+                    reader.read_observation(Path("/w/disk-overlay.qcow2"))
+
+        message = str(raised.exception)
+        self.assertIn("still holds", message)
+        # The message must say what to do, not only what went wrong.
+        self.assertIn("Shut the guest down", message)
+        self.assertNotIn("qemu-img info exited", message)
+
+    def test_the_lock_is_checked_before_the_read_is_attempted(self) -> None:
+        """Checking afterwards would surface the confusing error first."""
+
+        body = (ROOT / "tools" / "read_guest_observation.py").read_text(
+            encoding="utf-8"
+        )
+        reader_body = body[body.index("def read_observation(") :]
+        self.assertLess(
+            reader_body.index("_overlay_is_in_use("),
+            reader_body.index("guestfish"),
+            "the live-guest check must precede the read it explains",
+        )
+
+
 class SealIntegrityTests(unittest.TestCase):
     """Reading a result must not become a channel into the host."""
 

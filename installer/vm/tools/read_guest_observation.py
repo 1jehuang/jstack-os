@@ -56,6 +56,32 @@ def _tool(name: str) -> str:
     return found
 
 
+def _overlay_is_in_use(overlay: Path) -> bool:
+    """Report whether a guest still holds this overlay open.
+
+    qcow2 carries a write lock, so a running guest makes the image unreadable.
+    Detecting that here means the caller is told the guest is still up, rather
+    than being handed a `qemu-img info exited with error status 1` that names the
+    wrong component. This exact misattribution has already cost this build path
+    hours, so it is worth one extra check.
+    """
+
+    probe = shutil.which("qemu-img")
+    if probe is None:
+        return False
+    completed = subprocess.run(
+        [probe, "info", str(overlay)],
+        capture_output=True,
+        check=False,
+        timeout=60,
+        env=lab.subprocess_environment(overlay.parent),
+    )
+    if completed.returncode == 0:
+        return False
+    message = completed.stderr.decode("utf-8", errors="replace").lower()
+    return "lock" in message or "in use" in message
+
+
 def read_observation(
     overlay: Path, guest_path: str = OBSERVATION_GUEST_PATH, scratch: Path | None = None
 ) -> bytes:
@@ -68,6 +94,14 @@ def read_observation(
 
     if not overlay.is_file():
         raise ObservationError(f"no overlay at {overlay}")
+
+    if _overlay_is_in_use(overlay):
+        raise ObservationError(
+            f"the guest still holds {overlay.name} open. An observation must be "
+            "read after the guest has stopped: a qcow2 being written has no "
+            "consistent state, and a result taken from one would be a guess "
+            "presented as evidence. Shut the guest down and read it again."
+        )
 
     home = scratch if scratch is not None else overlay.parent
     completed = subprocess.run(
