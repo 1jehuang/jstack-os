@@ -255,6 +255,49 @@ class AutounattendTests(BaseImageTestCase):
         with self.assertRaises(base_image.BaseImageError):
             base_image.build_autounattend(self.record(), 8 * 1024**3)
 
+    def test_oobe_declares_the_locale_in_its_own_pass(self) -> None:
+        """windowsPE localises setup; OOBE asks its own region question.
+
+        Regression coverage for an observed failure: a fully installed guest
+        stopped on "Is this the right country or region?" and stayed there until
+        the build timed out. windowsPE carried the locale, but oobeSystem had no
+        International-Core component, so OOBE asked anyway. Nothing downstream
+        could recover, because FirstLogonCommands only runs once OOBE finishes,
+        so the shutdown that signals success was unreachable.
+        """
+
+        answer = base_image.build_autounattend(self.record(), 64 * 1024**3).decode()
+        oobe = answer[answer.index('<settings pass="oobeSystem">') :]
+        self.assertIn("Microsoft-Windows-International-Core", oobe)
+        for element in ("InputLocale", "SystemLocale", "UILanguage", "UserLocale"):
+            with self.subTest(element=element):
+                self.assertIn(f"<{element}>en-US</{element}>", oobe)
+
+    def test_every_interactive_oobe_page_is_suppressed(self) -> None:
+        """One unsuppressed page costs a full ninety-minute timeout.
+
+        Enumerated rather than spot-checked, because the failure mode is silent
+        and expensive: nobody is present to answer any page, so a single missing
+        suppression is indistinguishable from a hang.
+        """
+
+        answer = base_image.build_autounattend(self.record(), 64 * 1024**3).decode()
+        required = (
+            "HideEULAPage",
+            "HideLocalAccountScreen",
+            "HideOEMRegistrationScreen",
+            "HideOnlineAccountScreens",
+            "HideWirelessSetupInOOBE",
+            "SkipMachineOOBE",
+            "SkipUserOOBE",
+        )
+        for element in required:
+            with self.subTest(element=element):
+                self.assertIn(f"<{element}>true</{element}>", answer)
+        # ProtectYourPC takes a level, not a boolean; 3 declines every optional
+        # telemetry prompt rather than presenting it.
+        self.assertIn("<ProtectYourPC>3</ProtectYourPC>", answer)
+
     def test_the_answer_file_asks_the_guest_to_power_off(self) -> None:
         """The build's only success signal is a guest-initiated shutdown.
 

@@ -275,15 +275,37 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
         "    </component>",
         "  </settings>",
         '  <settings pass="oobeSystem">',
+        # The locale must be declared again in oobeSystem, not only in windowsPE.
+        # windowsPE localises *setup*; OOBE asks the user its own region question
+        # unless this component answers it. Without it a completed install stops
+        # on "Is this the right country or region?" forever, which was observed:
+        # the guest sat there with its disk unchanged until the build timed out,
+        # and because FirstLogonCommands runs only after OOBE finishes, the
+        # shutdown that signals success was never reached either.
+        '    <component name="Microsoft-Windows-International-Core"'
+        ' processorArchitecture="amd64"'
+        ' publicKeyToken="31bf3856ad364e35" language="neutral"'
+        ' versionScope="nonSxS">',
+        "      <InputLocale>en-US</InputLocale>",
+        "      <SystemLocale>en-US</SystemLocale>",
+        "      <UILanguage>en-US</UILanguage>",
+        "      <UserLocale>en-US</UserLocale>",
+        "    </component>",
         '    <component name="Microsoft-Windows-Shell-Setup"'
         ' processorArchitecture="amd64"'
         ' publicKeyToken="31bf3856ad364e35" language="neutral"'
         ' versionScope="nonSxS">',
         "      <OOBE>",
         "        <HideEULAPage>true</HideEULAPage>",
+        # Every interactive OOBE page must be suppressed, not merely most of
+        # them: any single page left enabled stalls the build for its full
+        # timeout, because nobody is there to answer it.
+        "        <HideLocalAccountScreen>true</HideLocalAccountScreen>",
         "        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>",
         "        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>",
         "        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>",
+        "        <SkipMachineOOBE>true</SkipMachineOOBE>",
+        "        <SkipUserOOBE>true</SkipUserOOBE>",
         "        <ProtectYourPC>3</ProtectYourPC>",
         "      </OOBE>",
         "      <UserAccounts>",
