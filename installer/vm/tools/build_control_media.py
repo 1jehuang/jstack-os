@@ -142,23 +142,49 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--action", required=True)
-    parser.add_argument("--plan-hash", required=True)
-    parser.add_argument("--capability", required=True, help="capability JSON document")
+    parser.add_argument(
+        "--request",
+        help=(
+            "a dispatch document from `jstack-installer dispatch`; preferred, "
+            "because it carries the action, plan, capability, and plan-derived "
+            "targets as one already-authorised unit"
+        ),
+    )
+    parser.add_argument("--action")
+    parser.add_argument("--plan-hash")
+    parser.add_argument("--capability", help="capability JSON document")
     parser.add_argument("--attestation-file", required=True)
     parser.add_argument("--targets", help="JSON object of plan-derived target GUIDs")
     arguments = parser.parse_args()
 
     try:
         attestation = json.loads(Path(arguments.attestation_file).read_text())["token"]
+        if arguments.request:
+            # Taking the whole document keeps the medium's contents identical to
+            # what the controller authorised. Re-specifying the action or the
+            # targets by hand would be a second, unauthorised source of truth.
+            dispatched = json.loads(Path(arguments.request).read_text())
+            action = dispatched["action"]
+            plan_hash = dispatched["plan_hash"]
+            capability = dispatched["capability"]
+            targets = dispatched.get("targets", {})
+        elif arguments.action and arguments.plan_hash and arguments.capability:
+            action = arguments.action
+            plan_hash = arguments.plan_hash
+            capability = json.loads(arguments.capability)
+            targets = json.loads(arguments.targets) if arguments.targets else {}
+        else:
+            raise ControlMediaError(
+                "supply --request, or all of --action, --plan-hash, and --capability"
+            )
         evidence = build(
             Path(arguments.workspace),
             Path(arguments.output),
-            arguments.action,
-            arguments.plan_hash,
-            json.loads(arguments.capability),
+            action,
+            plan_hash,
+            capability,
             attestation,
-            json.loads(arguments.targets) if arguments.targets else {},
+            targets,
         )
     except (ControlMediaError, OSError, KeyError, json.JSONDecodeError) as error:
         print(json.dumps({"error": str(error)}, indent=2), file=sys.stderr)

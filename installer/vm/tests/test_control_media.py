@@ -106,6 +106,57 @@ class MediumTests(unittest.TestCase):
         self.assertEqual(observed, source)
 
 
+class DispatchEquivalenceTests(unittest.TestCase):
+    """The medium must carry exactly what the controller authorised.
+
+    The controller decides what may happen and the medium carries it to a guest.
+    If those two can disagree, the authorisation is decorative: the guest acts on
+    the medium, so the medium is what actually decides. Re-specifying the action
+    or the targets by hand would be a second, unauthorised source of truth.
+    """
+
+    def dispatched(self) -> dict:
+        return {
+            "action": ACTION,
+            "plan_hash": PLAN,
+            "actor": "windows_bootstrap",
+            "capability": capability(),
+            "targets": {
+                "disk_guid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "target_size_bytes": 386547056640,
+            },
+        }
+
+    def test_the_request_reproduces_the_dispatch_document(self) -> None:
+        source = self.dispatched()
+        rendered = json.loads(
+            control.build_request(
+                source["action"],
+                source["plan_hash"],
+                source["capability"],
+                ATTESTATION,
+                source["targets"],
+            )
+        )
+        self.assertEqual(rendered["action"], source["action"])
+        self.assertEqual(rendered["plan_hash"], source["plan_hash"])
+        self.assertEqual(rendered["capability"], source["capability"])
+        for name, value in source["targets"].items():
+            with self.subTest(target=name):
+                self.assertEqual(rendered[name], value)
+
+    def test_targets_are_carried_verbatim_rather_than_recomputed(self) -> None:
+        """A target the medium derives itself is a target nobody authorised."""
+
+        body = (ROOT / "tools" / "build_control_media.py").read_text(encoding="utf-8")
+        # Targets are spread into the document unchanged; nothing recomputes a
+        # size or a GUID on the way through.
+        self.assertIn("**targets", body)
+        for forbidden in ("target_size_bytes =", "disk_guid =", "//", "* 1024**3"):
+            with self.subTest(token=forbidden):
+                self.assertNotIn(f"{forbidden} ", body)
+
+
 class SealIntegrityTests(unittest.TestCase):
     """The channel must not become a way to reach the host.
 
