@@ -247,6 +247,42 @@ def require_memory_envelope(
     return available
 
 
+# The profile's base-image-scoped required inputs, each paired with the path
+# inside `base-image.json` that its `evidence_locator` names. Kept as one table
+# so the document this module writes and the document the profile reads cannot
+# drift apart silently: a test walks the profile and asserts every
+# base-image-scoped locator appears here.
+BASE_IMAGE_SCOPED_LOCATORS = {
+    "base-image-sha256": ("image", "sha256"),
+    "base-image-gpt-sha256": ("disk", "gpt_sha256"),
+    "ovmf-enrolled-vars-sha256": ("firmware", "enrolled_vars_sha256"),
+}
+
+
+def base_image_document(evidence: dict[str, Any], enrolled_vars_sha256: str) -> dict[str, Any]:
+    """Shape one build's evidence into the document the profile reads.
+
+    The profile resolves its base-image-scoped inputs by JSON pointer into
+    `base-image.json`, so this layout is a contract rather than a convenience.
+    It is built from the table above instead of being written out by hand, so a
+    renamed key breaks the table and its test rather than silently producing a
+    document the runner cannot resolve against.
+    """
+
+    values = {
+        "base-image-sha256": evidence["sha256"],
+        "base-image-gpt-sha256": evidence["gpt_sha256"],
+        "ovmf-enrolled-vars-sha256": enrolled_vars_sha256,
+    }
+    document: dict[str, Any] = {
+        "schema_version": 1,
+        "guest": {"build": evidence},
+    }
+    for input_id, (section, key) in BASE_IMAGE_SCOPED_LOCATORS.items():
+        document.setdefault(section, {})[key] = values[input_id]
+    return document
+
+
 @dataclass(frozen=True)
 class BuildInputs:
     """The immutable inputs one base-image build consumes."""
@@ -755,7 +791,7 @@ def build(workspace: Path, record_key: str, timeout_seconds: int = INSTALL_TIMEO
     profile = load_profile(record_key)
     inspection = inspect_disk(inputs.disk, profile, workspace)
 
-    return {
+    evidence = {
         "record_key": record_key,
         "disk": str(inputs.disk),
         "sha256": lab.sha256_file(inputs.disk),
@@ -770,6 +806,22 @@ def build(workspace: Path, record_key: str, timeout_seconds: int = INSTALL_TIMEO
         "tpm": "2.0",
         "memory_available_bytes_at_launch": memory_available,
     }
+
+    # Emit the document the profile's base-image-scoped required inputs resolve
+    # against. Written here rather than by a separate step, because the digests
+    # are of *this* disk: a build and its evidence should not be separable, or a
+    # stale document could describe an image that no longer exists.
+    document = base_image_document(
+        evidence,
+        lab.sha256_file(workspace / firmware_enrollment.ENROLLED_VARS_NAME),
+    )
+    destination = workspace / "base-image.json"
+    destination.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.chmod(destination, 0o600)
+    evidence["evidence_document"] = str(destination)
+    return evidence
 
 
 def parser() -> argparse.ArgumentParser:

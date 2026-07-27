@@ -398,6 +398,70 @@ class TpmTests(unittest.TestCase):
         self.assertIn("bus=xhci.0", joined)
 
 
+class EvidenceDocumentTests(unittest.TestCase):
+    """The emitted document must satisfy the profile's own locators.
+
+    The profile resolves its base-image-scoped inputs by JSON pointer into
+    `base-image.json`. Nothing wrote that document, so those three inputs were
+    unresolvable no matter how many images were built. The locators are read out
+    of the profile here rather than restated, so a profile that adds or renames
+    one fails this test instead of silently going unresolvable again.
+    """
+
+    def evidence(self) -> dict:
+        return {
+            "record_key": PROFILE_KEY,
+            "sha256": "a" * 64,
+            "gpt_sha256": "b" * 64,
+            "inspection": {"gpt_present": True},
+        }
+
+    def test_every_base_image_scoped_locator_resolves(self) -> None:
+        profile = base_image_build.load_profile(PROFILE_KEY)
+        document = base_image_build.base_image_document(self.evidence(), "c" * 64)
+
+        scoped = [
+            item
+            for item in profile["required_inputs"]
+            if item.get("evidence_scope") == "base-image-acquisition"
+        ]
+        self.assertTrue(scoped, "the profile must declare base-image-scoped inputs")
+
+        for item in scoped:
+            with self.subTest(input_id=item["id"]):
+                document_name, _, pointer = item["evidence_locator"].partition("#")
+                self.assertEqual(document_name, "base-image.json")
+                cursor = document
+                for step in [part for part in pointer.split("/") if part]:
+                    self.assertIn(step, cursor, f"{item['evidence_locator']} does not resolve")
+                    cursor = cursor[step]
+                self.assertRegex(
+                    cursor, r"^[0-9a-f]{64}$", "a locator must resolve to a digest"
+                )
+
+    def test_the_digests_are_the_builds_own(self) -> None:
+        """A document describing a different image would be worse than none."""
+
+        document = base_image_build.base_image_document(self.evidence(), "c" * 64)
+        self.assertEqual(document["image"]["sha256"], "a" * 64)
+        self.assertEqual(document["disk"]["gpt_sha256"], "b" * 64)
+        self.assertEqual(document["firmware"]["enrolled_vars_sha256"], "c" * 64)
+
+    def test_the_whole_build_evidence_is_retained(self) -> None:
+        document = base_image_build.base_image_document(self.evidence(), "c" * 64)
+        self.assertEqual(document["guest"]["build"]["record_key"], PROFILE_KEY)
+
+    def test_the_build_writes_the_document_it_promises(self) -> None:
+        body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
+        builder = body[body.index("def build(") :]
+        self.assertIn('workspace / "base-image.json"', builder)
+        self.assertLess(
+            builder.index("inspect_disk("),
+            builder.index("base_image_document("),
+            "evidence must only be emitted for a disk that passed inspection",
+        )
+
+
 class TerminationTests(unittest.TestCase):
     """A signalled guest must be reported as signalled.
 
