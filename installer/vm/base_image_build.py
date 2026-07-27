@@ -259,6 +259,19 @@ BASE_IMAGE_SCOPED_LOCATORS = {
 }
 
 
+def base_image_document_path(workspace: Path, record_key: str) -> Path:
+    """Return the per-record path for one build's evidence document.
+
+    Both profiles name their evidence document `base-image.json`, so the locator
+    is relative to a record rather than global. Writing them to one shared file
+    would mean the second build silently overwrote the first profile's evidence
+    and left its required inputs resolving to the wrong image's digests, which is
+    worse than not resolving at all.
+    """
+
+    return workspace / f"base-image.{record_key}.json"
+
+
 def base_image_document(evidence: dict[str, Any], enrolled_vars_sha256: str) -> dict[str, Any]:
     """Shape one build's evidence into the document the profile reads.
 
@@ -815,7 +828,7 @@ def build(workspace: Path, record_key: str, timeout_seconds: int = INSTALL_TIMEO
         evidence,
         lab.sha256_file(workspace / firmware_enrollment.ENROLLED_VARS_NAME),
     )
-    destination = workspace / "base-image.json"
+    destination = base_image_document_path(workspace, record_key)
     destination.write_text(
         json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

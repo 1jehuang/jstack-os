@@ -14,6 +14,7 @@ mock would reproduce perfectly while proving nothing.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import base_image  # noqa: E402
 import base_image_build  # noqa: E402
 import lab  # noqa: E402
 
@@ -491,10 +493,40 @@ class EvidenceDocumentTests(unittest.TestCase):
         document = base_image_build.base_image_document(self.evidence(), "c" * 64)
         self.assertEqual(document["guest"]["build"]["record_key"], PROFILE_KEY)
 
+    def test_each_record_gets_its_own_evidence_document(self) -> None:
+        """Both profiles name the same document, so the path must be per record.
+
+        A shared file would mean the second build silently overwrote the first
+        profile's evidence, leaving its required inputs resolving to a different
+        image's digests. Resolving to the wrong image is worse than not resolving:
+        the first is a false claim, the second is an honest gap.
+        """
+
+        workspace = Path("/w")
+        first = base_image_build.base_image_document_path(workspace, "record-a")
+        second = base_image_build.base_image_document_path(workspace, "record-b")
+        self.assertNotEqual(first, second)
+        self.assertIn("record-a", first.name)
+
+    def test_the_locators_are_relative_to_a_record_not_global(self) -> None:
+        """Every profile names 'base-image.json', which is why it must be scoped."""
+
+        for profile_path in sorted(base_image.PROFILES.glob("*.profile.json")):
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            scoped = [
+                item["evidence_locator"]
+                for item in profile["required_inputs"]
+                if item.get("evidence_scope") == "base-image-acquisition"
+            ]
+            with self.subTest(profile=profile_path.name):
+                self.assertTrue(scoped)
+                for locator in scoped:
+                    self.assertTrue(locator.startswith("base-image.json#"))
+
     def test_the_build_writes_the_document_it_promises(self) -> None:
         body = (ROOT / "base_image_build.py").read_text(encoding="utf-8")
         builder = body[body.index("def build(") :]
-        self.assertIn('workspace / "base-image.json"', builder)
+        self.assertIn("base_image_document_path(workspace, record_key)", builder)
         self.assertLess(
             builder.index("inspect_disk("),
             builder.index("base_image_document("),

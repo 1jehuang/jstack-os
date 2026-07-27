@@ -35,7 +35,7 @@ class VerificationError(RuntimeError):
 def verify(workspace: Path, record_key: str) -> dict[str, object]:
     """Re-measure the built image and confirm the evidence still describes it."""
 
-    document_path = workspace / "base-image.json"
+    document_path = base_image_build.base_image_document_path(workspace, record_key)
     if not document_path.is_file():
         raise VerificationError(f"no base-image evidence document: {document_path}")
     document = json.loads(document_path.read_text(encoding="utf-8"))
@@ -111,13 +111,33 @@ def main() -> int:
     parser.add_argument("--workspace", required=True)
     parser.add_argument(
         "--record",
-        default="windows-11-enterprise-25h2-en-us-eval",
-        help="media record key whose base image is verified",
+        help="one media record key; default verifies every record that has an image",
     )
     arguments = parser.parse_args()
 
+    workspace = Path(arguments.workspace)
+    if arguments.record is not None:
+        candidates = [arguments.record]
+    else:
+        # Default to every record with a document present. A verifier pinned to
+        # one record would report success for a workspace whose second image was
+        # never checked, and PH-12 is a claim about images plural.
+        candidates = [
+            key
+            for key in sorted(base_image.load_media_records())
+            if base_image_build.base_image_document_path(workspace, key).is_file()
+        ]
+        if not candidates:
+            print(
+                json.dumps({"error": "no base-image evidence document in the workspace"}),
+                file=sys.stderr,
+            )
+            return 1
+
+    reports = []
     try:
-        report = verify(Path(arguments.workspace), arguments.record)
+        for record_key in candidates:
+            reports.append(verify(workspace, record_key))
     except (
         VerificationError,
         base_image.BaseImageError,
@@ -127,7 +147,7 @@ def main() -> int:
     ) as error:
         print(json.dumps({"error": str(error)}, indent=2), file=sys.stderr)
         return 1
-    print(json.dumps(report, indent=2, sort_keys=True))
+    print(json.dumps(reports, indent=2, sort_keys=True))
     return 0
 
 
