@@ -301,25 +301,48 @@ def run_probe(probe: dict[str, Any], workspace: str, run_commands: bool) -> Prob
 
 
 def evaluate(ledger: dict[str, Any], workspace: str, run_commands: bool) -> list[RowResult]:
+    rows = ledger["requirements"]
+    probe_results = {
+        row["id"]: [run_probe(p, workspace, run_commands) for p in row["probes"]] for row in rows
+    }
+
+    # Closure is computed to a fixed point so a satisfied dependency stops
+    # blocking. A row listing a dependency that has itself closed is not held
+    # open by it; only genuinely unmet dependencies block.
+    closed: set[str] = set()
+    for _ in range(len(rows) + 1):
+        changed = False
+        for row in rows:
+            rid = row["id"]
+            if rid in closed:
+                continue
+            if not all(p.passed for p in probe_results[rid]):
+                continue
+            if row.get("requires_vm_observation") or row.get("requires_clean_tree"):
+                continue
+            if any(dep not in closed for dep in row.get("blocked_by", []) or []):
+                continue
+            closed.add(rid)
+            changed = True
+        if not changed:
+            break
+
     results: list[RowResult] = []
-    for row in ledger["requirements"]:
-        probes = [run_probe(p, workspace, run_commands) for p in row["probes"]]
+    for row in rows:
+        rid = row["id"]
+        probes = probe_results[rid]
         implemented = all(p.passed for p in probes)
-        needs_vm = bool(row.get("requires_vm_observation"))
-        needs_clean = bool(row.get("requires_clean_tree"))
-        blocked_by = list(row.get("blocked_by", []) or [])
-        # A row that names an outstanding observation is never closed by a probe
-        # over source code, however green that probe is.
-        closed = implemented and not needs_vm and not needs_clean and not blocked_by
         results.append(
             RowResult(
-                id=row["id"],
+                id=rid,
                 title=row["title"],
                 level=row.get("level", "A0"),
                 required_level=row.get("required_level", row.get("level", "A0")),
                 implemented=implemented,
-                pre_hardware_closed=closed,
-                blocked_by=blocked_by,
+                pre_hardware_closed=rid in closed,
+                blocked_by=[
+                    dep for dep in (row.get("blocked_by", []) or []) if dep not in closed
+                ],
                 open_boundary=row.get("open_boundary", ""),
                 probes=probes,
             )

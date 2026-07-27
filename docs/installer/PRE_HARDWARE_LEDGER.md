@@ -75,6 +75,7 @@ substitute for a physical-hardware observation.
 | PH-16 | Canonical evidence and support matrix | `installer/vm/evidence/verify.py` (2,856 lines) is the fail-closed verifier: canonical-byte serialization, unique keys, no floats or non-finite numbers, exact field sets, artifact path normalization with symlink/hard-link/escape rejection, size and digest checks before any semantic claim, immutable profile list, and Ed25519 release trust. All four trust roots (`--trusted-release-policy-sha256`, `--trusted-profile-sha256`, `--trusted-media-sha256`, `--trusted-campaign-index-sha256`) are **required CLI arguments**, so a bundle can never nominate its own trust root. 36 verifier tests pass | verifier complete; **no real run bundles yet** (requires PH-13) |
 | PH-17 | Runnable packaging and recovery UX | `installer/controller/src/bin/jstack-installer.rs` provides `confirm` (renders the disk GUID, plan hash, before/after sizes, exact byte interval, every created and preserved partition GUID, and all rollback objects, refusing a mismatched display or a plan whose hash disagrees with its body), `confirmed` (validates a recorded confirmation), `run` (drives the full graph to `terminal.completed` through the sealed virtual boundary, 83 durable journal records, for both BitLocker profiles), `explain`, and `states` (actionable operator guidance derived from the graph, including an explicit "Do not retry" for `terminal.manual_recovery`). `tests/installer_cli.rs` (10 cases) runs the real binary and asserts the CLI offers no `--device`, `--disk`, or `--production` target, names no device path, and constructs exactly one kind of effect boundary | implemented; **virtual execution only** |
 | PH-18 | Frozen-tree assurance | Every commit in this work ran the full `installer/make check` gate on its own tree: exact Rust and Cargo 1.85.0, `cargo fmt --check`, `clippy -D warnings`, `cargo check --target x86_64-pc-windows-msvc`, the state-graph validator, the core/staging/controller suites, the static Windows collector and mutation-adapter surface validators, and 171 VM tests. A static host-device audit is enforced continuously by the harness and by tests asserting no `/dev` path, mount, loop device, `libvirt`, passthrough argument, or privileged call is reachable | **cannot close**: the release-candidate gate must run on the immutable tree that contains all completed work, which requires PH-12 through PH-15 first |
+| PH-19 | Microsoft-production firmware enrollment | `installer/vm/firmware_enrollment.py` builds the enrolled OVMF variable store the support profiles require as `ovmf-enrolled-vars-sha256`. The distribution ships an empty `OVMF_VARS.4m.fd`, so this is a build step. The store is verified by re-parsing the produced bytes rather than by trusting `virt-fw-vars` to exit 0: PK, KEK, and db must all be present, Secure Boot must be on, and CustomMode must be off, since custom mode would let the guest rewrite the trust anchors and void every later observation. Enrollment copies the read-only distribution template and writes only inside the workspace, and the template digest is re-checked afterwards because a build that mutated the shared file would silently change every future run's starting firmware state. `tests/test_firmware_enrollment.py` (14 cases) mocks the enrolling call into a silent no-op and confirms the read-back catches it, drops each trust anchor individually, and refuses a symlinked destination, an outside-workspace target, and a clobbered store. Recorded as `reproducible=false` on purpose: EFI signature lists embed a timestamp, so the identity to pin is one specific produced store | implemented and verified; **no Windows guest has booted from it yet** |
 
 ## Physical-only residual ledger
 
@@ -124,30 +125,38 @@ exists to prevent:
 
 | Number | Current | Meaning |
 | --- | --- | --- |
-| implemented | 18/18 | The code exists and its static safety properties hold |
-| pre-hardware closed | 10/18 | Implemented *and* every named virtual or firmware observation exists |
+| implemented | 19/19 | The code exists and its static safety properties hold |
+| pre-hardware closed | 9/19 | Implemented *and* every named virtual or firmware observation exists |
 | hardware closed | 0/8 | Physical observations. QEMU can never close one of these |
 
-`implemented` reaching 18/18 is not completion. Eight rows remain open because
-they name an observation that source code cannot supply: PH-08 and PH-09 need a
-live guest, PH-13 through PH-15 need real VM runs, PH-16 needs a real evidence
-bundle, PH-11 needs the built base images, and PH-18 must run on the frozen tree.
-The tracker refuses to close those from unit tests, and
-`tests/test_ledger_status.py` mutation-tests that refusal by removing the gate and
-confirming the row would otherwise close.
+`implemented` reaching 19/19 is not completion, and the gap between it and 9/19
+is the honest measure of what is left. Ten rows stay open because they name an
+observation that no amount of source code can supply: **nothing in this tree has
+ever run against a real Windows guest.** PH-08, PH-09, PH-12, PH-16, and PH-19
+need a live boot; PH-13 through PH-15 need real VM campaigns; PH-11 needs the
+built base images; PH-18 must run on the frozen tree. The tracker refuses to
+close those from unit tests, and `tests/test_ledger_status.py` mutation-tests
+that refusal by releasing the gate and confirming the row would otherwise close.
 
-The baseline is a ratchet. `make progress` fails if fewer than 18 rows are
+Dependency closure is computed to a fixed point, so a satisfied dependency stops
+blocking. A row that still names an outstanding observation carries
+`requires_vm_observation` and is held open by that, not by its dependency list.
+Those two reasons are kept separate because conflating them once produced a
+score of 73.7% that quietly counted five unbooted rows as closed.
+
+The baseline is a ratchet. `make progress` fails if fewer than 19 rows are
 implemented, so a regression that would previously have been a quietly edited
 table is now a build failure.
 
 | Row | Blocker |
 | --- | --- |
 | PH-08, PH-09 | Adapters are implemented and statically bounded; no live guest execution yet |
+| PH-19 | Enrolled firmware store is built and verified; no guest has booted from it |
 | PH-11 | 9 of 12 inputs resolved. The other 3 are base-image scoped and depend on PH-12 |
-| PH-12 | Inputs are complete: readiness is 21/21 `ready: true` and both ISOs are digest-verified. The base images themselves are still unbuilt |
+| PH-12 | Inputs are complete: readiness is 21/21 `ready: true`, both ISOs are digest-verified, and answer media builds for both profiles. The Windows base images themselves are still unbuilt |
 | PH-13, PH-14, PH-15 | Virtual halves complete; real VM observations outstanding |
 | PH-16 | Verifier complete; no real run bundle exists to verify |
-| PH-18 | Must run on the immutable tree that contains PH-12 through PH-15 |
+| PH-18 | Must run on the immutable tree that contains PH-12 through PH-15 and PH-19 |
 
 To unblock, in order:
 

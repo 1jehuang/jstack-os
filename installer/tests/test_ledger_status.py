@@ -44,7 +44,7 @@ class LedgerStructureTests(unittest.TestCase):
 
     def test_the_real_ledger_loads_and_keeps_the_physical_rows(self) -> None:
         self.assertEqual(self.ledger["kind"], "pre-hardware-completion-ledger")
-        self.assertEqual(len(self.ledger["requirements"]), 18)
+        self.assertEqual(len(self.ledger["requirements"]), 19)
         # HW-01..HW-08 must survive every refactor: they are the permanent
         # residual risk, and dropping them would silently claim more than is true.
         self.assertEqual(
@@ -226,8 +226,8 @@ class ClosureHonestyTests(unittest.TestCase):
                     f"{rid} requires a real VM observation and must not close from unit tests",
                 )
 
-    def test_blocked_rows_are_not_closed_even_when_implemented(self) -> None:
-        for rid in ("PH-08", "PH-09", "PH-11", "PH-16"):
+    def test_rows_awaiting_a_live_guest_are_not_closed_even_when_implemented(self) -> None:
+        for rid in ("PH-08", "PH-09", "PH-11", "PH-12", "PH-16", "PH-19"):
             with self.subTest(row=rid):
                 self.assertFalse(self.rows[rid].pre_hardware_closed)
 
@@ -247,8 +247,12 @@ class ClosureHonestyTests(unittest.TestCase):
         """Mutation test: the gate is what holds PH-13 open, not an accident."""
 
         body = copy.deepcopy(self.ledger)
+        for r in body["requirements"]:
+            # PH-13 transitively depends on rows that are themselves gated, so
+            # the whole chain must be released to isolate PH-13's own gate.
+            r["requires_vm_observation"] = False
+            r["requires_clean_tree"] = False
         row = next(r for r in body["requirements"] if r["id"] == "PH-13")
-        row["requires_vm_observation"] = False
         row["blocked_by"] = []
         rows = {r.id: r for r in evaluate(body, "/nonexistent", False)}
         self.assertTrue(rows["PH-13"].pre_hardware_closed)
@@ -308,8 +312,8 @@ class CliTests(unittest.TestCase):
         with contextlib.redirect_stdout(buffer):
             ledger_status.main(["--no-commands", "--json"])
         payload = json.loads(buffer.getvalue())
-        self.assertEqual(payload["requirements_total"], 18)
-        self.assertEqual(len(payload["rows"]), 18)
+        self.assertEqual(payload["requirements_total"], 19)
+        self.assertEqual(len(payload["rows"]), 19)
         self.assertEqual(payload["hardware_closed"], 0)
 
     def test_the_regression_gate_fails_below_the_recorded_baseline(self) -> None:
@@ -327,7 +331,7 @@ class CliTests(unittest.TestCase):
 
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = ledger_status.main(["--no-commands", "--require-implemented", "18"])
+            code = ledger_status.main(["--no-commands", "--require-implemented", "19"])
         self.assertEqual(code, 0)
 
 
