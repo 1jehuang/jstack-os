@@ -231,6 +231,35 @@ content-addressed evidence, the final tree is independently reviewed and
 committed, production mutation remains unreachable, and HW-01 through HW-08 are
 still explicitly reported as open.
 
+## Where the missing executor actually is
+
+PH-08 and PH-09 are often read as "the adapters are untested". That is not what
+is missing, and the distinction decides how much work remains.
+
+The adapters are real. `windows-mutation-adapters.ps1` calls `Resize-Partition`,
+`Suspend-BitLocker`, and `Register-ScheduledTask` for real, resolves every target
+by GPT GUID from the confirmed plan, and re-observes its own postcondition rather
+than trusting a return code. `linux_installer.py` is likewise a working
+implementation. Neither is a stub.
+
+What does not exist is the thing that would *call* them. `EffectBoundary` in
+`controller/src/runtime.rs` is a private-constructor wrapper whose only
+constructor is `EffectBoundary::virtual_platform`, binding it to an in-memory
+`VirtualPlatform`. There is no production constructor, so no code path leads from
+the controller to either adapter family. The assurance matrix records this
+exactly: "No executor or production adapter exists."
+
+So the remaining work on those two rows is an executor that carries a controller
+capability and a minted disposable-VM attestation from the graph to an adapter
+running inside a guest, plus the transport that reaches the guest at all. The
+fixed VM topology deliberately provides none: host forwarding is disabled, there
+is no guest agent, and no shared folder, which leaves read-only removable media
+as the only channel the profile permits.
+
+That seal is the safety property, not an oversight. Anything built here must keep
+it: the executor must remain unable to construct a boundary against the machine
+it is running on.
+
 ## What closing every row does *not* authorise
 
 Closing PH-01 through PH-18 does not make production mutation reachable, and
