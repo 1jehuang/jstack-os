@@ -398,6 +398,46 @@ class TpmTests(unittest.TestCase):
         self.assertIn("bus=xhci.0", joined)
 
 
+class StallDiagnosticTests(unittest.TestCase):
+    """A stalled build must produce evidence, not just silence.
+
+    Every defect in this build path so far was a modal dialog waiting for an
+    answer nobody would give, and all of them looked identical from outside: a
+    disk that stopped growing, followed by the full ninety-minute timeout. Three
+    were identified by looking at the guest's screen. The watcher therefore
+    captures it automatically, so the next one costs minutes rather than an hour.
+    """
+
+    def watcher(self) -> str:
+        return (ROOT / "tools" / "watch_base_image_build.sh").read_text(encoding="utf-8")
+
+    def test_the_watcher_captures_the_screen_on_a_sustained_stall(self) -> None:
+        body = self.watcher()
+        self.assertIn("capture_guest_screen.py", body)
+        self.assertIn("STALL_POLLS", body)
+
+    def test_the_capture_is_once_per_episode_not_once_per_poll(self) -> None:
+        """A wall of identical screenshots is not more evidence than one."""
+
+        self.assertIn("captured=1", self.watcher())
+
+    def test_the_watcher_resolves_the_disk_through_the_media_record(self) -> None:
+        """Guessing the name reported no-disk while the guest was 3 GiB in."""
+
+        body = self.watcher()
+        self.assertIn("record_id", body)
+        self.assertIn("load_media_records", body)
+
+    def test_the_capture_tool_never_sends_input(self) -> None:
+        """A diagnostic that can perturb the run it diagnoses is a liability."""
+
+        body = (ROOT / "tools" / "capture_guest_screen.py").read_text(encoding="utf-8")
+        for forbidden in ("send-key", "human-monitor-command", "system_reset", "quit"):
+            with self.subTest(command=forbidden):
+                self.assertNotIn(f'"{forbidden}"', body)
+        self.assertIn("screendump", body)
+
+
 class EvidenceDocumentTests(unittest.TestCase):
     """The emitted document must satisfy the profile's own locators.
 

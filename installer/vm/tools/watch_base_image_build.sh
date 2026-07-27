@@ -5,6 +5,13 @@
 # "wedged" look identical from outside. The qcow2's size is the guest writing,
 # which distinguishes them within one poll: no growth for many polls while the
 # process is alive means the installer is waiting on something.
+#
+# Every defect this build path has produced had the same signature: the disk
+# stops growing because setup is holding a modal dialog that nobody will answer,
+# and the build then burns its full ninety-minute timeout reporting nothing.
+# Five separate defects hid there. So on a sustained stall this script captures
+# the guest's screen through QMP, which is what actually identified three of
+# them, and turns an hour of silence into a picture of the dialog.
 set -uo pipefail
 
 record="${1:?record key required}"
@@ -20,6 +27,12 @@ print(base_image.load_media_records()['$record'].record_id)")"
 disk="$workspace/base-${record_id}.qcow2"
 evidence="$workspace/build-${record}.evidence.json"
 errors="$workspace/build-${record}.error.json"
+monitor="$workspace/build-${record}.qmp"
+
+# Four polls is two minutes. Long enough that ordinary pauses between install
+# phases do not trigger it, short enough that a stalled build is diagnosed in
+# minutes rather than at the timeout.
+STALL_POLLS=4
 
 python3 "$here/base_image_build.py" --workspace "$workspace" --record "$record" \
   >"$evidence" 2>"$errors" &
@@ -27,6 +40,7 @@ builder=$!
 
 last=0
 stalled=0
+captured=0
 while kill -0 "$builder" 2>/dev/null; do
   size=$( [ -f "$disk" ] && stat -c %s "$disk" || echo 0 )
   mib=$(( size / 1024 / 1024 ))
@@ -37,6 +51,17 @@ while kill -0 "$builder" 2>/dev/null; do
   else phase="setup-writing"
   fi
   echo "JCODE_PROGRESS {\"kind\":\"indeterminate\",\"current\":$mib,\"unit\":\"MiB\",\"message\":\"$phase (stalled polls: $stalled)\"}"
+
+  # Capture once per stall episode, not once per poll: a wall of identical
+  # screenshots is not more evidence than one.
+  if [ "$stalled" -ge "$STALL_POLLS" ] && [ "$captured" -eq 0 ] && [ -S "$monitor" ]; then
+    shot="$workspace/stall-${record}.png"
+    if python3 "$here/tools/capture_guest_screen.py" --monitor "$monitor" --output "$shot" >/dev/null 2>&1; then
+      echo "JCODE_CHECKPOINT {\"message\":\"stalled at ${mib} MiB; guest screen captured to ${shot}\"}"
+      captured=1
+    fi
+  fi
+  [ "$stalled" -lt "$STALL_POLLS" ] && captured=0
   sleep 30
 done
 
