@@ -337,7 +337,7 @@
           "why": "the four release-build inputs resolve from the repository once the boot-artifact manifest digest is supplied"
         }
       ],
-      "open_boundary": "The three base-image-scoped inputs resolve only once PH-12 builds the images.",
+      "open_boundary": "The three base-image-scoped inputs resolve for the Windows 11 profile from the built image. The Windows 10 profile's remain unresolved until its image is built.",
       "requires_vm_observation": true
     },
     {
@@ -376,9 +376,20 @@
             "readiness"
           ],
           "why": "the readiness gate exits nonzero while any of its 21 preconditions is blocked"
+        },
+        {
+          "kind": "command",
+          "argv": [
+            "python3",
+            "vm/tools/verify_base_image.py",
+            "--workspace",
+            "{workspace}"
+          ],
+          "timeout_seconds": 900,
+          "why": "a base image exists, its digests still match the evidence, its partition roles are the profile's, and the base-image-scoped inputs resolve"
         }
       ],
-      "open_boundary": "Readiness green means the inputs exist; the Windows base images themselves are still unbuilt.",
+      "open_boundary": "The Windows 11 base image is built and re-verified from the disk. The Windows 10 image is unbuilt, and no guest has yet been booted from either image by a campaign.",
       "requires_vm_observation": true
     },
     {
