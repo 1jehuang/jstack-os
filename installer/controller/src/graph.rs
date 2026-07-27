@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jstack_installer_core::Hash256;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -52,7 +52,7 @@ pub enum TerminalOutcome {
     ManualRecovery,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionRisk {
     ReadOnly,

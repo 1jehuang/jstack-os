@@ -5,6 +5,7 @@
 //! production disk, firmware, boot, filesystem, or security mutation API.
 
 pub mod authority;
+pub mod dispatch;
 pub mod graph;
 pub mod platform;
 pub mod replay;
