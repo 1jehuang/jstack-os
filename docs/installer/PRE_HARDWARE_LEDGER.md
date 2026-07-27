@@ -231,6 +231,26 @@ content-addressed evidence, the final tree is independently reviewed and
 committed, production mutation remains unreachable, and HW-01 through HW-08 are
 still explicitly reported as open.
 
+## What closing every row does *not* authorise
+
+Closing PH-01 through PH-18 does not make production mutation reachable, and
+reading this ledger alone would give the opposite impression. `STAGING.md` names
+four further prerequisites, and one of them is a component that does not exist
+anywhere in this tree rather than a test to run:
+
+| Prerequisite | State |
+| --- | --- |
+| TPM NV monotonic anchor protecting the anti-rollback floor from an already privileged local attacker | **not implemented** |
+| Windows reparse-point and ACL checks plus durable directory/volume flushing (`FlushFileBuffers`) | not implemented |
+| FAT32 rename, case-folding, disk-full, and power-loss behaviour observed in disposable VMs | not observed |
+| Linux descriptor-relative no-follow traversal with proven destination synchronisation | not implemented |
+
+Until all four hold, the local administrator and kernel remain inside the trusted
+computing base, which is precisely the assumption a real installation cannot
+make. The pre-hardware rows are necessary and are not sufficient, and any plan
+that schedules a first physical install off this ledger's percentage alone is
+reading it wrong.
+
 HW-01 through HW-08 remain open and unchanged. No result in this document was
 produced on physical hardware, and no QEMU or virtual-platform result may be
 used to close any of them.
