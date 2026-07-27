@@ -229,7 +229,7 @@
           "why": "no unbounded destructive cmdlet is reachable"
         }
       ],
-      "open_boundary": "No live Windows execution yet; requires PH-12 base images.",
+      "open_boundary": "No live Windows execution yet; the base images now exist, so this needs a campaign that boots one.",
       "requires_vm_observation": true
     },
     {
@@ -260,7 +260,7 @@
           "why": "the Linux adapters write only sparse regular files in the workspace"
         }
       ],
-      "open_boundary": "No live VM boot yet; requires PH-12 base images.",
+      "open_boundary": "No live VM boot yet; the base images now exist, so this needs a campaign that boots one.",
       "requires_vm_observation": true
     },
     {
@@ -337,7 +337,7 @@
           "why": "the four release-build inputs resolve from the repository once the boot-artifact manifest digest is supplied"
         }
       ],
-      "open_boundary": "The three base-image-scoped inputs resolve for the Windows 11 profile from the built image. The Windows 10 profile's remain unresolved until its image is built.",
+      "open_boundary": "All twelve required inputs resolve for both profiles from their built images. The row stays open only because no campaign has yet consumed a resolved profile against a live guest.",
       "requires_vm_observation": true
     },
     {
@@ -389,7 +389,7 @@
           "why": "a base image exists, its digests still match the evidence, its partition roles are the profile's, and the base-image-scoped inputs resolve"
         }
       ],
-      "open_boundary": "The Windows 11 base image is built and re-verified from the disk. The Windows 10 image is unbuilt, and no guest has yet been booted from either image by a campaign.",
+      "open_boundary": "Both base images are built and re-verified from their disks. A repeated build showed they are structurally identical but byte-different, so the pinned digest is one image's identity rather than a reproducibility guarantee, and no guest has yet been booted from either image by a campaign.",
       "requires_vm_observation": true
     },
     {
