@@ -326,3 +326,80 @@ fn sizes_are_shown_in_both_exact_and_human_terms() {
     assert!(output.stdout.contains("byte 387101753344 (360.51 GiB)"));
     assert!(output.stdout.contains("byte 430051426304 (400.51 GiB)"));
 }
+
+// ---------------------------------------------------------------------------
+// Guest dispatch
+// ---------------------------------------------------------------------------
+//
+// Dispatch is the only CLI command whose output can lead to a real machine
+// being repartitioned, so its refusals matter more than its successes. Each
+// refusal is asserted to name its own reason, because an operator who cannot
+// tell "wrong actor" from "unknown action" will eventually work around the
+// wrong one.
+
+#[test]
+fn dispatch_binds_every_target_to_the_plan() {
+    let output = cli(&["dispatch", &plan(), "shrink_windows_ntfs", "windows_bootstrap"]);
+    assert!(output.status, "dispatch failed: {}", output.stderr);
+
+    let request: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+    let plan_document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(plan()).unwrap()).unwrap();
+
+    // The plan is the only source of targets. A caller chooses the action and
+    // never what it operates on.
+    assert_eq!(request["plan_hash"], plan_document["plan_hash"]);
+    assert_eq!(
+        request["targets"]["disk_guid"],
+        plan_document["body"]["disk_guid"]
+    );
+    assert_eq!(
+        request["targets"]["windows_partition_guid"],
+        plan_document["body"]["windows_resize"]["partition_guid"]
+    );
+    assert_eq!(
+        request["targets"]["target_size_bytes"],
+        plan_document["body"]["windows_resize"]["target_size_bytes"]
+    );
+}
+
+#[test]
+fn dispatch_refuses_an_actor_from_another_platform() {
+    let output = cli(&["dispatch", &plan(), "shrink_windows_ntfs", "linux_installer"]);
+    assert!(!output.status);
+    assert!(
+        output.stderr.contains("not authorised"),
+        "the refusal must name the reason: {}",
+        output.stderr
+    );
+}
+
+#[test]
+fn dispatch_refuses_a_non_mutating_action() {
+    let output = cli(&["dispatch", &plan(), "collect_inventory", "windows_bootstrap"]);
+    assert!(!output.status);
+    assert!(output.stderr.contains("mutates nothing"), "{}", output.stderr);
+}
+
+#[test]
+fn dispatch_refuses_an_action_the_graph_does_not_declare() {
+    let output = cli(&["dispatch", &plan(), "wipe_disk", "windows_bootstrap"]);
+    assert!(!output.status);
+    assert!(output.stderr.contains("no action"), "{}", output.stderr);
+}
+
+#[test]
+fn dispatch_refuses_an_unknown_actor() {
+    let output = cli(&["dispatch", &plan(), "shrink_windows_ntfs", "attacker"]);
+    assert!(!output.status);
+    assert!(output.stderr.contains("UnknownActor"), "{}", output.stderr);
+}
+
+#[test]
+fn the_usage_text_states_that_targets_come_from_the_plan() {
+    // The CLI's own documentation is where an operator learns the boundary, so
+    // it has to say so rather than leaving it to be inferred.
+    let output = cli(&[]);
+    assert!(output.stdout.contains("dispatch"));
+    assert!(output.stdout.contains("never from an argument"));
+}

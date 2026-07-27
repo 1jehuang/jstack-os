@@ -18,6 +18,10 @@
 
 use std::process::ExitCode;
 
+use std::collections::BTreeMap;
+
+use jstack_installer_controller::authority::CapabilityAuthority;
+use jstack_installer_controller::dispatch::dispatch;
 use jstack_installer_controller::platform::{BitLockerState, RunningSystem, VirtualPlatform};
 use jstack_installer_controller::runtime::{EffectBoundary, Runtime, StepResult};
 use jstack_installer_controller::{
@@ -56,7 +60,11 @@ fn usage() -> String {
         "  run <plan.json> [--bitlocker]\n",
         "      Execute the install against a virtual machine and report the terminal.\n",
         "\n",
-        "  explain <state-id>\n",
+        "  dispatch <plan.json> <action> <actor>
+      Render the guest request document for one authorised mutating action.
+      Every target comes from the plan, never from an argument.
+
+  explain <state-id>\n",
         "      Describe a control state and the operator's options.\n",
         "\n",
         "  states\n",
@@ -100,6 +108,16 @@ fn run() -> Result<String, String> {
             };
             execute(&graph, &plan, bitlocker)
         }
+        Some("dispatch") => {
+            let plan = read_plan(arguments.get(1))?;
+            let action = arguments
+                .get(2)
+                .ok_or_else(|| "dispatch requires an action id".to_owned())?;
+            let actor = arguments
+                .get(3)
+                .ok_or_else(|| "dispatch requires an actor".to_owned())?;
+            dispatch_request(&graph, &plan, action, actor)
+        }
         Some("explain") => {
             let state = arguments
                 .get(1)
@@ -109,6 +127,55 @@ fn run() -> Result<String, String> {
         Some("states") => Ok(list_states(&graph)),
         _ => Ok(usage()),
     }
+}
+
+/// Render one authorised action as the request document a guest adapter reads.
+///
+/// Every target is taken from the confirmed plan rather than from an argument.
+/// A caller can choose *which* action to dispatch, and can never choose what it
+/// operates on, so a mistyped argument cannot redirect a mutation onto a disk
+/// the plan never named.
+fn dispatch_request(
+    graph: &GraphModel,
+    plan: &InstallPlan,
+    action: &str,
+    actor: &str,
+) -> Result<String, String> {
+    let authority = CapabilityAuthority::new(graph);
+    let capability = authority
+        .issue_actor(actor)
+        .map_err(|error| format!("actor capability refused: {error:?}"))?;
+
+    let mut targets: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    targets.insert(
+        "disk_guid".to_owned(),
+        serde_json::Value::String(plan.body.disk_guid.to_string()),
+    );
+    targets.insert(
+        "windows_partition_guid".to_owned(),
+        serde_json::Value::String(plan.body.windows_resize.partition_guid.to_string()),
+    );
+    targets.insert(
+        "target_size_bytes".to_owned(),
+        serde_json::Value::Number(plan.body.windows_resize.target_size_bytes.into()),
+    );
+    targets.insert(
+        "original_size_bytes".to_owned(),
+        serde_json::Value::Number(plan.body.windows_resize.original_size_bytes.into()),
+    );
+
+    let request = dispatch(
+        graph,
+        &capability,
+        action,
+        plan.plan_hash.as_str(),
+        targets,
+    )
+    .map_err(|error| format!("dispatch refused: {error}"))?;
+
+    serde_json::to_string_pretty(&request)
+        .map(|rendered| format!("{rendered}\n"))
+        .map_err(|error| format!("could not render the request: {error}"))
 }
 
 fn load_graph() -> Result<GraphModel, String> {
