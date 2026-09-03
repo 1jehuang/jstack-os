@@ -15,8 +15,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MNT=/mnt/jstack
 DISK="" ROOT_PART="" ESP_PART="" USERNAME="" HOSTNAME_="jstack" TZ_="America/Los_Angeles"
 LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR=""
-JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-niri jstack-network jstack-waybar)
-SOURCE_PKGS=(tofi-jstack)   # needs makedepends in chroot; heavy but required by niri/network
+JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-niri jstack-network jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
+SOURCE_PKGS=(tofi-jstack)   # in-repo PKGBUILDs built in chroot
+AUR_PKGS=(vesktop-bin)      # AUR PKGBUILDs cloned + built in chroot (--skip-source-pkgs skips both)
 
 usage() { sed -n '2,15p' "$0"; exit "${1:-0}"; }
 die() { echo "error: $*" >&2; exit 1; }
@@ -157,7 +158,7 @@ bootstrap() {
   arch-chroot "$MNT" /usr/bin/env \
     J_USER="$USERNAME" J_HOST="$HOSTNAME_" J_TZ="$TZ_" J_LOCALE="$LOCALE" J_KEYMAP="$KEYMAP" \
     J_PASS="$pw" J_ROOT_PART="$ROOT_PART" J_SKIP_SOURCE="$SKIP_SOURCE_PKGS" \
-    J_PKGS="${JSTACK_PKGS[*]}" J_SOURCE_PKGS="${SOURCE_PKGS[*]}" \
+    J_PKGS="${JSTACK_PKGS[*]}" J_SOURCE_PKGS="${SOURCE_PKGS[*]}" J_AUR_PKGS="${AUR_PKGS[*]}" \
     bash /usr/src/jstack-os/install/chroot-stage.sh
 }
 

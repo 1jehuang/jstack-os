@@ -1,0 +1,28 @@
+# Maintainer: Jeremy <jstack-os>
+# Default GUI apps that ship on every jstack OS install. Everything here is
+# either in the official repos or built by the installer from the AUR PKGBUILD
+# listed in aur_pkgs (see install/chroot-stage.sh).
+pkgname=jstack-desktop-apps
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS default desktop apps: vesktop (Discord), viewers, clipboard/screenshot glue"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=(
+  'vesktop'            # AUR: vesktop-bin, built by installer
+  'mpv' 'imv' 'zathura' 'zathura-pdf-poppler' 'thunar'
+  'wl-clipboard' 'grim' 'slurp' 'wf-recorder' 'wlr-randr'
+  'pavucontrol' 'blueman' 'polkit-gnome'
+  'xdg-desktop-portal-gtk' 'xdg-desktop-portal-wlr'
+  'noto-fonts' 'noto-fonts-cjk' 'noto-fonts-emoji' 'inter-font' 'ttf-nerd-fonts-symbols-mono'
+  'pipewire-alsa' 'gst-plugins-good' 'sof-firmware'
+)
+source=()
+
+package() {
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/doc/jstack-desktop-apps/README" <<'EOF2'
+jstack-desktop-apps: default GUI app set. vesktop is provided by the AUR
+package vesktop-bin, which the installer builds before this package.
+EOF2
+}

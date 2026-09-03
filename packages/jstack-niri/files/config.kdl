@@ -46,6 +46,7 @@ gestures {
 
 layout {
     gaps 0
+    background-color "#000000"
     center-focused-column "never"
 
     preset-column-widths {

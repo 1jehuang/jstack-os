@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs inside the freshly pacstrapped target (via arch-chroot). Do not run on a live host.
 set -euo pipefail
-: "${J_USER:?}" "${J_HOST:?}" "${J_TZ:?}" "${J_LOCALE:?}" "${J_KEYMAP:?}" "${J_PASS:?}" "${J_ROOT_PART:?}"
+: "${J_USER:?}" "${J_HOST:?}" "${J_TZ:?}" "${J_LOCALE:?}" "${J_KEYMAP:?}" "${J_PASS:?}"
+[ "${J_SKIP_BOOT:-0}" = 1 ] || : "${J_ROOT_PART:?}"
 REPO=/usr/src/jstack-os
 log() { printf '\033[1;32m  ->\033[0m %s\n' "$*"; }
 [ -f /usr/src/jstack-os/README.md ] && [ ! -e /run/systemd/system ] || { echo "refusing: not inside the install chroot" >&2; exit 1; }
@@ -46,6 +47,11 @@ build_and_install() {   # build_and_install <pkgdir>...
 # jstack-network depend on it. --skip-source-pkgs assumes you provide tofi yourself.
 if [ "${J_SKIP_SOURCE:-0}" != 1 ]; then
   for p in ${J_SOURCE_PKGS:-}; do build_and_install "$REPO/packages/$p"; done
+  for p in ${J_AUR_PKGS:-}; do
+    rm -rf "/home/builder/aur-$p"
+    sudo -u builder git clone -q --depth 1 "https://aur.archlinux.org/$p.git" "/home/builder/aur-$p"
+    build_and_install "/home/builder/aur-$p"
+  done
 fi
 for p in ${J_PKGS:?}; do build_and_install "$REPO/packages/$p"; done
 
@@ -55,6 +61,9 @@ mkdir -p /etc/systemd/system/getty@tty1.service.d
 sed "s/%USER%/$J_USER/" /usr/share/jstack/systemd/autologin.conf.in > /etc/systemd/system/getty@tty1.service.d/autologin.conf
 systemctl set-default graphical.target >/dev/null
 
+if [ "${J_SKIP_BOOT:-0}" = 1 ]; then
+  log "J_SKIP_BOOT=1: skipping initramfs and systemd-boot (container test)"
+else
 log "initramfs + systemd-boot"
 sed -i 's/^MODULES=.*/MODULES=(btrfs)/; s/^HOOKS=.*/HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)/' /etc/mkinitcpio.conf
 mkinitcpio -P >/dev/null
@@ -73,6 +82,7 @@ linux   /vmlinuz-linux
 initrd  /initramfs-linux-fallback.img
 options root=PARTUUID=$PARTUUID rootflags=subvol=@ rw rootfstype=btrfs
 E
+fi
 
 log "seed user config from /etc/skel (packages installed after useradd)"
 for f in .config/niri .config/kitty .config/foot .config/tofi .config/waybar .config/fish; do
