@@ -5,7 +5,8 @@ set -euo pipefail
 [ "${J_SKIP_BOOT:-0}" = 1 ] || : "${J_ROOT_PART:?}"
 REPO=/usr/src/jstack-os
 log() { printf '\033[1;32m  ->\033[0m %s\n' "$*"; }
-[ -f /usr/src/jstack-os/README.md ] && [ ! -e /run/systemd/system ] || { echo "refusing: not inside the install chroot" >&2; exit 1; }
+# Guard: the installer drops this marker into the target before chrooting.
+[ -f /.jstack-install-target ] || { echo "refusing: not inside the install chroot" >&2; exit 1; }
 
 log "locale/time/hostname"
 ln -sf "/usr/share/zoneinfo/$J_TZ" /etc/localtime; hwclock --systohc || true
@@ -89,7 +90,7 @@ for f in .config/niri .config/kitty .config/foot .config/tofi .config/waybar .co
   [ -e "/etc/skel/$f" ] && [ ! -e "/home/$J_USER/$f" ] && cp -r "/etc/skel/$f" "/home/$J_USER/$f" || true
 done
 chown -R "$J_USER:$J_USER" "/home/$J_USER"
-rm -rf /home/builder/build
+rm -rf /home/builder/build /.jstack-install-target
 
 if [ -n "${J_SEED:-}" ]; then
   log "restoring seed (ssh, github, tailscale, wifi, jcode)"
