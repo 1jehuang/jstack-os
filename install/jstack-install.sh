@@ -145,9 +145,10 @@ bootstrap() {
   log "pacstrap base system"
   local pkgs="base base-devel linux linux-firmware btrfs-progs efibootmgr networkmanager iwd fish git sudo vim intel-ucode amd-ucode"
   if [ -n "$BOOT" ]; then
-    mkdir -p "$BOOT/mnt"; mount --rbind "$MNT" "$BOOT/mnt"
+    mkdir -p "$BOOT/mnt"; mount --rbind "$MNT" "$BOOT/mnt"; mount --make-rslave "$BOOT/mnt"
     "$ARCH_CHROOT" "$BOOT" bash -c "pacstrap -K /mnt $pkgs && genfstab -U /mnt > /mnt/etc/fstab"
     umount -R "$BOOT/mnt"
+    mountpoint -q "$MNT/boot" || die "ESP unmounted unexpectedly after pacstrap"
   else
     pacstrap -K "$MNT" $pkgs
     genfstab -U "$MNT" > "$MNT/etc/fstab"
