@@ -9,6 +9,7 @@ preinstalled agent harnesses.
 
 - `packages/` - PKGBUILDs for jstack meta/config packages
   - `jstack-niri/` - niri desktop: config, keymap, helper scripts
+  - `jstack-scheduler/` - scx_lavd CPU scheduler (sched_ext), enabled by default
   - `jstack-firefox/` - Firefox policies, OLED theme, curated extensions
 - `installer/` - executable no-USB Windows installer state model and tools
 - `docs/installer/` - installer architecture, safety model, and generated graph

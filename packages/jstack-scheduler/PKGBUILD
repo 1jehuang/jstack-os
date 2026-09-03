@@ -1,0 +1,22 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-scheduler
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS CPU scheduler: scx_lavd via sched_ext, enabled by default"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=('scx-scheds' 'systemd')
+source=()
+
+package() {
+  local files="$startdir/files"
+
+  install -Dm644 "$files/jstack-scx.service" \
+    "$pkgdir/usr/lib/systemd/system/jstack-scx.service"
+  install -Dm644 "$files/jstack-scx.default" \
+    "$pkgdir/etc/default/jstack-scx"
+  install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system-preset/90-jstack-scheduler.preset" <<'PRESET'
+enable jstack-scx.service
+PRESET
+}

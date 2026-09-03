@@ -1,0 +1,16 @@
+[Unit]
+Description=jstack OS CPU scheduler (sched_ext: scx_lavd)
+Documentation=https://github.com/sched-ext/scx
+# sched_ext needs a kernel built with CONFIG_SCHED_CLASS_EXT (stock Arch linux >= 6.12).
+ConditionPathIsDirectory=/sys/kernel/sched_ext
+After=multi-user.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/jstack-scx
+ExecStart=/bin/sh -c 'exec "/usr/bin/${JSTACK_SCX_SCHED:-scx_lavd}" $JSTACK_SCX_FLAGS'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+# jstack OS sched_ext scheduler selection.
+# Reference machine uses scx_lavd (latency-aware, tuned for interactive
+# desktops and hybrid P/E-core CPUs). Any scheduler from scx-scheds works:
+# scx_lavd, scx_bpfland, scx_rusty, scx_flash, ...
+JSTACK_SCX_SCHED=scx_lavd
+JSTACK_SCX_FLAGS=
