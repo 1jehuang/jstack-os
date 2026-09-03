@@ -22,8 +22,8 @@ qemu-img create -q -f qcow2 target.qcow2 24G
 
 # 2. Seed ISO: cloud-init + repo tarball
 rm -rf seed; mkdir -p seed
-tar -C "$REPO" --exclude=.git --exclude='target' --exclude='packages/*/pkg' --exclude='packages/*/src' \
-    --exclude='*.pkg.tar.zst' --exclude='packages/tofi-jstack/tofi' -czf seed/repo.tgz .
+tar -C "$REPO" --anchored --no-wildcards-match-slash --exclude=.git --exclude='./installer/*/target' --exclude='./packages/*/pkg' --exclude='./packages/*/src' \
+    --exclude='*.pkg.tar.zst' --exclude='./packages/tofi-jstack/tofi' -czf seed/repo.tgz .
 cat > seed/meta-data <<'M'
 instance-id: jstack-e2e
 local-hostname: ubuntu-host
