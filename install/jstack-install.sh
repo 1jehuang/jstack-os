@@ -84,6 +84,8 @@ host_prep() {
   fi
   BOOT="$BOOT/root.x86_64"
   ARCH_CHROOT="$BOOT/usr/bin/arch-chroot"
+  # pacman's CheckSpace needs the chroot root to be a mountpoint; bind it onto itself.
+  mountpoint -q "$BOOT" || mount --bind "$BOOT" "$BOOT"
 
   log "Configuring bootstrap pacman"
   if [ -n "$MIRROR" ]; then
