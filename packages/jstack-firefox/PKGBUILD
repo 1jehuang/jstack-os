@@ -1,0 +1,25 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-firefox
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS Firefox defaults: OLED black theme, blank new tab, Alt-key passthrough, curated extensions"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=('firefox' 'xdg-desktop-portal')
+source=()
+
+package() {
+  local files="$startdir/files"
+
+  # System-wide enterprise policy: auto-install the curated extension set,
+  # disable telemetry, in-app updates (pacman owns firefox), and first-run pages.
+  install -Dm644 "$files/policies/policies.json" "$pkgdir/etc/firefox/policies/policies.json"
+
+  # Per-user defaults via /etc/skel. profiles.ini pins a fixed profile
+  # directory so user.js and userChrome.css land where Firefox looks.
+  local skel="$pkgdir/etc/skel/.mozilla/firefox"
+  install -Dm644 "$files/profile/profiles.ini" "$skel/profiles.ini"
+  install -Dm644 "$files/profile/user.js" "$skel/jstack.default/user.js"
+  install -Dm644 "$files/profile/chrome/userChrome.css" "$skel/jstack.default/chrome/userChrome.css"
+}

@@ -1,7 +1,7 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-niri
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="jstack OS niri desktop: config, keymap, and helper scripts"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
@@ -11,7 +11,8 @@ depends=(
   'waybar'
   'foot'
   'kitty'
-  'tofi'
+  'tofi-jstack'
+  'jstack-network'
   'swayidle'
   'playerctl'
   'brightnessctl'

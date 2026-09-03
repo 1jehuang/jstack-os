@@ -3,12 +3,13 @@
 # Upstream tofi is unmaintained; this tracks github.com/1jehuang/tofi.
 pkgname=tofi-jstack
 pkgver=r265.bb5617b
-pkgrel=1
+pkgrel=2
 pkgdesc="Tiny Wayland launcher (jstack fork: typo-tolerant matching, Ctrl-f/b/g/h/m binds)"
 arch=('x86_64')
 url="https://github.com/1jehuang/tofi"
 license=('MIT')
 depends=('wayland' 'libxkbcommon' 'cairo' 'pango' 'harfbuzz')
+optdepends=('niri: tofi-drun-workspace and tofi-bring-here' 'jq: niri helpers' 'bc: tofi-calculator')
 makedepends=('git' 'meson' 'ninja' 'scdoc' 'wayland-protocols')
 provides=('tofi')
 conflicts=('tofi')
@@ -31,4 +32,11 @@ package() {
   # jstack default theme (fullscreen, orange/black)
   install -Dm644 "$startdir/files/tofi-config" \
     "$pkgdir/etc/skel/.config/tofi/config"
+  install -Dm644 "$startdir/files/power-menu.conf" \
+    "$pkgdir/usr/share/jstack/tofi/power-menu.conf"
+
+  # tofi modes: workspace-preserving launcher, window picker, power menu
+  for s in "$startdir"/files/scripts/*; do
+    install -Dm755 "$s" "$pkgdir/usr/bin/$(basename "$s")"
+  done
 }

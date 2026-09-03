@@ -124,11 +124,47 @@ breaking change.
 | Intel BE200/BE201 firmware crash signature | hardware | observed `Microcode SW error` can leave duplicate wlan interfaces; handled conditionally by the distro recovery service rather than hardcoding Intel module options for everyone |
 | ~/src/tofi fork (typo-tolerant matching, Ctrl-f/b/g/h/m) | distro | packaged as tofi-jstack, builds from github.com/1jehuang/tofi (public), provides/conflicts tofi. Replaces AUR tofi |
 | ~/.config/tofi/config (fullscreen orange/black theme) | distro | ships in tofi-jstack /etc/skel |
-| tofi-drun-workspace.sh | pending | revisit: depends on workspace-restore behavior; plain tofi-drun shipped in niri config for now |
+| tofi-drun-workspace.sh | distro | shipped as /usr/bin/tofi-drun-workspace in tofi-jstack. Sanitized: /usr/local fork → plain tofi-drun, LAZYGIT_HERE_* env → JSTACK_ORIGIN_* |
 | ~/.cache captive portal state files | personal | runtime state, never shipped |
 
-Note: jstack-niri Alt+W bind can now point at /usr/bin/wifi-pick (was dropped
-as personal). TODO: update jstack-niri config.kdl.
+Note: jstack-niri Alt+W now spawns /usr/bin/wifi-pick.
+
+## tofi modes and scripts (audited 2026-09-03)
+
+| Item | Bucket | Notes |
+|---|---|---|
+| ~/.config/tofi/config | distro | already shipped, identical to live |
+| ~/.local/bin/tofi-bring-here (window picker) | distro | shipped in tofi-jstack, bound Alt+Shift+A (live bind used rofi-bring-here; tofi version is the canonical one) |
+| scripts/power-menu.sh + power-menu.conf | distro | shipped as tofi-power-menu, conf in /usr/share/jstack/tofi. Sanitized: swaylock → loginctl lock-session, SF Pro Display → monospace. Bound Alt+Shift+E |
+| ~/.local/bin/tofi-bitwarden | personal | password manager choice |
+| scripts/calculator.sh, simple-timer.sh | cruft | trivial, unbound |
+| scripts/claude-query.sh, codex-query.sh | personal | dev tooling |
+| scripts/theme-menu.sh, theme-switcher.sh, themes/ | cruft | only two themes, one is the shipped default |
+| scripts/benchmark-tofi.sh, launcher-shootout.sh, wofi-benchmark.sh | cruft | benchmarks |
+| config.backup | cruft | |
+
+## firefox (audited 2026-09-03)
+
+Reference profile: `~/.mozilla/firefox/*.default-release`. Shipped as `jstack-firefox`.
+
+| Item | Bucket | Notes |
+|---|---|---|
+| user.js: OLED black colors, compact-dark theme, blank home/newtab, activity-stream off, firefox-view off, bookmarks bar hidden | distro | |
+| user.js: `ui.key.menuAccessKey 0` (Alt+letter does not open menubar) | distro | required so niri Alt binds are not eaten |
+| user.js: telemetry/datareporting off, first-run/whats-new/uitour off, checkDefaultBrowser off | distro | also enforced via policies.json |
+| user.js: `widget.use-xdg-desktop-portal.file-picker 1`, `allow-pipewire false` | distro | Wayland portal file picker; camera workaround |
+| user.js: devtools.chrome.enabled, browserconsole.contentMessages | distro | agent debugging |
+| user.js: ~40 legacy webdriver/marionette/security.warn_*/safebrowsing-dummy prefs | cruft | injected by an old automation harness; dropped |
+| user.js: signon.rememberSignons false, xpinstall.signatures.required false, extensions.enabledScopes | personal | user choice / unsafe default |
+| user.js: app.update.*, extensions.update.* off | distro | moved into policies.json (DisableAppUpdate); extension updates stay on |
+| chrome/userChrome.css (OLED black) | distro | shipped verbatim |
+| /etc/firefox/policies/policies.json (vimium auto-install) | distro | extended to full curated set |
+| ext: uBlock Origin, Vimium, SponsorBlock, Hide YouTube Shorts, Bitwarden | distro | via ExtensionSettings normal_installed (user can remove) |
+| ext: Redirector, ff2mpv, Bookface Companion | personal | need per-user rules / mpv native host / YC account |
+| ext: Dark Reader, Tridactyl (both disabled) | cruft | |
+| ext: browser-agent-bridge + ~/.mozilla/native-messaging-hosts/firefox_agent_bridge.json | pending | jcode's Firefox bridge; ships with agent layer (jstack-agent), not here |
+| ~/.config/tridactyl/tridactylrc | cruft | tridactyl disabled |
+| cookies, logins, places, sessionstore, containers | personal | never shipped |
 
 ## Pending audits
 
@@ -136,7 +172,15 @@ as personal). TODO: update jstack-niri config.kdl.
 - [ ] keyd system config
 - [ ] dunst config
 - [ ] shell (fish?), prompt, CLI tools
-- [ ] agent layer (jcode, kitty socket, MCP, jq/jc defaults)
+- [ ] agent layer (jcode, kitty socket, firefox agent bridge, MCP, jq/jc defaults)
 - [ ] full pacman -Qen (229 explicit packages)
 - [ ] AUR packages (42)
 - [ ] /etc/skel dotfiles beyond niri
+
+## CPU scheduler (audited 2026-09-03)
+
+| Item | Bucket | Notes |
+|---|---|---|
+| scx_lavd via sched_ext (scx-scheds 1.1.2, stock `linux` kernel) | distro | packaged as jstack-scheduler: `jstack-scx.service` + `/etc/default/jstack-scx` (scheduler/flags overridable). Enabled by preset |
+| hand-written /etc/systemd/system/scx-lavd.service | cruft | replaced by the packaged unit; `ConditionPathIsDirectory=/sys/kernel/sched_ext` makes it a no-op on kernels without sched_ext |
+| NVMe I/O scheduler `none`, sched_autogroup=1 | distro | kernel defaults, nothing to ship |
