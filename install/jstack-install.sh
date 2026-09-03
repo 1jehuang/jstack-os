@@ -16,7 +16,8 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MNT=/mnt/jstack
 DISK="" ROOT_PART="" ESP_PART="" USERNAME="" HOSTNAME_="jstack" TZ_="America/Los_Angeles"
 LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR="" SEED="" SEED_PASS="${JSTACK_SEED_PASS:-}" JCODE_API_KEY=""
-JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-niri jstack-network jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
+JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-network jstack-niri jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
+# Order matters: each package is built with makepkg -s, so deps on earlier jstack-* packages must already be installed (jstack-niri needs jstack-network).
 SOURCE_PKGS=(tofi-jstack)   # in-repo PKGBUILDs built in chroot
 AUR_PKGS=(vesktop-bin)      # AUR PKGBUILDs cloned + built in chroot (--skip-source-pkgs skips both)
 
