@@ -172,6 +172,7 @@ bootstrap() {
   fi
   cp -L /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null || true
   mountpoint -q "$MNT" || mount --bind "$MNT" "$MNT"   # pacman CheckSpace needs a mountpoint
+  touch "$MNT/.jstack-install-target"
   "$ARCH_CHROOT" "$MNT" /usr/bin/env \
     J_USER="$USERNAME" J_HOST="$HOSTNAME_" J_TZ="$TZ_" J_LOCALE="$LOCALE" J_KEYMAP="$KEYMAP" \
     J_PASS="$pw" J_ROOT_PART="$ROOT_PART" J_SKIP_SOURCE="$SKIP_SOURCE_PKGS" \
