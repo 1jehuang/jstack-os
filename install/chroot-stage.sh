@@ -86,9 +86,9 @@ E
 fi
 
 log "seed user config from /etc/skel (packages installed after useradd)"
-for f in .config/niri .config/kitty .config/foot .config/tofi .config/waybar .config/fish; do
-  [ -e "/etc/skel/$f" ] && [ ! -e "/home/$J_USER/$f" ] && cp -r "/etc/skel/$f" "/home/$J_USER/$f" || true
-done
+# useradd -m copied skel before the jstack packages existed; copy everything the
+# packages added without clobbering files that already exist.
+cp -rn /etc/skel/. "/home/$J_USER/"
 chown -R "$J_USER:$J_USER" "/home/$J_USER"
 rm -rf /home/builder/build /.jstack-install-target
 
@@ -116,5 +116,5 @@ fi
 log "sanity"
 pacman -Q jstack-base jstack-agent jstack-terminals jstack-niri
 ! pacman -Q snapper snap-pac timeshift >/dev/null 2>&1 || { echo "snapshot tooling present!" >&2; exit 1; }
-test -x /usr/bin/jcode && grep -q 'listen_on unix:/tmp/kitty.sock' /etc/skel/.config/kitty/kitty.conf
+test -x /usr/bin/jcode && grep -q "listen_on unix:/tmp/kitty.sock" "/home/$J_USER/.config/kitty/kitty.conf" && grep -q 'listen_on unix:/tmp/kitty.sock' /etc/skel/.config/kitty/kitty.conf
 echo "chroot stage complete"
