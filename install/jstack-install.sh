@@ -3,6 +3,7 @@
 # full jstack OS system onto a target disk or pre-made partitions.
 #
 #   sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
+#   sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --seed jstack-seed.tar.gz.enc
 #   sudo ./install/jstack-install.sh --root-part /dev/nvme0n1p5 --esp-part /dev/nvme0n1p1 --user jeremy
 #
 # What you get (mirrors the reference machine, see packages/jstack-base/files/POLICY.md):
@@ -14,7 +15,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MNT=/mnt/jstack
 DISK="" ROOT_PART="" ESP_PART="" USERNAME="" HOSTNAME_="jstack" TZ_="America/Los_Angeles"
-LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR=""
+LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR="" SEED="" SEED_PASS="${JSTACK_SEED_PASS:-}" JCODE_API_KEY=""
 JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-niri jstack-network jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
 SOURCE_PKGS=(tofi-jstack)   # in-repo PKGBUILDs built in chroot
 AUR_PKGS=(vesktop-bin)      # AUR PKGBUILDs cloned + built in chroot (--skip-source-pkgs skips both)
@@ -37,6 +38,9 @@ while [ $# -gt 0 ]; do
     --keymap) KEYMAP=$2; shift 2 ;;
     --mirror) MIRROR=$2; shift 2 ;;
     --skip-source-pkgs) SKIP_SOURCE_PKGS=1; shift ;;
+    --seed) SEED=$2; shift 2 ;;              # bundle from install/seed/make-seed.sh
+    --seed-pass) SEED_PASS=$2; shift 2 ;;
+    --jcode-api-key) JCODE_API_KEY=$2; shift 2 ;;   # alternative to a seed: single Anthropic/OpenRouter-style key
     --yes) YES=1; shift ;;
     --chroot-stage) shift; exec "$REPO_DIR/install/chroot-stage.sh" "$@" ;;
     -h|--help) usage ;;
@@ -152,6 +156,11 @@ bootstrap() {
 
   log "Staging jstack-os repo into target"
   mkdir -p "$MNT/usr/src/jstack-os"
+  if [ -n "$SEED" ]; then
+    [ -f "$SEED" ] || die "seed bundle not found: $SEED"
+    install -Dm600 "$SEED" "$MNT/root/jstack-seed.bundle"
+    if [ -z "$SEED_PASS" ]; then case "$SEED" in *.enc) read -rsp "Seed passphrase: " SEED_PASS; echo ;; esac; fi
+  fi
   rsync -a --exclude .git --exclude 'target/' --exclude '*/pkg/' --exclude '*/src/' \
     --exclude '*.pkg.tar.zst' "$REPO_DIR/" "$MNT/usr/src/jstack-os/"
 
@@ -161,9 +170,11 @@ bootstrap() {
     read -rsp "Password for $USERNAME (also root): " pw; echo
   fi
   cp -L /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null || true
+  mountpoint -q "$MNT" || mount --bind "$MNT" "$MNT"   # pacman CheckSpace needs a mountpoint
   "$ARCH_CHROOT" "$MNT" /usr/bin/env \
     J_USER="$USERNAME" J_HOST="$HOSTNAME_" J_TZ="$TZ_" J_LOCALE="$LOCALE" J_KEYMAP="$KEYMAP" \
     J_PASS="$pw" J_ROOT_PART="$ROOT_PART" J_SKIP_SOURCE="$SKIP_SOURCE_PKGS" \
+    J_SEED="${SEED:+/root/jstack-seed.bundle}" JSTACK_SEED_PASS="$SEED_PASS" J_JCODE_API_KEY="$JCODE_API_KEY" \
     J_PKGS="${JSTACK_PKGS[*]}" J_SOURCE_PKGS="${SOURCE_PKGS[*]}" J_AUR_PKGS="${AUR_PKGS[*]}" \
     bash /usr/src/jstack-os/install/chroot-stage.sh
 }
