@@ -37,7 +37,7 @@ build_and_install() {   # build_and_install <pkgdir>...
   for d in "$@"; do
     log "makepkg $(basename "$d")"
     rm -rf /home/builder/build; cp -r "$d" /home/builder/build; chown -R builder /home/builder/build
-    (cd /home/builder/build && sudo -u builder makepkg -s --noconfirm --needed --nocheck 2>&1 | tail -3)
+    (cd /home/builder/build && sudo -u builder makepkg -s --noconfirm --needed --nocheck 2>&1 | grep -vE "^\s*(Compiling|Downloading|Fresh)" | tail -40)
     out=$(ls /home/builder/build/*.pkg.tar.zst | grep -v -- '-debug-' | head -1)
     pacman -U --noconfirm --needed "$out"
   done

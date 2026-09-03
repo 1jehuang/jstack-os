@@ -55,50 +55,47 @@ else
 fi
 
 # ---------- host prerequisites ----------
+# On non-Arch hosts we do not trust the distro's pacman/keyring (Ubuntu ships
+# pacman 6.0 and a stale archlinux-keyring). Instead we unpack the official
+# archlinux-bootstrap tarball and run pacstrap from inside it.
+BOOT=""   # path to bootstrap root when used
+ARCH_CHROOT=arch-chroot
 host_prep() {
-  if command -v apt-get >/dev/null; then
-    log "Installing host tools (apt)"
-    apt-get install -y -q arch-install-scripts archlinux-keyring pacman-package-manager \
-      btrfs-progs dosfstools gdisk curl ca-certificates >/dev/null
-  elif command -v pacman >/dev/null; then
-    pacman -Sy --needed --noconfirm arch-install-scripts btrfs-progs dosfstools gptfdisk >/dev/null
-  else
-    die "need apt or pacman on the host"
+  if command -v pacman >/dev/null && [ -f /etc/arch-release ]; then
+    pacman -Sy --needed --noconfirm arch-install-scripts btrfs-progs dosfstools gptfdisk rsync >/dev/null
+    return
   fi
-  command -v pacstrap >/dev/null || die "pacstrap missing"
+  command -v apt-get >/dev/null || die "need apt (Debian/Ubuntu) or an Arch host"
+  log "Installing host tools (apt)"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q >/dev/null
+  apt-get install -y -q zstd curl ca-certificates btrfs-progs dosfstools gdisk rsync \
+    parted util-linux >/dev/null
 
-  # Ubuntu's pacman ships without a usable pacman.conf/mirrorlist for Arch.
-  mkdir -p /etc/pacman.d
-  if [ ! -s /etc/pacman.d/mirrorlist ] || ! grep -q '^Server' /etc/pacman.d/mirrorlist; then
-    log "Writing Arch mirrorlist"
-    if [ -n "$MIRROR" ]; then
-      echo "Server = $MIRROR" > /etc/pacman.d/mirrorlist
-    else
+  BOOT=/tmp/jstack-bootstrap
+  if [ ! -x "$BOOT/root.x86_64/usr/bin/pacstrap" ]; then
+    log "Fetching archlinux-bootstrap tarball"
+    local base="${MIRROR:-https://geo.mirror.pkgbuild.com/\$repo/os/\$arch}"
+    base="${base%/\$repo*}"
+    mkdir -p "$BOOT"
+    curl -fL --retry 3 -o "$BOOT/bootstrap.tar.zst" "$base/iso/latest/archlinux-bootstrap-x86_64.tar.zst"
+    curl -fL --retry 3 -o "$BOOT/bootstrap.tar.zst.sig" "$base/iso/latest/archlinux-bootstrap-x86_64.tar.zst.sig" || true
+    tar -C "$BOOT" --zstd -xpf "$BOOT/bootstrap.tar.zst" --numeric-owner
+  fi
+  BOOT="$BOOT/root.x86_64"
+  ARCH_CHROOT="$BOOT/usr/bin/arch-chroot"
+
+  log "Configuring bootstrap pacman"
+  if [ -n "$MIRROR" ]; then
+    echo "Server = $MIRROR" > "$BOOT/etc/pacman.d/mirrorlist"
+  else
+    { echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch';
       curl -fsSL 'https://archlinux.org/mirrorlist/?country=US&protocol=https&use_mirror_status=on' \
-        | sed 's/^#Server/Server/' | head -20 > /etc/pacman.d/mirrorlist
-    fi
+        | sed 's/^#Server/Server/' | grep '^Server' | head -10; } > "$BOOT/etc/pacman.d/mirrorlist"
   fi
-  if ! grep -q '^\[core\]' /etc/pacman.conf 2>/dev/null; then
-    log "Writing /etc/pacman.conf"
-    cat > /etc/pacman.conf <<'PC'
-[options]
-HoldPkg = pacman glibc
-Architecture = auto
-CheckSpace
-ParallelDownloads = 8
-SigLevel = Required DatabaseOptional
-LocalFileSigLevel = Optional
-[core]
-Include = /etc/pacman.d/mirrorlist
-[extra]
-Include = /etc/pacman.d/mirrorlist
-PC
-  fi
-  if [ ! -d /etc/pacman.d/gnupg ] || ! pacman-key --list-keys >/dev/null 2>&1; then
-    log "Initialising pacman keyring"
-    pacman-key --init
-    pacman-key --populate archlinux
-  fi
+  sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 8/' "$BOOT/etc/pacman.conf"
+  cp -L /etc/resolv.conf "$BOOT/etc/resolv.conf" 2>/dev/null || true
+  "$ARCH_CHROOT" "$BOOT" bash -c 'pacman-key --init >/dev/null 2>&1 && pacman-key --populate archlinux >/dev/null 2>&1 && pacman -Sy --noconfirm --needed archlinux-keyring >/dev/null'
 }
 
 # ---------- partitioning ----------
@@ -112,7 +109,7 @@ partition() {
     wipefs -af "$DISK"
     sgdisk -Z "$DISK"
     sgdisk -n1:0:+1G -t1:ef00 -c1:"EFI" -n2:0:0 -t2:8304 -c2:"jstack" "$DISK"
-    partprobe "$DISK"; udevadm settle
+    partprobe "$DISK" || true; udevadm settle; sleep 1
     ESP_PART=$(lsblk -lnpo NAME "$DISK" | sed -n 2p)
     ROOT_PART=$(lsblk -lnpo NAME "$DISK" | sed -n 3p)
     WIPE_ESP=1
@@ -139,9 +136,15 @@ partition() {
 # ---------- base system ----------
 bootstrap() {
   log "pacstrap base system"
-  pacstrap -K "$MNT" base base-devel linux linux-firmware btrfs-progs efibootmgr \
-    networkmanager iwd fish git sudo vim intel-ucode amd-ucode
-  genfstab -U "$MNT" > "$MNT/etc/fstab"
+  local pkgs="base base-devel linux linux-firmware btrfs-progs efibootmgr networkmanager iwd fish git sudo vim intel-ucode amd-ucode"
+  if [ -n "$BOOT" ]; then
+    mkdir -p "$BOOT/mnt"; mount --rbind "$MNT" "$BOOT/mnt"
+    "$ARCH_CHROOT" "$BOOT" bash -c "pacstrap -K /mnt $pkgs && genfstab -U /mnt > /mnt/etc/fstab"
+    umount -R "$BOOT/mnt"
+  else
+    pacstrap -K "$MNT" $pkgs
+    genfstab -U "$MNT" > "$MNT/etc/fstab"
+  fi
   # genfstab may emit subvolid=; keep subvol= only so snapshots/rollbacks never confuse boot.
   sed -i 's/,subvolid=[0-9]*//g' "$MNT/etc/fstab"
 
@@ -155,7 +158,8 @@ bootstrap() {
   if [ -z "$pw" ]; then
     read -rsp "Password for $USERNAME (also root): " pw; echo
   fi
-  arch-chroot "$MNT" /usr/bin/env \
+  cp -L /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null || true
+  "$ARCH_CHROOT" "$MNT" /usr/bin/env \
     J_USER="$USERNAME" J_HOST="$HOSTNAME_" J_TZ="$TZ_" J_LOCALE="$LOCALE" J_KEYMAP="$KEYMAP" \
     J_PASS="$pw" J_ROOT_PART="$ROOT_PART" J_SKIP_SOURCE="$SKIP_SOURCE_PKGS" \
     J_PKGS="${JSTACK_PKGS[*]}" J_SOURCE_PKGS="${SOURCE_PKGS[*]}" J_AUR_PKGS="${AUR_PKGS[*]}" \
