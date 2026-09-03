@@ -162,7 +162,7 @@ bootstrap() {
     install -Dm600 "$SEED" "$MNT/root/jstack-seed.bundle"
     if [ -z "$SEED_PASS" ]; then case "$SEED" in *.enc) read -rsp "Seed passphrase: " SEED_PASS; echo ;; esac; fi
   fi
-  rsync -a --exclude .git --exclude 'target/' --exclude '*/pkg/' --exclude '*/src/' \
+  rsync -a --exclude .git --exclude 'target/' --exclude '/packages/*/pkg/' --exclude '/packages/*/src/' \
     --exclude '*.pkg.tar.zst' "$REPO_DIR/" "$MNT/usr/src/jstack-os/"
 
   local pw
