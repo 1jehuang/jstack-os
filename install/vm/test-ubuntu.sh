@@ -53,7 +53,8 @@ if /root/jstack-os/install/jstack-install.sh --disk /dev/vdb --user jeremy --pas
   cat > $T/etc/systemd/system/jstack-e2e-check.service <<'S'
 [Unit]
 Description=jstack e2e first-boot check
-After=multi-user.target
+After=multi-user.target home.mount
+RequiresMountsFor=/home
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/jstack-e2e-check
@@ -72,11 +73,11 @@ R
 cat > seed/check.sh <<'C'
 #!/bin/bash
 exec > /dev/ttyS0 2>&1
-echo "E2E-BOOT: hostname=$(hostname)"
+echo "E2E-BOOT: hostname=$(cat /etc/hostname)"
 echo "E2E-BOOT: user=$(id jeremy)"
 echo "E2E-BOOT: shell=$(getent passwd jeremy | cut -d: -f7)"
 echo "E2E-BOOT: sudo_nopasswd=$(sudo -n -u jeremy sudo -n true && echo yes || echo no)"
-echo "E2E-BOOT: jcode=$(sudo -u jeremy jcode --version 2>&1 | head -1)"
+echo "E2E-BOOT: jcode=$(sudo -u jeremy -i jcode --version 2>&1 | head -1) jcode_err=$(sudo -u jeremy /usr/bin/jcode --version 2>&1 | tail -1) bin=$(ls -la /usr/bin/jcode /usr/lib/jstack/agent/ 2>&1 | tr "\n" " ")"
 echo "E2E-BOOT: kitty_socket_cfg=$(grep -c 'listen_on unix:/tmp/kitty.sock' /home/jeremy/.config/kitty/kitty.conf)"
 echo "E2E-BOOT: snapper=$(pacman -Q snapper snap-pac timeshift 2>/dev/null | wc -l)"
 echo "E2E-BOOT: snapshots=$(btrfs subvolume list / | grep -c snapshot)"
