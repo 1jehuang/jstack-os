@@ -1,0 +1,134 @@
+/* OLED Black Firefox Theme */
+
+/* Main browser background */
+:root {
+  --toolbar-bgcolor: #000000 !important;
+  --toolbar-color: #ffffff !important;
+  --lwt-accent-color: #000000 !important;
+  --lwt-text-color: #ffffff !important;
+  --arrowpanel-background: #000000 !important;
+  --arrowpanel-color: #ffffff !important;
+  --urlbar-box-bgcolor: #000000 !important;
+}
+
+/* Navigation toolbar */
+#nav-bar {
+  background-color: #000000 !important;
+}
+
+/* Tab bar */
+#titlebar,
+#TabsToolbar {
+  background-color: #000000 !important;
+}
+
+/* Individual tabs */
+.tabbrowser-tab {
+  background-color: #000000 !important;
+}
+
+.tab-background {
+  background-color: #000000 !important;
+}
+
+.tabbrowser-tab[selected="true"] .tab-background {
+  background-color: #1a1a1a !important;
+}
+
+/* URL bar */
+#urlbar-background {
+  background-color: #000000 !important;
+}
+
+#urlbar[focused="true"] > #urlbar-background {
+  background-color: #0a0a0a !important;
+}
+
+#urlbar-input-container {
+  background-color: #000000 !important;
+}
+
+/* URL bar dropdown */
+.urlbarView {
+  background-color: #000000 !important;
+}
+
+.urlbarView-body-inner {
+  background-color: #000000 !important;
+}
+
+.urlbarView-row {
+  background-color: #000000 !important;
+}
+
+.urlbarView-row[selected] {
+  background-color: #1a1a1a !important;
+}
+
+/* Sidebar */
+#sidebar-box {
+  background-color: #000000 !important;
+}
+
+#sidebar {
+  background-color: #000000 !important;
+}
+
+/* Bookmarks toolbar */
+#PersonalToolbar {
+  background-color: #000000 !important;
+}
+
+/* Menu popup panels */
+panel,
+menupopup,
+.panel-arrowcontent {
+  background-color: #000000 !important;
+}
+
+/* Context menus */
+menupopup {
+  --panel-background: #000000 !important;
+  background-color: #000000 !important;
+}
+
+menuitem,
+menu {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+menuitem:hover,
+menu:hover {
+  background-color: #1a1a1a !important;
+}
+
+/* Findbar */
+findbar {
+  background-color: #000000 !important;
+}
+
+/* Toolbar buttons */
+toolbarbutton {
+  background-color: transparent !important;
+}
+
+toolbarbutton:hover {
+  background-color: #1a1a1a !important;
+}
+
+/* Browser content border */
+#browser {
+  background-color: #000000 !important;
+}
+
+/* Main window */
+#main-window {
+  background-color: #000000 !important;
+}
+
+/* Remove separators/borders for cleaner look */
+#navigator-toolbox {
+  border-bottom: none !important;
+  background-color: #000000 !important;
+}

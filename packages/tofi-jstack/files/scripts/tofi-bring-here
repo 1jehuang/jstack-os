@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A small "tofi mode": pick any existing window and bring it to
+# your current workspace, placing it as a new column immediately to
+# the right of the currently focused column (like a fresh launch).
+
+pick_focus_only=0
+if [[ "${1:-}" == "--focus-only" ]]; then
+  pick_focus_only=1
+fi
+
+# Capture current workspace and focused column index (1-based)
+orig_ws_idx=$(niri msg -j workspaces | jq -r '.[] | select(.is_focused) | .idx')
+orig_ws_id=$(niri msg -j workspaces | jq -r '.[] | select(.is_focused) | .id')
+orig_col_idx=$(niri msg -j focused-window | jq -r '.layout.pos_in_scrolling_layout[0] // empty')
+
+windows_json=$(niri msg -j windows)
+
+# Build a human-friendly list: "App • Title  [ws=..]  #id=NN"
+list=$(printf '%s' "$windows_json" | jq -r '
+  sort_by(.workspace_id, .app_id, .title) | .[] |
+  "\(.app_id) • \(.title // "(no title)")  [ws=\(.workspace_id)]  #id=\(.id)"')
+
+if [[ -z "$list" ]]; then
+  exit 0
+fi
+
+choice=$(printf '%s\n' "$list" | tofi --prompt-text "Bring here: ")
+
+[[ -z "$choice" ]] && exit 0
+
+# Extract the id from the trailing token
+sel_id=$(sed -n 's/.*#id=\([0-9]\+\).*/\1/p' <<<"$choice")
+
+if [[ -z "$sel_id" ]]; then
+  exit 1
+fi
+
+# If focusing only, just jump to the window.
+if [[ "$pick_focus_only" == "1" ]]; then
+  niri msg action focus-window --id "$sel_id"
+  exit 0
+fi
+
+# If the window is already on this workspace, make it a new column
+# and place that column right of the original column.
+on_current=$(printf '%s' "$windows_json" \
+  | jq -r --argjson id "$sel_id" --argjson cur "$orig_ws_id" \
+      'any(.[]; .id == $id and .workspace_id == $cur)')
+
+if [[ "$on_current" == "true" ]]; then
+  niri msg action focus-window --id "$sel_id"
+  niri msg action expel-window-from-column
+  if [[ -n "${orig_col_idx}" ]]; then
+    niri msg action move-column-to-index "$((orig_col_idx + 1))"
+  fi
+  exit 0
+fi
+
+# Otherwise bring it over without switching focus first, then arrange.
+niri msg action move-window-to-workspace --window-id "$sel_id" --focus false "$orig_ws_idx"
+niri msg action focus-window --id "$sel_id"
+niri msg action expel-window-from-column
+if [[ -n "${orig_col_idx}" ]]; then
+  niri msg action move-column-to-index "$((orig_col_idx + 1))"
+fi
+

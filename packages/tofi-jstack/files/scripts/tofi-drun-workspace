@@ -1,0 +1,23 @@
+#!/bin/bash
+# App launcher that returns focus to the workspace you launched from.
+# niri moves focus to the workspace where the new window opens; this restores
+# the original workspace so the launcher never "teleports" you.
+
+ORIGIN_JSON=$(niri msg -j focused-window 2>/dev/null || true)
+if [ -n "$ORIGIN_JSON" ]; then
+    export JSTACK_ORIGIN_WINDOW_ID=$(printf '%s' "$ORIGIN_JSON" | jq -r '.id // empty')
+    export JSTACK_ORIGIN_WINDOW_PID=$(printf '%s' "$ORIGIN_JSON" | jq -r '.pid // empty')
+    export JSTACK_ORIGIN_WINDOW_APP_ID=$(printf '%s' "$ORIGIN_JSON" | jq -r '.app_id // empty')
+    export JSTACK_ORIGIN_WORKSPACE_ID=$(printf '%s' "$ORIGIN_JSON" | jq -r '.workspace_id // empty')
+fi
+
+CURRENT_WORKSPACE=$(niri msg -j workspaces | jq -r '.[] | select(.is_focused) | (.name // .idx)')
+
+# tofi permits only one instance. Dismiss a stale prompt so the bind always works.
+pkill -x tofi 2>/dev/null || true
+pkill -x tofi-drun 2>/dev/null || true
+
+SELECTION=$(tofi-drun)
+if [ $? -eq 0 ] && [ -n "$SELECTION" ] && [ -n "$CURRENT_WORKSPACE" ]; then
+    niri msg action focus-workspace "$CURRENT_WORKSPACE"
+fi
