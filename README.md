@@ -23,6 +23,38 @@ preinstalled agent harnesses.
 - `docs/TRIAGE.md` - the keep/drop decision log for everything migrated
   from the reference machine
 
+## Installing from Ubuntu (or any Debian host)
+
+`install/jstack-install.sh` builds a complete jstack OS on a target disk from a
+running Ubuntu system. It fetches the official `archlinux-bootstrap` tarball
+(Ubuntu's own pacman and keyring are too old to be trusted), pacstraps into
+btrfs subvolumes, builds every jstack package from this repo inside the target,
+and writes systemd-boot entries.
+
+```sh
+git clone https://github.com/1jehuang/jstack-os && cd jstack-os
+sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
+# or onto existing partitions:
+sudo ./install/jstack-install.sh --root-part /dev/nvme0n1p5 --esp-part /dev/nvme0n1p1 --user jeremy
+```
+
+What you end up with (see `packages/jstack-base/files/POLICY.md`):
+
+- btrfs root, `@ @home @log @pkg`, zstd:3, **no snapper / snap-pac / timeshift**
+  (blocked by a pacman hook)
+- niri + waybar + tofi + kitty (`allow_remote_control`, `/tmp/kitty.sock`) + foot
+- fish login shell, tty1 autologin, niri autostarts
+- keyd, NetworkManager + iwd, TLP, earlyoom, bluetooth
+- `jcode` preinstalled from a pinned release (`jstack-agent`)
+- passwordless sudo for the primary user
+
+### Proof
+
+`install/vm/test-ubuntu.sh` boots a fresh Ubuntu 24.04 cloud image under
+QEMU/OVMF, runs the installer against a blank virtual disk, then boots the
+result and asserts each policy item on the serial console. Run it before
+changing anything under `install/` or `packages/`.
+
 ## Design rules
 
 1. Nothing is hand-copied onto the ISO. Everything ships inside a package.
