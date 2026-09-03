@@ -6,6 +6,7 @@
 #
 # Contents (all optional; missing items are skipped):
 #   jcode      ~/.jcode/{auth.json,config.toml,mcp.json,ssh_remotes.json,swarm-prompt.md,skills/}
+#              ~/.config/jcode/*.env (provider API keys)
 #   ssh        ~/.ssh (keys, config, known_hosts)
 #   github     ~/.gitconfig, ~/.config/gh (gh CLI auth)
 #   tailscale  /var/lib/tailscale/tailscaled.state (same node identity, no re-login)
@@ -36,6 +37,7 @@ copy_sys() {   # copy_sys <absolute path>
 
 echo "Collecting seed from $(hostname) for user $USER"
 for f in auth.json config.toml mcp.json ssh_remotes.json swarm-prompt.md skills; do copy_home ".jcode/$f"; done
+for f in "$HOME"/.config/jcode/*.env; do [ -e "$f" ] && copy_home ".config/jcode/$(basename "$f")"; done
 copy_home .ssh
 copy_home .gitconfig
 copy_home .config/gh

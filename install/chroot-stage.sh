@@ -91,6 +91,27 @@ done
 chown -R "$J_USER:$J_USER" "/home/$J_USER"
 rm -rf /home/builder/build
 
+if [ -n "${J_SEED:-}" ]; then
+  log "restoring seed (ssh, github, tailscale, wifi, jcode)"
+  bash "$REPO/install/seed/restore-seed.sh" "$J_SEED" "$J_USER"
+  shred -u "$J_SEED" 2>/dev/null || rm -f "$J_SEED"
+elif [ -n "${J_JCODE_API_KEY:-}" ]; then
+  log "seeding jcode API key"
+  # jcode reads API keys from ~/.config/jcode/<provider>.env (KEY=value). Pick
+  # the file from the key prefix so the provider is auto-detected on first run.
+  case "$J_JCODE_API_KEY" in
+    sk-ant-*)  envf=anthropic.env;          envk=ANTHROPIC_API_KEY ;;
+    sk-or-*)   envf=openrouter.env;         envk=OPENROUTER_API_KEY ;;
+    jck_*)     envf=jcode-subscription.env; envk=JCODE_API_KEY ;;
+    sk-*)      envf=openai.env;             envk=OPENAI_API_KEY ;;
+    *) echo "unrecognised key prefix; expected sk-ant-*, sk-or-*, sk-*, or jck_*" >&2; exit 1 ;;
+  esac
+  cfg="/home/$J_USER/.config/jcode"
+  install -dm700 -o "$J_USER" -g "$J_USER" "/home/$J_USER/.config" "$cfg"
+  printf '%s=%s\n' "$envk" "$J_JCODE_API_KEY" > "$cfg/$envf"
+  chown "$J_USER:$J_USER" "$cfg/$envf"; chmod 600 "$cfg/$envf"
+fi
+
 log "sanity"
 pacman -Q jstack-base jstack-agent jstack-terminals jstack-niri
 ! pacman -Q snapper snap-pac timeshift >/dev/null 2>&1 || { echo "snapshot tooling present!" >&2; exit 1; }

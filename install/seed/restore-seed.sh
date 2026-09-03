@@ -22,6 +22,7 @@ if [ -d "$S/home" ]; then
   chown -R "$U:$U" "$H"
   [ -d "$H/.ssh" ] && chmod 700 "$H/.ssh" && find "$H/.ssh" -type f -exec chmod 600 {} + && log "ssh keys"
   [ -d "$H/.jcode" ] && chmod 700 "$H/.jcode" && find "$H/.jcode" -maxdepth 1 -type f -name '*.json' -exec chmod 600 {} + && log "jcode auth/config"
+  [ -d "$H/.config/jcode" ] && chmod 700 "$H/.config/jcode" && find "$H/.config/jcode" -name '*.env' -exec chmod 600 {} + && log "jcode provider keys"
   [ -d "$H/.config/gh" ] && chmod -R go-rwx "$H/.config/gh" && log "gh auth"
   [ -f "$H/.gitconfig" ] && log "gitconfig"
 fi
