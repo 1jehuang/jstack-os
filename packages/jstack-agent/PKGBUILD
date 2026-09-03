@@ -1,0 +1,40 @@
+# Maintainer: Jeremy <jstack-os>
+# Preinstalls the jcode coding agent from a pinned upstream release so every
+# jstack OS install boots with `jcode` on PATH. Bump pkgver + sha256 to update.
+pkgname=jstack-agent
+pkgver=0.81.4
+pkgrel=1
+pkgdesc="jstack OS agent layer: jcode coding agent (pinned release)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/1jehuang/jcode"
+license=('MIT')
+depends=('glibc' 'git' 'jq' 'ripgrep' 'kitty')
+provides=('jcode')
+conflicts=('jcode' 'jcode-bin')
+options=('!strip' '!debug')
+source_x86_64=("jcode-linux-x86_64-${pkgver}.tar.gz::https://github.com/1jehuang/jcode/releases/download/v${pkgver}/jcode-linux-x86_64.tar.gz")
+source_aarch64=("jcode-linux-aarch64-${pkgver}.tar.gz::https://github.com/1jehuang/jcode/releases/download/v${pkgver}/jcode-linux-aarch64.tar.gz")
+sha256sums_x86_64=('7e418f43b4979b50e80515776518420f8d367ad357d8d5a590f57c70a7f5529c')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  local arch_name
+  case "$CARCH" in
+    x86_64)  arch_name=x86_64 ;;
+    aarch64) arch_name=aarch64 ;;
+  esac
+  # Upstream tarball ships a launcher script + .bin that must live side by side.
+  install -Dm755 "$srcdir/jcode-linux-${arch_name}"     "$pkgdir/usr/lib/jstack/agent/jcode"
+  install -Dm755 "$srcdir/jcode-linux-${arch_name}.bin" "$pkgdir/usr/lib/jstack/agent/jcode-linux-${arch_name}.bin"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s /usr/lib/jstack/agent/jcode "$pkgdir/usr/bin/jcode"
+  # Skel: keep jcode's self-update out of the way of the packaged binary.
+  install -Dm644 /dev/stdin "$pkgdir/etc/profile.d/jstack-agent.sh" <<'SH'
+# jstack OS: jcode is managed by pacman (jstack-agent). Disable in-place auto-update.
+export JCODE_NO_AUTO_UPDATE=1
+SH
+  install -Dm644 /dev/stdin "$pkgdir/etc/fish/conf.d/jstack-agent.fish" <<'FISH'
+# jstack OS: jcode is managed by pacman (jstack-agent). Disable in-place auto-update.
+set -gx JCODE_NO_AUTO_UPDATE 1
+FISH
+}

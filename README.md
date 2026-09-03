@@ -8,7 +8,13 @@ preinstalled agent harnesses.
 ## Layout
 
 - `packages/` - PKGBUILDs for jstack meta/config packages
+  - `jstack-base/` - policy: services, keyd, NM/iwd, fish, **no snapshots**
+  - `jstack-agent/` - jcode preinstalled from a pinned release
+  - `jstack-terminals/` - kitty (remote-control socket) + foot defaults
   - `jstack-niri/` - niri desktop: config, keymap, helper scripts
+  - `jstack-waybar/`, `jstack-network/`, `tofi-jstack/`
+- `install/` - `jstack-install.sh`: full install from an Ubuntu/Debian or Arch
+  host via pacstrap. See `docs/INSTALL_FROM_UBUNTU.md`
   - `jstack-scheduler/` - scx_lavd CPU scheduler (sched_ext), enabled by default
   - `jstack-firefox/` - Firefox policies, OLED theme, curated extensions
 - `installer/` - executable no-USB Windows installer state model and tools

@@ -1,0 +1,4 @@
+# Installed by jstack-install for the primary user; %USER% is substituted.
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin %USER% --noclear %I $TERM

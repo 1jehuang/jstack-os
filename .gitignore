@@ -6,3 +6,6 @@ __pycache__/
 /installer/core/target/
 /installer/staging/target/
 /installer/controller/target/
+/packages/tofi-jstack/tofi/
+*-debug-*.pkg.tar.zst
+/packages/*/*.tar.gz

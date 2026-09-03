@@ -166,10 +166,29 @@ Reference profile: `~/.mozilla/firefox/*.default-release`. Shipped as `jstack-fi
 | ~/.config/tridactyl/tridactylrc | cruft | tridactyl disabled |
 | cookies, logins, places, sessionstore, containers | personal | never shipped |
 
+## base system policy (audited 2026-09-03)
+
+| Item | Bucket | Notes |
+|---|---|---|
+| snapper (installed, timers disabled, empty /.snapshots) | cruft | **explicitly banned**: jstack-base conflicts + pacman hook. btrfs stays, snapshots do not |
+| btrfs layout @ @home @log @pkg, zstd:3, discard=async | distro | installer reproduces it |
+| systemd-boot, timeout 1 | distro | resume=/hibernate offset | hardware | not shipped |
+| keyd rightalt=enter | distro | jstack-base |
+| NetworkManager wifi.backend=iwd | distro | jstack-base |
+| tlp, earlyoom, bluetooth, iwd, NM enabled | distro | preset in jstack-base |
+| fish login shell + tty1 autologin -> niri-session | distro | skel conf.d + autologin template |
+| ~/.profile Wayland exports | distro | moved to /etc/fish/conf.d/jstack-env.fish; nvm/cargo/npm PATH lines are personal |
+| fish aliases (wifilogin, chrome ozone, volumeset) | personal | |
+| kitty.conf (remote control socket, black, JetBrainsMono) | distro | jstack-terminals, byte-identical to reference |
+| foot.ini | distro | dropped personal BROWSER=/home/jeremy/bin path |
+| jcode (~/.local/bin launcher + ~/.jcode/builds) | distro | jstack-agent: pinned release tarball -> /usr/lib/jstack/agent, /usr/bin/jcode symlink, auto-update off |
+| ~/.local/bin/jcode-* helper scripts (60+) | personal | selfdev workflow |
+
 ## Pending audits
 
-- [ ] kitty / foot configs
-- [ ] keyd system config
+- [x] kitty / foot configs
+- [x] keyd system config
+- [x] agent layer (jcode, kitty socket)
 - [ ] dunst config
 - [ ] shell (fish?), prompt, CLI tools
 - [ ] agent layer (jcode, kitty socket, firefox agent bridge, MCP, jq/jc defaults)

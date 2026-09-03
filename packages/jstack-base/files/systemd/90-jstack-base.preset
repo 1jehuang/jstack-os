@@ -1,0 +1,12 @@
+enable NetworkManager.service
+enable iwd.service
+enable bluetooth.service
+enable keyd.service
+enable tlp.service
+enable earlyoom.service
+enable fstrim.timer
+enable systemd-timesyncd.service
+disable snapper-timeline.timer
+disable snapper-cleanup.timer
+disable snapper-boot.timer
+disable snapper-backup.timer

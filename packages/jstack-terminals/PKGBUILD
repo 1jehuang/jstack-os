@@ -1,0 +1,21 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-terminals
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS terminal defaults: kitty (remote control on /tmp/kitty.sock) and foot"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=('kitty' 'foot' 'fzf' 'ttf-jetbrains-mono-nerd')
+source=()
+
+package() {
+  local files="$startdir/files"
+  # kitty: allow_remote_control + listen_on unix:/tmp/kitty.sock is what lets
+  # agents drive terminals via `kitty @`. Shipped as the default for new users.
+  install -Dm644 "$files/kitty/kitty.conf" "$pkgdir/etc/skel/.config/kitty/kitty.conf"
+  install -Dm644 "$files/foot/foot.ini"    "$pkgdir/etc/skel/.config/foot/foot.ini"
+  # System-wide reference copies
+  install -Dm644 "$files/kitty/kitty.conf" "$pkgdir/usr/share/jstack/terminals/kitty.conf"
+  install -Dm644 "$files/foot/foot.ini"    "$pkgdir/usr/share/jstack/terminals/foot.ini"
+}

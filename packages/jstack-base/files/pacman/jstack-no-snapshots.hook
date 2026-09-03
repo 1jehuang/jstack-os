@@ -1,0 +1,15 @@
+# jstack OS policy: no automatic filesystem snapshotting. Snapper / snap-pac /
+# timeshift silently eat disk on btrfs roots. Refuse to let them in.
+[Trigger]
+Operation = Install
+Type = Package
+Target = snapper
+Target = snap-pac
+Target = timeshift
+Target = grub-btrfs
+
+[Action]
+Description = jstack OS: refusing snapshot tooling (see /usr/share/doc/jstack-base/POLICY.md)
+When = PreTransaction
+Exec = /usr/bin/sh -c 'echo "jstack-base: snapshot tooling is blocked by policy. Remove /usr/share/libalpm/hooks/90-jstack-no-snapshots.hook to override." >&2; exit 1'
+AbortOnFail

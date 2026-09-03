@@ -1,0 +1,31 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jstack-base
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="jstack OS base policy: services, keyd, NetworkManager/iwd, fish, no-snapshot rule"
+arch=('any')
+url="https://github.com/1jehuang/jstack-os"
+license=('MIT')
+depends=(
+  'base' 'linux' 'linux-firmware' 'btrfs-progs' 'efibootmgr'
+  'networkmanager' 'iwd' 'bluez' 'bluez-utils'
+  'keyd' 'tlp' 'earlyoom'
+  'fish' 'git' 'openssh' 'sudo' 'man-db' 'less' 'vim'
+  'pipewire' 'pipewire-pulse' 'wireplumber'
+  'polkit' 'xdg-user-dirs' 'xdg-utils'
+  'intel-ucode' 'amd-ucode'
+)
+conflicts=('snapper' 'snap-pac' 'timeshift' 'grub-btrfs')
+source=()
+
+package() {
+  local files="$startdir/files"
+  install -Dm644 "$files/keyd/default.conf" "$pkgdir/etc/keyd/default.conf"
+  install -Dm644 "$files/networkmanager/jstack-wifi.conf" "$pkgdir/etc/NetworkManager/conf.d/jstack-wifi.conf"
+  install -Dm644 "$files/fish/conf.d/00-jstack-niri-autostart.fish" "$pkgdir/etc/skel/.config/fish/conf.d/00-jstack-niri-autostart.fish"
+  install -Dm644 "$files/fish/jstack-env.fish" "$pkgdir/etc/fish/conf.d/jstack-env.fish"
+  install -Dm644 "$files/pacman/jstack-no-snapshots.hook" "$pkgdir/usr/share/libalpm/hooks/90-jstack-no-snapshots.hook"
+  install -Dm644 "$files/systemd/90-jstack-base.preset" "$pkgdir/usr/lib/systemd/system-preset/90-jstack-base.preset"
+  install -Dm644 "$files/systemd/autologin.conf.in" "$pkgdir/usr/share/jstack/systemd/autologin.conf.in"
+  install -Dm644 "$files/POLICY.md" "$pkgdir/usr/share/doc/jstack-base/POLICY.md"
+}
