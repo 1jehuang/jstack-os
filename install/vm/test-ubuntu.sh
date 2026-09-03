@@ -37,19 +37,39 @@ users:
     lock_passwd: false
     plain_text_passwd: ubuntu
 runcmd:
-  - |
-    set -x
-    exec > >(tee /dev/ttyS0) 2>&1
-    echo "E2E: begin $(date)"
-    mkdir -p /mnt/cd && mount -o ro LABEL=cidata /mnt/cd
-    mkdir -p /root/jstack-os && tar -C /root/jstack-os -xzf /mnt/cd/repo.tgz
-    if /root/jstack-os/install/jstack-install.sh --disk /dev/vdb --user jeremy --password jstack \
-         --hostname jstack-vm --yes; then
-      echo "E2E: INSTALL_OK"
-      # Inject first-boot self-check for the target (serial console + poweroff)
-      T=/mnt/jstack
-      sed -i 's/^options \(.*\)/options \1 console=ttyS0,115200 console=tty1/' $T/boot/loader/entries/jstack.conf
-      cat > $T/usr/local/bin/jstack-e2e-check <<'C'
+  - [ sh, -c, "mkdir -p /mnt/cd && mount -o ro LABEL=cidata /mnt/cd && bash /mnt/cd/run.sh" ]
+U
+cat > seed/run.sh <<'R'
+#!/bin/bash
+exec > >(tee /dev/ttyS0) 2>&1
+echo "E2E: begin $(date)"
+mkdir -p /root/jstack-os && tar -C /root/jstack-os -xzf /mnt/cd/repo.tgz
+if /root/jstack-os/install/jstack-install.sh --disk /dev/vdb --user jeremy --password jstack \
+     --hostname jstack-vm --yes; then
+  echo "E2E: INSTALL_OK"
+  T=/mnt/jstack
+  sed -i 's/^options \(.*\)/options \1 console=ttyS0,115200 console=tty1/' $T/boot/loader/entries/jstack.conf
+  install -m755 /mnt/cd/check.sh $T/usr/local/bin/jstack-e2e-check
+  cat > $T/etc/systemd/system/jstack-e2e-check.service <<'S'
+[Unit]
+Description=jstack e2e first-boot check
+After=multi-user.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jstack-e2e-check
+[Install]
+WantedBy=multi-user.target
+S
+  mkdir -p $T/etc/systemd/system/multi-user.target.wants
+  ln -sf /etc/systemd/system/jstack-e2e-check.service $T/etc/systemd/system/multi-user.target.wants/
+  umount -R $T
+else
+  echo "E2E: INSTALL_FAILED rc=$?"
+fi
+sync
+poweroff
+R
+cat > seed/check.sh <<'C'
 #!/bin/bash
 exec > /dev/ttyS0 2>&1
 echo "E2E-BOOT: hostname=$(hostname)"
@@ -70,25 +90,6 @@ echo "E2E-BOOT: niri=$(command -v niri) kitty=$(command -v kitty) waybar=$(comma
 echo "E2E-BOOT: DONE"
 systemctl poweroff
 C
-      chmod +x $T/usr/local/bin/jstack-e2e-check
-      cat > $T/etc/systemd/system/jstack-e2e-check.service <<'S'
-[Unit]
-Description=jstack e2e first-boot check
-After=multi-user.target
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/jstack-e2e-check
-[Install]
-WantedBy=multi-user.target
-S
-      ln -sf /etc/systemd/system/jstack-e2e-check.service $T/etc/systemd/system/multi-user.target.wants/
-      umount -R $T
-    else
-      echo "E2E: INSTALL_FAILED rc=$?"
-    fi
-    sync
-    poweroff
-U
 xorriso -as mkisofs -quiet -o seed.iso -V cidata -J -r seed >/dev/null 2>&1
 
 cp "$OVMF_VARS" vars-ubuntu.fd; cp "$OVMF_VARS" vars-target.fd
