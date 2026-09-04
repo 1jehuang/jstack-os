@@ -56,7 +56,7 @@ if /root/jstack-os/install/jstack-install.sh --disk /dev/vdb --user jeremy --pas
      --hostname jstack-vm --yes; then
   echo "E2E: INSTALL_OK"
   T=/mnt/jstack
-  sed -i 's/^options \(.*\)/options \1 console=ttyS0,115200 console=tty1/' $T/boot/loader/entries/jstack.conf
+  sed -i 's/^options \(.*\)/options \1 console=ttyS0,115200n8 systemd.log_target=console systemd.log_level=info/' $T/boot/loader/entries/jstack.conf
   install -m755 /mnt/cd/check.sh $T/usr/local/bin/jstack-e2e-check
   cat > $T/etc/systemd/system/jstack-e2e-check.service <<'S'
 [Unit]

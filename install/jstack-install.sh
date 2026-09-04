@@ -103,7 +103,8 @@ host_prep() {
     echo "Server = $MIRROR" > "$BOOT/etc/pacman.d/mirrorlist"
   else
     { echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch';
-      curl -fsSL 'https://archlinux.org/mirrorlist/?country=US&protocol=https&use_mirror_status=on' \
+      curl -fsSL --retry 5 --retry-all-errors \
+        'https://archlinux.org/mirrorlist/?country=US&protocol=https&use_mirror_status=on' \
         | sed 's/^#Server/Server/' | grep '^Server' | head -10; } > "$BOOT/etc/pacman.d/mirrorlist"
   fi
   sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 8/' "$BOOT/etc/pacman.conf"
