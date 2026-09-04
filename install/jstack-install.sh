@@ -162,6 +162,21 @@ bootstrap() {
   fi
   # genfstab may emit subvolid=; keep subvol= only so snapshots/rollbacks never confuse boot.
   sed -i 's/,subvolid=[0-9]*//g' "$MNT/etc/fstab"
+  # genfstab inside the Ubuntu bootstrap chroot can fall back to /dev/vdX names
+  # because its blkid cache does not describe the host's target device. Such an
+  # fstab breaks if firmware or a hypervisor enumerates the disk differently.
+  local root_uuid esp_uuid
+  root_uuid=$(blkid -s UUID -o value "$ROOT_PART")
+  esp_uuid=$(blkid -s UUID -o value "$ESP_PART")
+  [ -n "$root_uuid" ] && [ -n "$esp_uuid" ] || die "could not resolve target filesystem UUIDs"
+  awk -v root="UUID=$root_uuid" -v esp="UUID=$esp_uuid" '
+    $1 !~ /^#/ && ($2 == "/" || $2 == "/home" || $2 == "/var/log" || $2 == "/var/cache/pacman/pkg") { $1=root }
+    $1 !~ /^#/ && $2 == "/boot" { $1=esp }
+    { print }
+  ' "$MNT/etc/fstab" > "$MNT/etc/fstab.jstack"
+  mv "$MNT/etc/fstab.jstack" "$MNT/etc/fstab"
+  awk '$1 !~ /^#/ && $1 ~ /^\/dev\// { bad=1 } END { exit bad }' "$MNT/etc/fstab" \
+    || die "fstab contains unstable /dev paths"
 
   log "Staging jstack-os repo into target"
   mkdir -p "$MNT/usr/src/jstack-os"

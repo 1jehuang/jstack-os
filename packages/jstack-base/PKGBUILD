@@ -1,7 +1,7 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-base
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="jstack OS base policy: services, keyd, NetworkManager/iwd, fish, no-snapshot rule"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
@@ -22,6 +22,7 @@ package() {
   local files="$startdir/files"
   install -Dm644 "$files/keyd/default.conf" "$pkgdir/etc/keyd/default.conf"
   install -Dm644 "$files/networkmanager/jstack-wifi.conf" "$pkgdir/etc/NetworkManager/conf.d/jstack-wifi.conf"
+  install -Dm644 "$files/tlp/10-jstack.conf" "$pkgdir/etc/tlp.d/10-jstack.conf"
   install -Dm644 "$files/fish/conf.d/00-jstack-niri-autostart.fish" "$pkgdir/etc/skel/.config/fish/conf.d/00-jstack-niri-autostart.fish"
   install -Dm644 "$files/fish/jstack-env.fish" "$pkgdir/etc/fish/conf.d/jstack-env.fish"
   install -Dm644 "$files/pacman/jstack-no-snapshots.hook" "$pkgdir/usr/share/libalpm/hooks/90-jstack-no-snapshots.hook"
