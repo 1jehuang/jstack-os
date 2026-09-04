@@ -55,6 +55,12 @@ done
 if [ -n "$DISK" ]; then
   [ -z "$ROOT_PART$ESP_PART" ] || die "use --disk OR --root-part/--esp-part"
   [ -b "$DISK" ] || die "$DISK is not a block device"
+  # A whole-disk install must run from another disk or a live environment that
+  # has copied itself to RAM and released every target-disk mount.  Without
+  # this guard, running the advertised command from the installed Ubuntu host
+  # can erase the filesystem that is executing this script.
+  TARGET_MOUNTS=$(lsblk -nrpo MOUNTPOINTS "$DISK" | sed '/^[[:space:]]*$/d')
+  [ -z "$TARGET_MOUNTS" ] || die "$DISK or one of its partitions is mounted; copy the installer to RAM, unmount the target disk, and retry"
 else
   [ -b "$ROOT_PART" ] && [ -b "$ESP_PART" ] || die "--root-part and --esp-part must be block devices"
 fi

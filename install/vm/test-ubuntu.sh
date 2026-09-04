@@ -8,8 +8,16 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="${WORK:-${JCODE_SCRATCH_DIR:-/tmp}/jstack-ubuntu-e2e}"
 UBUNTU_IMG_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-OVMF_CODE=/usr/share/edk2/x64/OVMF_CODE.4m.fd
-OVMF_VARS=/usr/share/edk2/x64/OVMF_VARS.4m.fd
+# Allow callers to override the firmware paths, while supporting both the
+# Arch/Fedora-style edk2 location and Ubuntu's OVMF package layout.
+find_ovmf() {
+  for candidate in "$@"; do
+    [ -r "$candidate" ] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
+OVMF_CODE="${OVMF_CODE:-$(find_ovmf /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/OVMF/OVMF_CODE_4M.fd)}"
+OVMF_VARS="${OVMF_VARS:-$(find_ovmf /usr/share/edk2/x64/OVMF_VARS.4m.fd /usr/share/OVMF/OVMF_VARS_4M.fd)}"
 MEM="${MEM:-4096}"; CPUS="${CPUS:-4}"
 mkdir -p "$WORK"; cd "$WORK"
 log() { printf '\033[1;35m[e2e]\033[0m %s\n' "$*"; }
@@ -80,6 +88,7 @@ echo "E2E-BOOT: sudo_nopasswd=$(sudo -n -u jeremy sudo -n true && echo yes || ec
 echo "E2E-BOOT: jcode=$(sudo -u jeremy /usr/bin/jcode --version 2>&1 | grep -m1 "^jcode v")"
 echo "E2E-BOOT: jcode_fish=$(sudo -u jeremy fish -lc 'jcode --version; echo NOAUTO=$JCODE_NO_AUTO_UPDATE' 2>&1 | grep -E "^jcode v|NOAUTO" | tr "
 " " ")"
+echo "E2E-BOOT: gh=$(command -v gh)"
 echo "E2E-BOOT: kitty_socket_cfg=$(grep -c 'listen_on unix:/tmp/kitty.sock' /home/jeremy/.config/kitty/kitty.conf)"
 echo "E2E-BOOT: snapper=$(pacman -Q snapper snap-pac timeshift 2>/dev/null | wc -l)"
 echo "E2E-BOOT: snapshots=$(btrfs subvolume list / | grep -c snapshot)"
@@ -124,6 +133,7 @@ chk() { grep -q "$1" phase2.log && log "PASS $2" || { log "FAIL $2"; fail=1; }; 
 chk "E2E-BOOT: sudo_nopasswd=yes" "passwordless sudo"
 chk "E2E-BOOT: jcode=jcode v" "jcode preinstalled"
 chk "E2E-BOOT: jcode_fish=jcode v.*NOAUTO=1" "jcode on fish PATH with auto-update disabled"
+chk "E2E-BOOT: gh=/usr/bin/gh" "GitHub CLI installed for restored auth"
 chk "E2E-BOOT: kitty_socket_cfg=1" "kitty remote-control config"
 chk "E2E-BOOT: snapper=0" "no snapper"
 chk "E2E-BOOT: hook=yes" "no-snapshot pacman hook"

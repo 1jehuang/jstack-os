@@ -10,7 +10,7 @@ depends=(
   'base' 'linux' 'linux-firmware' 'btrfs-progs' 'efibootmgr'
   'networkmanager' 'iwd' 'bluez' 'bluez-utils'
   'keyd' 'tlp' 'earlyoom'
-  'fish' 'git' 'openssh' 'sudo' 'man-db' 'less' 'vim'
+  'fish' 'git' 'github-cli' 'openssh' 'sudo' 'man-db' 'less' 'vim'
   'pipewire' 'pipewire-pulse' 'wireplumber'
   'polkit' 'xdg-user-dirs' 'xdg-utils'
   'intel-ucode' 'amd-ucode'
