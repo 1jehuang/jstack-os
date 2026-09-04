@@ -10,7 +10,9 @@
 #   ssh        ~/.ssh (keys, config, known_hosts)
 #   github     ~/.gitconfig, ~/.config/gh (gh CLI auth)
 #   tailscale  /var/lib/tailscale/tailscaled.state (same node identity, no re-login)
-#   wifi       /var/lib/iwd/*.psk|*.open|*.8021x, /etc/NetworkManager/system-connections/
+#   wifi       /var/lib/iwd/*.psk|*.open|*.8021x, persistent and runtime
+#              NetworkManager Wi-Fi profiles (Ubuntu/netplan commonly stores the
+#              active keyfile under /run rather than /etc)
 #
 # Encryption: openssl aes-256-cbc -pbkdf2 with a passphrase (present everywhere;
 # no extra tools on the Ubuntu host). Use --no-encrypt only onto trusted media.
@@ -44,6 +46,22 @@ copy_home .config/gh
 copy_sys /var/lib/tailscale/tailscaled.state
 copy_sys /var/lib/iwd
 copy_sys /etc/NetworkManager/system-connections
+# Ubuntu's NetworkManager netplan integration renders profiles into /run. Copy
+# Wi-Fi keyfiles into the normal persistent destination in the seed so they can
+# be consumed both by the Arch live environment and by the installed system.
+runtime_nm=/run/NetworkManager/system-connections
+if $SUDO test -d "$runtime_nm" 2>/dev/null; then
+  nm_dest="$S/system/etc/NetworkManager/system-connections"
+  mkdir -p "$nm_dest"
+  runtime_wifi=0
+  while IFS= read -r -d '' profile; do
+    if $SUDO grep -qE '^type=wifi$|^\[wifi\]$' "$profile"; then
+      $SUDO cp -a "$profile" "$nm_dest/$(basename "$profile")"
+      runtime_wifi=$((runtime_wifi + 1))
+    fi
+  done < <($SUDO find "$runtime_nm" -maxdepth 1 -type f -name '*.nmconnection' -print0)
+  [ "$runtime_wifi" -eq 0 ] || log "$runtime_wifi runtime NetworkManager Wi-Fi profile(s)"
+fi
 # Prune iwd runtime noise, keep only credential files.
 [ -d "$S/system/var/lib/iwd" ] && $SUDO find "$S/system/var/lib/iwd" -mindepth 1 -maxdepth 1 ! -name '*.psk' ! -name '*.open' ! -name '*.8021x' -exec rm -rf {} +
 
