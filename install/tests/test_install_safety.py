@@ -135,6 +135,12 @@ class InstallerSafetyTests(unittest.TestCase):
         text = SCRIPT.read_text()
         self.assertIn('[ -n "$STATE_DIR" ] || die "--state-dir on a persistent separate host disk is required"', text)
 
+    def test_partition_only_install_is_outside_transactional_scope(self):
+        text = SCRIPT.read_text()
+        refusal = "transactional Ubuntu installation supports only a separate whole disk"
+        self.assertIn(refusal, text)
+        self.assertLess(text.index(refusal), text.index("# ---------- host prerequisites ----------"))
+
     def test_working_mirrorlist_is_installed_after_pacstrap(self):
         text = SCRIPT.read_text()
         copy = 'install -Dm644 "$MIRRORLIST" "$MNT/etc/pacman.d/mirrorlist"'
