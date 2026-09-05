@@ -173,3 +173,21 @@ completed no-write replay on this plan, and remaining real refusal cases remain
 open. At this checkpoint only 23 GiB remained on the scratch filesystem, below
 the safe budget for another prepared host plus preserved fault overlays; no
 campaign VM was started under that space constraint.
+
+A subsequent target-preserving step cold-booted the retained host without a
+source checkout or network and resumed the completed final64 plan. It emitted
+the same completion marker and rc 0, with no intent, readback, commit, or
+advance. The target qcow SHA-256, size, mtime, and allocated-block count were
+identical before and after. No-op log SHA-256:
+`8c51c37756f655beb43a0fe84500f0305b5b4fc44b1f663be2d07d8b56ad0ea5`.
+
+The retained content-addressed artifact was then reused without another image
+build. An offline thin host overlay and new blank 24 GiB target ran the public
+prepare command and authorized plan
+`9797ea9a82db2945b60c27d156c1b95dfd02682b0acbb05a17ed86d273049891`.
+Both images passed `qemu-img check`. This preserved predeployment campaign
+baseline is
+`/home/jeremy/.jcode/scratch/jstack-ubuntu-final64-campaign-1788594980`.
+The remaining external cut overlays were not started with only 22 GiB free,
+because preserving three expected ~5.5 GiB target overlays would already leave
+an unsafe filesystem margin before the rest of the required matrix.
