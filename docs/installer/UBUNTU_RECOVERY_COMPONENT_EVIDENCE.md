@@ -7,6 +7,13 @@ must supply those observations on its frozen source tree.
 
 ## Observed checkpoint gates
 
+- The complete gate was rerun after the platform-safety and canonical refusal
+  probe checkpoints: task `266512emsb` passed in 348.2 seconds on 2026-09-05.
+  It included `make -C installer check` (including formatting and cross-platform
+  checks), 31 install regressions, focused refusal-probe checks, shell syntax and
+  diff checks. This supersedes the earlier formatting-only failure. Real refusal
+  results and the remaining cold-cut cases must still be recorded separately.
+
 - After artifact mount isolation fix `cb7d6c4`, the complete installer gate,
   all 27 install shell/harness regressions, shell syntax checks and diff checks
   passed independently (task `208545pea1`, 223.9 seconds). The new ordering
