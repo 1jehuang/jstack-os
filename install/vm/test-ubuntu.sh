@@ -32,20 +32,25 @@ mkdir -p "$work_parent"
 free_kib=$(df -Pk "$work_parent" | awk 'NR == 2 {print $4}')
 need_kib=$((MIN_FREE_GIB * 1024 * 1024))
 [ "$free_kib" -ge "$need_kib" ] || die "insufficient free space at $work_parent: need ${MIN_FREE_GIB} GiB, have $((free_kib / 1024 / 1024)) GiB"
-for tool in curl qemu-img qemu-system-x86_64 tar xorriso timeout; do
+for tool in cargo curl qemu-img qemu-system-x86_64 tar xorriso timeout; do
   command -v "$tool" >/dev/null || die "required tool not found: $tool"
 done
 mkdir "$WORK"; cd "$WORK"
 
 # 1. Ubuntu base image
 [ -f noble.img ] || { log "downloading Ubuntu noble cloud image"; curl -fL --retry 3 -o noble.img "$UBUNTU_IMG_URL"; }
-qemu-img create -q -f qcow2 -b noble.img -F qcow2 ubuntu.qcow2 20G
+qemu-img create -q -f qcow2 -b noble.img -F qcow2 ubuntu.qcow2 50G
 qemu-img create -q -f qcow2 target.qcow2 24G
+
+log "building static transactional controller"
+(cd "$REPO/installer/controller" && cargo build --release --target x86_64-unknown-linux-musl --bin jstack-ubuntu-installer)
+cp "$REPO/installer/controller/target/x86_64-unknown-linux-musl/release/jstack-ubuntu-installer" seed-controller
 
 # 2. Seed ISO: cloud-init + repo tarball
 mkdir seed
 tar -C "$REPO" --anchored --no-wildcards-match-slash --exclude=.git --exclude='./installer/*/target' --exclude='./packages/*/pkg' --exclude='./packages/*/src' \
     --exclude='*.pkg.tar.zst' --exclude='./packages/tofi-jstack/tofi' -czf seed/repo.tgz .
+install -m755 seed-controller seed/jstack-ubuntu-installer
 cat > seed/meta-data <<'M'
 instance-id: jstack-e2e
 local-hostname: ubuntu-host
@@ -66,26 +71,11 @@ cat > seed/run.sh <<'R'
 exec > >(tee /dev/ttyS0) 2>&1
 echo "E2E: begin $(date)"
 mkdir -p /root/jstack-os && tar -C /root/jstack-os -xzf /mnt/cd/repo.tgz
-if /root/jstack-os/install/jstack-install.sh --disk /dev/vdb --user jeremy --password jstack \
-     --hostname jstack-vm --yes; then
+if JSTACK_UBUNTU_INSTALLER=/mnt/cd/jstack-ubuntu-installer \
+   /root/jstack-os/install/jstack-install.sh --disk /dev/disk/by-id/virtio-JSTACK_TARGET_01 \
+     --state-dir /var/lib/jstack-installer --user jeremy --password jstack \
+     --hostname jstack-vm --serial-console --yes; then
   echo "E2E: INSTALL_OK"
-  T=/mnt/jstack
-  sed -i 's/^options \(.*\)/options \1 console=ttyS0,115200n8 systemd.log_target=console systemd.log_level=info/' $T/boot/loader/entries/jstack.conf
-  install -m755 /mnt/cd/check.sh $T/usr/local/bin/jstack-e2e-check
-  cat > $T/etc/systemd/system/jstack-e2e-check.service <<'S'
-[Unit]
-Description=jstack e2e first-boot check
-After=multi-user.target home.mount
-RequiresMountsFor=/home
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/jstack-e2e-check
-[Install]
-WantedBy=multi-user.target
-S
-  mkdir -p $T/etc/systemd/system/multi-user.target.wants
-  ln -sf /etc/systemd/system/jstack-e2e-check.service $T/etc/systemd/system/multi-user.target.wants/
-  umount -R $T
 else
   echo "E2E: INSTALL_FAILED rc=$?"
 fi
@@ -126,15 +116,18 @@ C
 xorriso -as mkisofs -quiet -o seed.iso -V cidata -J -r seed >/dev/null 2>&1
 
 cp "$OVMF_VARS" vars-ubuntu.fd; cp "$OVMF_VARS" vars-target.fd
-QEMU_BASE=(qemu-system-x86_64 -enable-kvm -cpu host -m "$MEM" -smp "$CPUS" -nographic
+QEMU_BASE=(qemu-system-x86_64 -enable-kvm -cpu host -m "$MEM" -smp "$CPUS"
   -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE")
 
 # 3. Phase 1: Ubuntu runs the installer
 log "phase 1: booting Ubuntu, running installer (log: $WORK/phase1.log)"
 timeout "${PHASE1_TIMEOUT:-5400}" "${QEMU_BASE[@]}" \
+  -nographic \
   -drive if=pflash,format=raw,file=vars-ubuntu.fd \
-  -drive file=ubuntu.qcow2,if=virtio,format=qcow2 \
-  -drive file=target.qcow2,if=virtio,format=qcow2 \
+  -drive file=ubuntu.qcow2,if=none,id=recovery,format=qcow2 \
+  -device virtio-blk-pci,drive=recovery,serial=JSTACK_RECOVERY_01,bootindex=1 \
+  -drive file=target.qcow2,if=none,id=target,format=qcow2 \
+  -device virtio-blk-pci,drive=target,serial=JSTACK_TARGET_01 \
   -drive file=seed.iso,if=virtio,format=raw,readonly=on \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
   -serial mon:stdio 2>&1 | tee phase1.log | grep --line-buffered -E "E2E|==>|  ->|error|Error|makepkg|Finished making" || true
@@ -142,11 +135,33 @@ grep -q "E2E: INSTALL_OK" phase1.log || { log "phase 1 FAILED; see $WORK/phase1.
 
 # 4. Phase 2: boot the installed disk
 log "phase 2: booting installed jstack OS (log: $WORK/phase2.log)"
+mkfifo phase2.in
+exec 9<>phase2.in
 timeout "${PHASE2_TIMEOUT:-600}" "${QEMU_BASE[@]}" \
   -drive if=pflash,format=raw,file=vars-target.fd \
-  -drive file=target.qcow2,if=virtio,format=qcow2 \
+  -drive file=target.qcow2,if=none,id=installed,format=qcow2 \
+  -device virtio-blk-pci,drive=installed,serial=JSTACK_TARGET_01,bootindex=1 \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
-  -serial mon:stdio 2>&1 | tee phase2.log | grep --line-buffered "E2E-BOOT" || true
+  -display none -monitor none -serial stdio <&9 >phase2.log 2>&1 &
+phase2_pid=$!
+wait_for_log() {
+  local pattern=$1 limit=${2:-300} i
+  for ((i=0; i<limit; i++)); do
+    grep -q "$pattern" phase2.log 2>/dev/null && return 0
+    kill -0 "$phase2_pid" 2>/dev/null || return 1
+    sleep 1
+  done
+  return 1
+}
+wait_for_log 'jstack-vm login:' 300 || { log "installed system did not reach serial login"; kill "$phase2_pid" 2>/dev/null || true; exit 1; }
+printf 'jeremy\n' >&9
+wait_for_log 'Password:' 30 || { log "serial login did not request password"; kill "$phase2_pid" 2>/dev/null || true; exit 1; }
+printf 'jstack\n' >&9
+sleep 2
+check_b64=$(base64 -w0 seed/check.sh)
+printf "echo '%s' | base64 -d | sudo bash\n" "$check_b64" >&9
+wait "$phase2_pid" || true
+exec 9>&-
 grep -q "E2E-BOOT: DONE" phase2.log || { log "phase 2 FAILED; see $WORK/phase2.log"; exit 1; }
 
 fail=0
