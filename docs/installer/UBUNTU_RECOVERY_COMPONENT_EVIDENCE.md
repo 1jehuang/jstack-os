@@ -7,6 +7,13 @@ must supply those observations on its frozen source tree.
 
 ## Observed checkpoint gates
 
+- After artifact mount isolation fix `cb7d6c4`, the complete installer gate,
+  all 27 install shell/harness regressions, shell syntax checks and diff checks
+  passed independently (task `208545pea1`, 223.9 seconds). The new ordering
+  regression checks that the Ubuntu bootstrap bind is isolated and removed
+  before artifact promotion. A fresh real VM rerun is required to establish
+  stable image hashes and successful deployment after this change.
+
 - Later complete-project gate `make -C installer check` passed on 2026-09-05
   (task `885036uqkq`, 220.5 seconds), after the public shell routing fixes.
 - Static packaging through `make -C installer/controller ubuntu-static` passed.
