@@ -1,5 +1,11 @@
 # Legacy installer preflight VM evidence
 
+**Current status:** the full Ubuntu installation and UEFI first boot passed,
+including all 21 policy checks. Real VM preflight failures, input guards, and
+post-destructive warnings also passed. The historical capacity blocker below
+was resolved. This validates the changes to the legacy installer, not automatic
+restart recovery or integration with the transactional controller.
+
 `install/vm/test-preflight-no-write.sh` is the acceptance test for the preflight
 no-write guarantee introduced by `ef50773`. It runs the public
 `install/jstack-install.sh` byte-for-byte, inside an Ubuntu QEMU/KVM guest, and
@@ -21,7 +27,10 @@ HTTP endpoint, then returns HTTP 503 for base-package payloads. This lets
 `host_prep` finish and makes the real `pacman -Syw` in `package_preflight` fail.
 The test requires the preflight log marker, a real pacman retrieval error, no
 post-destruction warning, and equal SHA-256 hashes of the entire target block
-device before and after all invocations.
+device before and after the input-guard and failed-preflight invocations. A
+separate final phase intentionally allows the disposable target to be modified,
+then forces partitioning failure to verify the post-destructive warning. The
+no-write assertion applies to the earlier phase, not to that deliberate fault.
 
 ## Requirement-to-check matrix
 
@@ -172,3 +181,10 @@ UEFI boot, mirror propagation, first-boot policy, prompt refusal, and bounded
 post-destructive warning acceptance. It does **not** implement or prove the
 transactional controller/crash-recovery architecture. The warning advises
 manual recovery; it is not automatic interruption recovery.
+
+An independent final rerun of the reviewed bounded harness completed in 49.7
+seconds with status 0. Its log is retained at
+`~/.jcode/scratch/jstack-final-fault-acceptance-20260904T174515/serial.log`.
+It reverified the same installer hash, four argument guards, empty-password and
+EOF rejection, byte-identical target after failed preflight, and the separate
+real post-destructive warning without disclosing the supplied secret.

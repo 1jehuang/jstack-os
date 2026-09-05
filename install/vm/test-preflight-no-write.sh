@@ -3,7 +3,9 @@
 # Boots a disposable overlay of a previously prepared Ubuntu image, uses its
 # cached Arch bootstrap, and makes a local HTTP mirror serve real repository
 # databases while rejecting package payloads. The public installer is copied
-# verbatim and is never instrumented.
+# verbatim and is never instrumented. After checking preflight leaves the target
+# unchanged, a separate phase deliberately modifies this disposable target to
+# verify the post-destructive warning.
 set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -176,5 +178,5 @@ grep -q "PREFLIGHT-E2E: installer_sha=$INSTALLER_SHA" "$WORK/serial.log"
 grep -q 'PREFLIGHT-E2E: RESULT=PASS' "$WORK/serial.log" || {
   echo "VM acceptance failed (qemu rc=$QEMU_RC), log: $WORK/serial.log" >&2; exit 1;
 }
-echo "PASS: real pacman preflight failed and /dev/vdb stayed byte-identical"
+echo "PASS: preflight failure preserved the target; separate destructive-failure warning verified"
 echo "Evidence: $WORK/serial.log"
