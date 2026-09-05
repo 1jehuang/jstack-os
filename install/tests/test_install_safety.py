@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Non-destructive regression tests for the legacy disk installer."""
+"""Non-destructive regression tests for transactional installer routing."""
 
 import os
 from pathlib import Path
@@ -12,6 +12,30 @@ CHROOT_STAGE = Path(__file__).parents[1] / "chroot-stage.sh"
 
 
 class InstallerSafetyTests(unittest.TestCase):
+    def test_real_public_cli_rejects_stage_escape_before_host_checks(self):
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "--chroot-stage"],
+            text=True, capture_output=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot bypass transactional installation", result.stderr)
+
+    def test_real_public_cli_rejects_duplicate_options_before_host_checks(self):
+        for args in (
+            ["--disk", "/dev/never-open-a", "--disk", "/dev/never-open-b", "--yes"],
+            ["--yes", "--yes"],
+            ["--password", "private-one", "--password", "private-two"],
+        ):
+            with self.subTest(option=args[0]):
+                result = subprocess.run(
+                    ["bash", str(SCRIPT), *args],
+                    text=True, capture_output=True, timeout=10,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("duplicate option", result.stderr)
+                self.assertNotIn("private-one", result.stderr)
+                self.assertNotIn("private-two", result.stderr)
+
     def run_instrumented(self, fail_preflight: bool, bootstrap: bool = False, die_after_destructive: bool = False, password: str = "secret", stdin: str = "", sector_size: int = 512):
         scratch = Path(os.environ.get("JCODE_SCRATCH_DIR", Path.home() / ".jcode" / "scratch"))
         scratch.mkdir(parents=True, exist_ok=True)

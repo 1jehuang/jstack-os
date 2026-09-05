@@ -57,7 +57,10 @@ cleanup_artifact_build() {
 trap 'cleanup_artifact_build; exit 130' INT
 trap 'cleanup_artifact_build; exit 143' TERM
 
+declare -A SEEN_OPTIONS=()
 while [ $# -gt 0 ]; do
+  [ -z "${SEEN_OPTIONS[$1]+present}" ] || die "duplicate option: $1"
+  SEEN_OPTIONS["$1"]=1
   case "$1" in
     --disk) DISK=$2; shift 2 ;;
     --root-part) ROOT_PART=$2; shift 2 ;;
@@ -77,7 +80,7 @@ while [ $# -gt 0 ]; do
     --state-dir) STATE_DIR=$2; shift 2 ;;
     --serial-console) SERIAL_CONSOLE=1; shift ;;
     --yes) YES=1; shift ;;
-    --chroot-stage) shift; exec "$REPO_DIR/install/chroot-stage.sh" "$@" ;;
+    --chroot-stage) die "--chroot-stage is internal and cannot bypass transactional installation" ;;
     -h|--help) usage ;;
     *) die "unknown arg: $1" ;;
   esac
