@@ -39,6 +39,10 @@ case "$virt" in qemu|kvm) ;; *) die "refusing non-QEMU/KVM environment (detected
 installer=$(readlink -f "$installer"); plan=$(readlink -f "$plan"); target=$(readlink -f "$target")
 state=$(dirname "$plan")
 [[ $state != / && -f $state/initialized.json ]] || die "plan parent is not initialized state"
+[[ $(lsblk -dn -o TYPE "$target" | tr -d ' ') == disk ]] || die "target is not a whole disk"
+[[ $(stat -Lc '%U:%h:%F' "$state") == root:1:directory ]] || die "state directory ownership/link/type is unsafe"
+[[ $(stat -Lc '%U:%h:%F' "$plan") == 'root:1:regular file' ]] || die "plan ownership/link/type is unsafe"
+state_mode=$(stat -Lc '%a' "$state"); (( (8#$state_mode & 8#022) == 0 )) || die "state directory is group/world writable"
 [[ -f $state/.jstk-disposable-refusal-state && $(cat "$state/.jstk-disposable-refusal-state") == JSTK_DISPOSABLE_REFUSAL_STATE_V1 ]] || die "state is not explicitly marked disposable"
 command -v python3 >/dev/null || die "python3 is required"
 command -v sha256sum >/dev/null || die "sha256sum is required"
@@ -233,6 +237,11 @@ else
 fi
 
 part=$(lsblk -lnpo NAME,TYPE "$target" | awk '$2=="part"{print $1;exit}')
+if [[ -n $part && -b $part ]]; then
+  run_case partition-target-unsupported 'whole disk' "$state" "$installer" inspect --disk "$part" --state-dir "$state"
+else
+  printf 'SKIP case=partition-target-unsupported reason=%q\n' 'target has no existing partition; destructive setup refused'; ((skip+=1))
+fi
 fstype=$([[ -n $part ]] && blkid -o value -s TYPE "$part" 2>/dev/null || true)
 if [[ -n $part && -b $part && $fstype == vfat ]]; then
   setup_before=$(target_digest)
