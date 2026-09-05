@@ -138,6 +138,24 @@ def cut(a):
   except ProcessLookupError: die("QEMU exited before marker")
   time.sleep(.2)
  os.close(pidfd);die("marker timeout; detached supervisor and QEMU remain running")
+def validate_witness(f:dict[str,Any],case_id:str)->None:
+ required=("case_id","journal_sha256","journal_bytes","last_valid_kind","last_valid_seq","last_valid_offset","last_valid_length","next_offset","pending_intent","target_range_sha256","artifact_range_sha256","range_equal","committed_previous_equal")
+ if any(k not in f for k in required) or f["case_id"]!=case_id: die("invalid witness frame")
+ for k in ("journal_sha256","target_range_sha256","artifact_range_sha256"):
+  if not isinstance(f[k],str) or not HEX.fullmatch(f[k]): die("invalid witness digest")
+ for k in ("journal_bytes","last_valid_seq","next_offset"):
+  if type(f[k]) is not int or f[k] < 0: die("invalid witness integer")
+ for k in ("last_valid_offset","last_valid_length"):
+  if f[k] is not None and (type(f[k]) is not int or f[k] < 0): die("invalid witness range")
+ for k in ("pending_intent","range_equal","committed_previous_equal"):
+  if type(f[k]) is not bool: die("invalid witness boolean")
+ if f["range_equal"] != (f["target_range_sha256"]==f["artifact_range_sha256"]): die("witness digest equality contradiction")
+ if not f["committed_previous_equal"]: die("previous committed target range mismatch")
+ kind=f["last_valid_kind"];off=f["last_valid_offset"];length=f["last_valid_length"];cursor=f["next_offset"]
+ if kind in ("Intent","Commit","Advance") and (off is None or length is None or length == 0): die("missing journal range")
+ if kind=="Intent" and (not f["pending_intent"] or cursor!=off): die("intent/cursor contradiction")
+ if kind=="Commit" and (f["pending_intent"] or cursor!=off): die("commit/cursor contradiction")
+ if kind=="Advance" and (f["pending_intent"] or cursor!=off+length): die("advance/cursor contradiction")
 def witness(a):
  r=a.run.resolve(); exitp=r/"witness.exit.json"
  if not exitp.exists(): die("witness VM has not exited")
@@ -146,10 +164,7 @@ def witness(a):
  for x in lines:
   if PREFIX in x: frames.append(json.loads(x.split(PREFIX,1)[1]))
  if len(frames)!=1: die("expected exactly one cold witness frame")
- f=frames[0]; required=("case_id","journal_sha256","journal_bytes","last_valid_kind","last_valid_seq","next_offset","pending_intent","target_range_sha256","artifact_range_sha256","range_equal","committed_previous_equal")
- if any(k not in f for k in required) or f["case_id"]!=a.case_id: die("invalid witness frame")
- for k in ("journal_sha256","target_range_sha256","artifact_range_sha256"):
-  if not HEX.fullmatch(str(f[k])): die("invalid witness digest")
+ f=frames[0];validate_witness(f,a.case_id)
  intended=json.loads((r/"cut-request.json").read_text())["intended_boundary"]
  kind=f["last_valid_kind"]; equal=f["range_equal"]
  if kind=="Intent" and equal: actual="readback-or-effect-complete-before-commit"

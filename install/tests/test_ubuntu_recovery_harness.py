@@ -37,6 +37,13 @@ class HarnessTests(unittest.TestCase):
   with self.assertRaises(SystemExit):h.regular(link)
  def test_process_identity_rejects_non_qemu_pid(self):
   with self.assertRaises(SystemExit):h.proc_identity(subprocess.os.getpid())
+ def valid_witness(self):
+  return {"case_id":"c","journal_sha256":"a"*64,"journal_bytes":10,"last_valid_kind":"Intent","last_valid_seq":4,"last_valid_offset":64,"last_valid_length":64,"next_offset":64,"pending_intent":True,"target_range_sha256":"b"*64,"artifact_range_sha256":"b"*64,"range_equal":True,"committed_previous_equal":True}
+ def test_witness_rejects_boolean_digest_and_cursor_contradictions(self):
+  h.validate_witness(self.valid_witness(),"c")
+  for key,value in (("pending_intent",1),("range_equal",False),("committed_previous_equal",False),("next_offset",65),("last_valid_seq",-1)):
+   frame=self.valid_witness();frame[key]=value
+   with self.assertRaises(SystemExit,msg=key):h.validate_witness(frame,"c")
  def test_nonzero_witness_exit_is_refused(self):
   r=self.d/"case";r.mkdir();(r/"witness.exit.json").write_text('{"returncode":1}')
   a=type("A",(),{"run":r,"case_id":"case"})()
