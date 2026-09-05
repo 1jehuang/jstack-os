@@ -18,6 +18,22 @@ ambiguous storage ancestry, and unsupported partition-only installation must be
 refused before target mutation. A future implementation supporting those cases
 needs its own explicit contract and real interruption tests.
 
+## Image trust and graph enforcement
+
+The Ubuntu graph's `release_policy` authorization means an explicitly approved
+local image policy, not a vendor-signed release claim. The adapter must verify a
+protected, root-controlled, regular single-link source, its complete digest
+manifest, and approval of that exact image in the displayed plan. Downloaded
+inputs and locally built packages do not acquire a release signature merely
+because the final image is hashed. The operator trusts the local build inputs.
+
+Loading the pinned graph alone does not authorize an effect. Execution must
+select a transition from the replayed durable state, satisfy every known guard,
+authorization and precondition using actual observations, execute only the
+ordered graph actions, and satisfy postconditions before publishing the graph's
+destination. Missing, false or unimplemented observations fail closed. A
+mutating action also requires observed durable intent before its effect.
+
 ## Required properties and observations
 
 | ID | Required property | Acceptance observation |
