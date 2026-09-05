@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# jstack OS transactional installer: build a complete offline image on a
-# preserved Ubuntu/Debian (or Arch) recovery host, then deploy it to a separate
+# jstack OS transactional Ubuntu installer: build a complete offline image on a
+# preserved Ubuntu recovery host, then deploy it to a separate
 # whole disk through the pinned Rust state machine.
 #
-#   sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
-#   sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --seed jstack-seed.tar.gz.enc
-#   sudo ./install/jstack-install.sh --root-part /dev/nvme0n1p5 --esp-part /dev/nvme0n1p1 --user jeremy
+#   sudo ./install/jstack-install.sh --disk /dev/disk/by-id/<target> \
+#     --state-dir /var/lib/jstack-installer --user jeremy --hostname xps13
 #
 # What you get (mirrors the reference machine, see packages/jstack-base/files/POLICY.md):
 #   btrfs root (@ @home @log @pkg, zstd:3), systemd-boot, NO snapper/snapshots,
@@ -99,7 +98,7 @@ if [ -n "$DISK" ]; then
   # this guard, running the advertised command from the installed Ubuntu host
   # can erase the filesystem that is executing this script.
   TARGET_MOUNTS=$(lsblk -nrpo MOUNTPOINTS "$DISK" | sed '/^[[:space:]]*$/d')
-  [ -z "$TARGET_MOUNTS" ] || die "$DISK or one of its partitions is mounted; copy the installer to RAM, unmount the target disk, and retry"
+  [ -z "$TARGET_MOUNTS" ] || die "$DISK or one of its partitions is mounted; transactional installation requires a separate unused target disk"
 else
   die "transactional Ubuntu installation supports only a separate whole disk; existing-partition installs are not supported"
 fi
@@ -182,25 +181,30 @@ package_preflight() {
 
 # ---------- partitioning ----------
 partition() {
-  [ "$BUILDING_ARTIFACT" = 1 ] && echo "Building disposable offline image; the physical target is not attached here."
-  if [ -n "$DISK" ]; then
-    echo; lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS "$DISK"; echo
-    echo "THIS WILL ERASE EVERYTHING ON $DISK."
-    if [ "$YES" != 1 ]; then
-      read -rp "Type the disk path to confirm: " c; [ "$c" = "$DISK" ] || die "aborted"
-    fi
-    DESTRUCTIVE_STARTED=1
-    wipefs -af "$DISK"
-    sgdisk -Z "$DISK"
-    sgdisk -n1:0:+1G -t1:ef00 -c1:"EFI" -n2:0:0 -t2:8304 -c2:"jstack" "$DISK"
-    partprobe "$DISK" || true; udevadm settle; sleep 1
-    ESP_PART=$(lsblk -lnpo NAME "$DISK" | sed -n 2p)
-    ROOT_PART=$(lsblk -lnpo NAME "$DISK" | sed -n 3p)
-    WIPE_ESP=1
-  else
-    echo "Root -> $ROOT_PART (will be formatted btrfs). ESP -> $ESP_PART (wipe=$WIPE_ESP)."
-    if [ "$YES" != 1 ]; then read -rp "Continue? [y/N] " c; [ "$c" = y ] || die "aborted"; fi
-  fi
+  local backing disk_name parent
+  local -a parts
+  [ "$BUILDING_ARTIFACT" = 1 ] || die "internal partition builder may operate only on its owned artifact"
+  [ -n "$ARTIFACT_LOOP" ] && [ "$DISK" = "$ARTIFACT_LOOP" ] || die "artifact loop identity changed"
+  [ -f "$ARTIFACT_IMAGE" ] && [ ! -L "$ARTIFACT_IMAGE" ] || die "artifact must be a regular file"
+  [ "$(stat -c %h "$ARTIFACT_IMAGE")" = 1 ] || die "artifact must not be hard linked"
+  backing=$(losetup -n -O BACK-FILE "$DISK" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ "$(readlink -f "$backing")" = "$(readlink -f "$ARTIFACT_IMAGE")" ] || die "loop device is not backed by the exclusively created artifact"
+  echo "Building disposable offline image; the physical target is not attached here."
+  DESTRUCTIVE_STARTED=1
+  wipefs -af "$DISK"
+  sgdisk -Z "$DISK"
+  sgdisk -n1:0:+1G -t1:ef00 -c1:"EFI" -n2:0:0 -t2:8304 -c2:"jstack" "$DISK"
+  partprobe "$DISK" || true; udevadm settle; sleep 1
+  mapfile -t parts < <(lsblk -lnpo NAME,TYPE "$DISK" | awk '$2 == "part" {print $1}')
+  [ "${#parts[@]}" = 2 ] || die "artifact loop did not expose exactly two partitions"
+  disk_name=$(basename "$DISK")
+  for part in "${parts[@]}"; do
+    parent=$(lsblk -ndo PKNAME "$part")
+    [ "$parent" = "$disk_name" ] || die "artifact partition does not belong to owned loop device"
+  done
+  ESP_PART=${parts[0]}
+  ROOT_PART=${parts[1]}
+  WIPE_ESP=1
   DESTRUCTIVE_STARTED=1
   [ "$WIPE_ESP" = 1 ] && mkfs.fat -F32 -n EFI "$ESP_PART"
   mkfs.btrfs -f -L jstack "$ROOT_PART"

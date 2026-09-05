@@ -49,7 +49,8 @@ class InstallerSafetyTests(unittest.TestCase):
             (bindir / "losetup").write_text(
                 "#!/bin/sh\n"
                 'echo "losetup $*" >> "$COMMAND_LOG"\n'
-                'case "$*" in *--find*) echo /dev/loop-test;; esac\n'
+                'case "$*" in *--find*) for last do :; done; echo "$last" > "$LOOP_BACKING"; echo /dev/loop-test;; '
+                '*BACK-FILE*) cat "$LOOP_BACKING";; esac\n'
                 "exit 0\n"
             )
             (bindir / "blockdev").write_text(
@@ -83,6 +84,7 @@ class InstallerSafetyTests(unittest.TestCase):
             env = os.environ | {
                 "PATH": f"{bindir}:{os.environ['PATH']}",
                 "COMMAND_LOG": str(log),
+                "LOOP_BACKING": str(root / "loop-backing"),
                 "JSTACK_UBUNTU_INSTALLER": str(controller),
             }
             result = subprocess.run(
@@ -129,6 +131,13 @@ class InstallerSafetyTests(unittest.TestCase):
         self.assertNotIn("wipefs -af /dev/fake", commands)
         self.assertNotIn("INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED", result.stderr)
         self.assertNotIn("secret", result.stderr)
+
+    def test_partition_builder_is_hard_bound_to_owned_loop_artifact(self):
+        text = SCRIPT.read_text()
+        self.assertIn('internal partition builder may operate only on its owned artifact', text)
+        self.assertIn('[ "$DISK" = "$ARTIFACT_LOOP" ]', text)
+        self.assertIn('loop device is not backed by the exclusively created artifact', text)
+        self.assertIn('artifact partition does not belong to owned loop device', text)
 
     def test_explicit_artifact_failure_does_not_claim_target_was_modified(self):
         result, _ = self.run_instrumented(fail_preflight=False, die_after_destructive=True)
