@@ -21,22 +21,37 @@ class InstallerSafetyTests(unittest.TestCase):
             text = text.replace('[ "$(id -u)" = 0 ] || die "run as root"', ":")
             text = text.replace('[ -d /sys/firmware/efi ] || die "UEFI boot required (systemd-boot)"', ":")
             text = text.replace('[ -b "$DISK" ] || die "$DISK is not a block device"', ":")
+            text = text.replace('[ -b "$ARTIFACT_LOOP" ] || die "failed to attach artifact loop device"', ":")
             text = text.replace("if command -v pacman >/dev/null && [ -f /etc/arch-release ]; then", "if true; then")
             if bootstrap:
                 text = text.replace("host_prep\npackage_preflight", "BOOT=/fake; ARCH_CHROOT=arch-chroot\npackage_preflight")
             if die_after_destructive:
-                text = text.replace("partition\nbootstrap", 'DESTRUCTIVE_STARTED=1\ndie "synthetic post-wipe failure"')
+                text = text.replace("  partition\n  # Mutating", '  DESTRUCTIVE_STARTED=1\n  die "synthetic post-wipe failure"\n  # Mutating')
             script = root / "installer.sh"
             script.write_text(text)
             script.chmod(0o755)
             bindir = root / "bin"
             bindir.mkdir()
             log = root / "commands"
+            controller = root / "controller"
+            controller.write_text("#!/bin/sh\nexit 0\n")
+            controller.chmod(0o755)
             generic = "#!/bin/sh\necho \"$(basename \"$0\") $*\" >> \"$COMMAND_LOG\"\nexit 0\n"
-            for command in ("lsblk", "wipefs", "sgdisk", "partprobe", "udevadm", "sleep", "chown"):
+            for command in ("lsblk", "wipefs", "sgdisk", "partprobe", "udevadm", "sleep", "chown", "losetup", "blockdev"):
                 p = bindir / command
                 p.write_text(generic)
                 p.chmod(0o755)
+            (bindir / "losetup").write_text(
+                "#!/bin/sh\n"
+                'echo "losetup $*" >> "$COMMAND_LOG"\n'
+                'case "$*" in *--find*) echo /dev/loop-test;; esac\n'
+                "exit 0\n"
+            )
+            (bindir / "blockdev").write_text(
+                "#!/bin/sh\n"
+                'echo "blockdev $*" >> "$COMMAND_LOG"\n'
+                "echo 4294967296\n"
+            )
             pacman = bindir / "pacman"
             pacman.write_text(
                 "#!/bin/sh\n"
@@ -60,9 +75,13 @@ class InstallerSafetyTests(unittest.TestCase):
                     "exit 43\n"
                 )
                 sgdisk.chmod(0o755)
-            env = os.environ | {"PATH": f"{bindir}:{os.environ['PATH']}", "COMMAND_LOG": str(log)}
+            env = os.environ | {
+                "PATH": f"{bindir}:{os.environ['PATH']}",
+                "COMMAND_LOG": str(log),
+                "JSTACK_UBUNTU_INSTALLER": str(controller),
+            }
             result = subprocess.run(
-                [str(script), "--disk", "/dev/fake", "--user", "tester", "--password", password, "--yes"],
+                [str(script), "--disk", "/dev/fake", "--state-dir", str(root / "state"), "--user", "tester", "--password", password, "--yes"],
                 env=env,
                 input=stdin,
                 text=True,
@@ -96,21 +115,25 @@ class InstallerSafetyTests(unittest.TestCase):
         self.assertIn("db=$(mktemp -d)", commands)
         self.assertNotIn("wipefs", commands)
 
-    def test_post_destructive_failure_prints_recovery_warning(self):
-        # Once preflight succeeds, fail the first partition-table operation.
+    def test_artifact_build_failure_never_mutates_or_condemns_target(self):
+        # Once preflight succeeds, fail the first disposable-image partition
+        # operation. The real target must not be passed to a destructive tool.
         result, commands = self.run_instrumented(fail_preflight=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("wipefs", commands)
-        self.assertIn("INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED", result.stderr)
-        self.assertIn("Do not reboot into the target", result.stderr)
-        self.assertIn("rerun formats it again", result.stderr)
+        self.assertIn("wipefs -af /dev/loop-test", commands)
+        self.assertNotIn("wipefs -af /dev/fake", commands)
+        self.assertNotIn("INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED", result.stderr)
         self.assertNotIn("secret", result.stderr)
 
-    def test_explicit_die_after_destructive_start_prints_warning(self):
+    def test_explicit_artifact_failure_does_not_claim_target_was_modified(self):
         result, _ = self.run_instrumented(fail_preflight=False, die_after_destructive=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("synthetic post-wipe failure", result.stderr)
-        self.assertIn("INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED", result.stderr)
+        self.assertNotIn("INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED", result.stderr)
+
+    def test_public_path_requires_durable_state_directory(self):
+        text = SCRIPT.read_text()
+        self.assertIn('[ -n "$STATE_DIR" ] || die "--state-dir on a persistent separate host disk is required"', text)
 
     def test_working_mirrorlist_is_installed_after_pacstrap(self):
         text = SCRIPT.read_text()

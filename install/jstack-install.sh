@@ -16,6 +16,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MNT=/mnt/jstack
 DISK="" ROOT_PART="" ESP_PART="" USERNAME="" HOSTNAME_="jstack" TZ_="America/Los_Angeles"
 LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR="" SEED="" SEED_PASS="${JSTACK_SEED_PASS:-}" JCODE_API_KEY=""
+STATE_DIR="" TARGET_DISK="" ARTIFACT_LOOP="" ARTIFACT_IMAGE="" BUILDING_ARTIFACT=0
 JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-network jstack-niri jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
 BASE_PKGS=(base base-devel linux linux-firmware btrfs-progs efibootmgr networkmanager iwd fish git sudo vim intel-ucode amd-ucode)
 # Order matters: each package is built with makepkg -s, so deps on earlier jstack-* packages must already be installed (jstack-niri needs jstack-network).
@@ -30,7 +31,8 @@ install_failed() {
   local status=$?
   trap - EXIT
   [ "$status" -ne 0 ] || return 0
-  if [ "$DESTRUCTIVE_STARTED" = 1 ]; then
+  cleanup_artifact_build
+  if [ "$DESTRUCTIVE_STARTED" = 1 ] && [ "$BUILDING_ARTIFACT" != 1 ]; then
     cat >&2 <<'EOF'
 
 INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED.
@@ -42,6 +44,16 @@ EOF
   exit "$status"
 }
 trap install_failed EXIT
+
+cleanup_artifact_build() {
+  set +e
+  if [ -n "$ARTIFACT_LOOP" ]; then
+    mountpoint -q "$MNT" && umount -R "$MNT"
+    losetup -d "$ARTIFACT_LOOP" 2>/dev/null || true
+    ARTIFACT_LOOP=""
+  fi
+}
+trap cleanup_artifact_build INT TERM
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -60,6 +72,7 @@ while [ $# -gt 0 ]; do
     --seed) SEED=$2; shift 2 ;;              # bundle from install/seed/make-seed.sh
     --seed-pass) SEED_PASS=$2; shift 2 ;;
     --jcode-api-key) JCODE_API_KEY=$2; shift 2 ;;   # alternative to a seed: single Anthropic/OpenRouter-style key
+    --state-dir) STATE_DIR=$2; shift 2 ;;
     --yes) YES=1; shift ;;
     --chroot-stage) shift; exec "$REPO_DIR/install/chroot-stage.sh" "$@" ;;
     -h|--help) usage ;;
@@ -84,8 +97,11 @@ if [ -n "$DISK" ]; then
   TARGET_MOUNTS=$(lsblk -nrpo MOUNTPOINTS "$DISK" | sed '/^[[:space:]]*$/d')
   [ -z "$TARGET_MOUNTS" ] || die "$DISK or one of its partitions is mounted; copy the installer to RAM, unmount the target disk, and retry"
 else
-  [ -b "$ROOT_PART" ] && [ -b "$ESP_PART" ] || die "--root-part and --esp-part must be block devices"
+  die "transactional Ubuntu installation supports only a separate whole disk; existing-partition installs are not supported"
 fi
+
+[ -n "$STATE_DIR" ] || die "--state-dir on a persistent separate host disk is required"
+case "$STATE_DIR" in /*) ;; *) die "--state-dir must be an absolute path" ;; esac
 
 # ---------- host prerequisites ----------
 # On non-Arch hosts we do not trust the distro's pacman/keyring (Ubuntu ships
@@ -249,11 +265,62 @@ bootstrap() {
     bash /usr/src/jstack-os/install/chroot-stage.sh
 }
 
+transactional_install() {
+  local controller target_size build_dir plan_line plan_path
+  controller="${JSTACK_UBUNTU_INSTALLER:-$REPO_DIR/install/bin/jstack-ubuntu-installer}"
+  [ -x "$controller" ] || die "transactional controller not found at $controller"
+  command -v losetup >/dev/null || die "losetup is required to construct the offline artifact"
+  command -v blockdev >/dev/null || die "blockdev is required to size the offline artifact"
+
+  # The state directory, retained artifact, plan, and journal must survive a
+  # power loss. The controller independently proves that this directory is on
+  # a persistent disk distinct from TARGET_DISK before any target write.
+  mkdir -p "$STATE_DIR/artifact-build"
+  chmod 700 "$STATE_DIR" "$STATE_DIR/artifact-build"
+  build_dir="$STATE_DIR/artifact-build"
+  ARTIFACT_IMAGE="$build_dir/pending-$PPID-$$.raw"
+  ( set -o noclobber; : > "$ARTIFACT_IMAGE" ) || die "artifact build path already exists"
+  chmod 600 "$ARTIFACT_IMAGE"
+  target_size=$(blockdev --getsize64 "$TARGET_DISK")
+  [ "$target_size" -gt $((2 * 1024 * 1024 * 1024)) ] || die "target disk is too small"
+  truncate -s "$target_size" "$ARTIFACT_IMAGE"
+  ARTIFACT_LOOP=$(losetup --find --show --partscan "$ARTIFACT_IMAGE")
+  [ -b "$ARTIFACT_LOOP" ] || die "failed to attach artifact loop device"
+
+  log "Building the complete bootable installation artifact before target mutation"
+  BUILDING_ARTIFACT=1
+  DISK="$ARTIFACT_LOOP"
+  DESTRUCTIVE_STARTED=0
+  partition
+  # Mutating the disposable artifact is not target destruction.
+  DESTRUCTIVE_STARTED=0
+  bootstrap
+  sync
+  umount -R "$MNT"
+  losetup -d "$ARTIFACT_LOOP"
+  ARTIFACT_LOOP=""
+  BUILDING_ARTIFACT=0
+
+  log "Authorizing the durable transactional deployment plan"
+  if [ "$YES" = 1 ]; then
+    plan_line=$("$controller" prepare --disk "$TARGET_DISK" --state-dir "$STATE_DIR" \
+      --artifact-source "$ARTIFACT_IMAGE" --yes)
+  else
+    plan_line=$("$controller" prepare --disk "$TARGET_DISK" --state-dir "$STATE_DIR" \
+      --artifact-source "$ARTIFACT_IMAGE")
+  fi
+  printf '%s\n' "$plan_line"
+  plan_path=$(printf '%s\n' "$plan_line" | sed -n 's/^PLAN_PATH=//p' | tail -1)
+  [ -n "$plan_path" ] && [ -f "$plan_path" ] || die "controller did not return a durable plan path"
+  log "Deploying from durable graph-authorized intent (resume: $controller resume --plan $plan_path)"
+  "$controller" deploy --plan "$plan_path"
+  log "Done. The target was independently read back and committed complete."
+}
+
 if [ -n "$SEED" ] && [ -z "$SEED_PASS" ]; then case "$SEED" in *.enc) read -rsp "Seed passphrase: " SEED_PASS; echo ;; esac; fi
 if [ -z "$PASSWORD" ]; then read -rsp "Password for $USERNAME (also root): " PASSWORD; echo; fi
 [ -n "$PASSWORD" ] || die "password must not be empty"
 host_prep
 package_preflight
-partition
-bootstrap
-log "Done. umount -R $MNT && reboot"
+TARGET_DISK="$DISK"
+transactional_install
