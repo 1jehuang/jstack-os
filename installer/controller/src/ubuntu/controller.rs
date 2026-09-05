@@ -205,12 +205,22 @@ pub fn deploy_files(
     } else {
         root.join("target.lock")
     };
-    let lock = OpenOptions::new()
+    let mut lock_options = OpenOptions::new();
+    lock_options
         .create(true)
+        .truncate(false)
         .read(true)
-        .write(true)
-        .open(lock_path)
-        .map_err(err)?;
+        .write(true);
+    #[cfg(target_os = "linux")]
+    lock_options.mode(0o600).custom_flags(0o400000); // O_NOFOLLOW
+    let lock = lock_options.open(lock_path).map_err(err)?;
+    let lock_meta = lock.metadata().map_err(err)?;
+    if !lock_meta.is_file()
+        || lock_meta.nlink() != 1
+        || (production_checks && (lock_meta.uid() != 0 || lock_meta.mode() & 0o022 != 0))
+    {
+        return Err("target transaction lock is not a protected regular file".into());
+    }
     fs4::FileExt::try_lock(&lock)
         .map_err(|_| "target transaction already has a writer".to_string())?;
     if production_checks {
@@ -441,7 +451,7 @@ fn verify_and_complete(p: &UbuntuPlan, journal: &Journal, target: &File) -> Resu
     ])?;
     let mut permit = super::begin_transition("deploying", "verify", &pre)?;
     permit.require_action("verify_target", &super::Evidence::new())?;
-    if hash_range(&target, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
+    if hash_range(target, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
         journal.append(Event::ManualRecovery {
             reason: "full target digest mismatch".into(),
         })?;
