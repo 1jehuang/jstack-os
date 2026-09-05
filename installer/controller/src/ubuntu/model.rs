@@ -5,7 +5,9 @@ use std::path::{Component, Path, PathBuf};
 pub const PLAN_SCHEMA: &str = "ubuntu-whole-disk-plan-v1";
 pub const GRAPH_ID: &str = "jstack-ubuntu-whole-disk-v1";
 pub const GRAPH_SHA256: &str = "3c7cfc18ade7eb3810bd5e2fa68e5969ee82ef4adaf2d3785477d0ed50e922f4";
-pub const DEFAULT_CHUNK_SIZE: u64 = 4 * 1024 * 1024;
+/// Chunk size selected by `prepare` for newly created plans. Existing plans
+/// remain bound to their serialized deployment value and immutable manifest.
+pub const DEFAULT_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -151,4 +153,14 @@ pub fn is_hash(v: &str) -> bool {
     v.len() == 64
         && v.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+#[cfg(test)]
+mod default_tests {
+    use super::*;
+
+    #[test]
+    fn new_plans_default_to_bounded_64_mib_chunks() {
+        assert_eq!(DEFAULT_CHUNK_SIZE, 64 * 1024 * 1024);
+    }
 }
