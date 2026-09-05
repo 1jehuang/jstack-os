@@ -11,7 +11,7 @@ SCRIPT = Path(__file__).parents[1] / "jstack-install.sh"
 
 
 class InstallerSafetyTests(unittest.TestCase):
-    def run_instrumented(self, fail_preflight: bool, bootstrap: bool = False, die_after_destructive: bool = False):
+    def run_instrumented(self, fail_preflight: bool, bootstrap: bool = False, die_after_destructive: bool = False, password: str = "secret", stdin: str = ""):
         scratch = Path(os.environ.get("JCODE_SCRATCH_DIR", Path.home() / ".jcode" / "scratch"))
         scratch.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=scratch) as td:
@@ -61,13 +61,25 @@ class InstallerSafetyTests(unittest.TestCase):
                 sgdisk.chmod(0o755)
             env = os.environ | {"PATH": f"{bindir}:{os.environ['PATH']}", "COMMAND_LOG": str(log)}
             result = subprocess.run(
-                [str(script), "--disk", "/dev/fake", "--user", "tester", "--password", "secret", "--yes"],
+                [str(script), "--disk", "/dev/fake", "--user", "tester", "--password", password, "--yes"],
                 env=env,
+                input=stdin,
                 text=True,
                 capture_output=True,
                 timeout=10,
             )
             return result, log.read_text() if log.exists() else ""
+
+    def test_empty_password_or_eof_prevents_host_prep_and_wipe(self):
+        for stdin in ("", "\n"):
+            with self.subTest(stdin=repr(stdin)):
+                result, commands = self.run_instrumented(True, password="", stdin=stdin)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("pacman", commands)
+                self.assertNotIn("wipefs", commands)
+                self.assertNotIn("INSTALLATION FAILED AFTER", result.stderr)
+                if stdin:
+                    self.assertIn("password must not be empty", result.stderr)
 
     def test_failed_package_sync_prevents_wipe(self):
         result, commands = self.run_instrumented(fail_preflight=True)

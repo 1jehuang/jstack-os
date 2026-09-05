@@ -32,7 +32,7 @@ device before and after all invocations.
 | A failed package preflight cannot modify the target | Real VM | Observed. SHA-256 of all 256 MiB of `/dev/vdb` is captured before and after and must match. |
 | Failure before destruction must not claim the disk was modified | Real VM | Observed. `INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED` must be absent. |
 | Invalid username, hostname, timezone, and missing seed are rejected | Real VM | Observed. Each unmodified CLI invocation must return nonzero and emits a `guard-*=PASS` marker. |
-| Empty-password prompt/EOF rejection | None | Not exercised by this harness. |
+| Empty-password prompt/EOF rejection | Instrumented unit test | Empty newline and EOF both return nonzero before host preparation or wipe. Empty newline emits `password must not be empty`. Not exercised in the VM. |
 | Mirror propagation into the target | Static unit test | Covered by `test_working_mirrorlist_is_installed_after_pacstrap`, but not observed in this fault VM because partitioning never begins. |
 | Preflight cache reuse by `pacstrap -c` | Static unit test | Command/config linkage is checked, but a successful preflight followed by real `pacstrap` is not exercised here. |
 | Post-destructive recovery warning | Instrumented unit test | Message and secret non-disclosure are checked synthetically. This preflight fault correctly never reaches that state. |
