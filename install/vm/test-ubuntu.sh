@@ -17,7 +17,7 @@ find_ovmf() {
   done
   return 1
 }
-OVMF_CODE="${OVMF_CODE:-$(find_ovmf /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/OVMF/OVMF_CODE_4M.fd)}"
+OVMF_CODE="${OVMF_CODE:-$(find_ovmf /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd /usr/share/OVMF/OVMF_CODE_4M.secboot.fd)}"
 OVMF_VARS="${OVMF_VARS:-$(find_ovmf /usr/share/edk2/x64/OVMF_VARS.4m.fd /usr/share/OVMF/OVMF_VARS_4M.fd)}"
 log() { printf '\033[1;35m[e2e]\033[0m %s\n' "$*"; }
 die() { log "REFUSED: $*" >&2; exit 1; }
@@ -117,6 +117,7 @@ xorriso -as mkisofs -quiet -o seed.iso -V cidata -J -r seed >/dev/null 2>&1
 
 cp "$OVMF_VARS" vars-ubuntu.fd; cp "$OVMF_VARS" vars-target.fd
 QEMU_BASE=(qemu-system-x86_64 -enable-kvm -cpu host -m "$MEM" -smp "$CPUS"
+  -machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on
   -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE")
 
 # 3. Phase 1: Ubuntu runs the installer
