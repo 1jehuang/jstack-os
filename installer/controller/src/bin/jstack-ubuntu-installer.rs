@@ -163,39 +163,37 @@ mod linux {
         }
         Ok(())
     }
-    fn verify_host_scope(state: &Path) -> Result<(), String> {
-        let os = std::fs::read_to_string("/etc/os-release").map_err(err)?;
-        if !os.lines().any(|l| l == "ID=ubuntu" || l == "ID=\"ubuntu\"") {
-            return Err("recovery host must be Ubuntu".into());
-        }
-        if !Path::new("/sys/firmware/efi").is_dir() {
-            return Err("recovery host must be booted via UEFI".into());
-        }
-        let parent = if state.exists() {
-            state.to_path_buf()
+    fn mount_backing(path: &Path, exact_mount: bool) -> Result<(String, PathBuf), String> {
+        let mut cmd = Command::new("findmnt");
+        cmd.args(["-n", "-o", "TARGET,FSTYPE,SOURCE"]);
+        if exact_mount {
+            cmd.arg("--mountpoint");
         } else {
-            secure_new_state_parent(state)?
-        };
-        let out = Command::new("findmnt")
-            .args(["-n", "-o", "FSTYPE,SOURCE", "--target"])
-            .arg(parent)
-            .output()
-            .map_err(err)?;
-        let output = String::from_utf8(out.stdout).map_err(err)?;
-        let mut fields = output.split_whitespace();
-        let fs = fields.next().ok_or("recovery filesystem type missing")?;
-        let source = fields.next().ok_or("recovery filesystem source missing")?;
-        if !out.status.success() || !matches!(fs, "ext4" | "xfs" | "btrfs") {
-            return Err("recovery state must be on persistent storage".into());
+            cmd.arg("--target");
+        }
+        let out = cmd.arg(path).output().map_err(err)?;
+        if !out.status.success() {
+            return Err(format!("required mount {} is unavailable", path.display()));
+        }
+        let text = String::from_utf8(out.stdout).map_err(err)?;
+        let mut fields = text.split_whitespace();
+        let mounted_at = fields.next().ok_or("mount target missing")?;
+        let fs = fields
+            .next()
+            .ok_or("mount filesystem type missing")?
+            .to_string();
+        let source = fields.next().ok_or("mount source missing")?;
+        if exact_mount && Path::new(mounted_at) != path {
+            return Err(format!("{} is not a distinct mount", path.display()));
         }
         let source = Path::new(source)
             .canonicalize()
-            .map_err(|_| "recovery source is not a local block device")?;
+            .map_err(|_| "mount source is not a local block device")?;
         let all = devices()?;
         let node = all
             .iter()
             .find(|d| d.path.canonicalize().ok().as_ref() == Some(&source))
-            .ok_or("recovery source absent from block topology")?;
+            .ok_or("mount source absent from block topology")?;
         let disk = if node.dev_type == "disk" {
             node
         } else if node.dev_type == "part" {
@@ -216,12 +214,39 @@ mod linux {
         if disk.identity.stable_serial.is_empty() {
             return Err("recovery disk lacks stable identity".into());
         }
-        let boot = Command::new("findmnt")
-            .args(["-n", "--target", "/boot"])
-            .status()
-            .map_err(err)?;
-        if !boot.success() {
-            return Err("recovery host boot filesystem is unavailable".into());
+        Ok((fs, disk.path.canonicalize().map_err(err)?))
+    }
+    fn verify_host_scope(state: &Path) -> Result<(), String> {
+        let os = std::fs::read_to_string("/etc/os-release").map_err(err)?;
+        if !os.lines().any(|l| l == "ID=ubuntu" || l == "ID=\"ubuntu\"") {
+            return Err("recovery host must be Ubuntu".into());
+        }
+        if !Path::new("/sys/firmware/efi").is_dir() {
+            return Err("recovery host must be booted via UEFI".into());
+        }
+        let parent = if state.exists() {
+            state.to_path_buf()
+        } else {
+            secure_new_state_parent(state)?
+        };
+        let (state_fs, state_disk) = mount_backing(&parent, false)?;
+        let (root_fs, root_disk) = mount_backing(Path::new("/"), true)?;
+        if !matches!(state_fs.as_str(), "ext4" | "xfs" | "btrfs")
+            || !matches!(root_fs.as_str(), "ext4" | "xfs" | "btrfs")
+        {
+            return Err("recovery state must be on persistent storage".into());
+        }
+        if state_disk != root_disk {
+            return Err("recovery state and root must share the preserved boot disk".into());
+        }
+        let (esp_path, loader_path) = if Path::new("/boot/efi").is_dir() {
+            (Path::new("/boot/efi"), Path::new("/boot/efi/EFI"))
+        } else {
+            (Path::new("/boot"), Path::new("/boot/EFI"))
+        };
+        let (_, esp_disk) = mount_backing(esp_path, true)?;
+        if esp_disk != root_disk || !loader_path.is_dir() {
+            return Err("recovery ESP and EFI loader must be on the preserved boot disk".into());
         }
         Ok(())
     }

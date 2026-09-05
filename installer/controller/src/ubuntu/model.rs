@@ -96,7 +96,7 @@ impl UbuntuPlan {
         if t.size_bytes == 0
             || t.logical_sector_bytes == 0
             || a.size_bytes == 0
-            || a.size_bytes > t.size_bytes
+            || a.size_bytes != t.size_bytes
             || self.body.deployment.chunk_bytes == 0
         {
             return Err("invalid target or artifact geometry".into());

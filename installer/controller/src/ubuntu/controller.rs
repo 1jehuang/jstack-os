@@ -2,6 +2,8 @@ use super::{Event, Journal, UbuntuPlan, hex};
 use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
 
@@ -253,11 +255,16 @@ pub fn deploy_files(
         }
         journal.append(Event::DeploymentStarted)?;
     }
-    let mut target = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(target_path)
-        .map_err(err)?;
+    let mut target_options = OpenOptions::new();
+    target_options.read(true).write(true);
+    // O_EXCL makes the kernel reject a production block device claimed by a
+    // mount or another exclusive opener. O_NOFOLLOW closes the final alias
+    // substitution window. Regular-file test adapters deliberately omit both.
+    #[cfg(target_os = "linux")]
+    if production_checks {
+        target_options.custom_flags(0o200 | 0o400000);
+    }
+    let mut target = target_options.open(target_path).map_err(err)?;
     if initial.status.state == "verified" {
         if production_checks {
             super::verify_open_target(&target, target_path, &p.body.target)?;
