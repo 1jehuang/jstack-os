@@ -339,7 +339,12 @@ fn sizes_are_shown_in_both_exact_and_human_terms() {
 
 #[test]
 fn dispatch_binds_every_target_to_the_plan() {
-    let output = cli(&["dispatch", &plan(), "shrink_windows_ntfs", "windows_bootstrap"]);
+    let output = cli(&[
+        "dispatch",
+        &plan(),
+        "shrink_windows_ntfs",
+        "windows_bootstrap",
+    ]);
     assert!(output.status, "dispatch failed: {}", output.stderr);
 
     let request: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
@@ -365,7 +370,12 @@ fn dispatch_binds_every_target_to_the_plan() {
 
 #[test]
 fn dispatch_refuses_an_actor_from_another_platform() {
-    let output = cli(&["dispatch", &plan(), "shrink_windows_ntfs", "linux_installer"]);
+    let output = cli(&[
+        "dispatch",
+        &plan(),
+        "shrink_windows_ntfs",
+        "linux_installer",
+    ]);
     assert!(!output.status);
     assert!(
         output.stderr.contains("not authorised"),
@@ -376,9 +386,18 @@ fn dispatch_refuses_an_actor_from_another_platform() {
 
 #[test]
 fn dispatch_refuses_a_non_mutating_action() {
-    let output = cli(&["dispatch", &plan(), "collect_inventory", "windows_bootstrap"]);
+    let output = cli(&[
+        "dispatch",
+        &plan(),
+        "collect_inventory",
+        "windows_bootstrap",
+    ]);
     assert!(!output.status);
-    assert!(output.stderr.contains("mutates nothing"), "{}", output.stderr);
+    assert!(
+        output.stderr.contains("mutates nothing"),
+        "{}",
+        output.stderr
+    );
 }
 
 #[test]

@@ -127,12 +127,13 @@ pub fn dispatch(
     // The capability names an actor; the graph says which platform the action
     // runs on and which platforms that actor owns. Membership is the check, so a
     // capability for one platform can never drive an action on another.
-    let owned = graph
-        .actor_platforms(actor.actor())
-        .ok_or_else(|| DispatchError::ActorNotAuthorised {
-            action: action.to_owned(),
-            actor: actor.actor().to_owned(),
-        })?;
+    let owned =
+        graph
+            .actor_platforms(actor.actor())
+            .ok_or_else(|| DispatchError::ActorNotAuthorised {
+                action: action.to_owned(),
+                actor: actor.actor().to_owned(),
+            })?;
     if !owned.contains(&definition.platform) {
         return Err(DispatchError::ActorNotAuthorised {
             action: action.to_owned(),

@@ -222,13 +222,7 @@ fn every_mutating_risk_is_dispatchable_and_no_other_is() {
             continue;
         };
         let capability = authority.issue_actor(&actor).unwrap();
-        let outcome = dispatch(
-            &model,
-            &capability,
-            &definition.id,
-            PLAN,
-            BTreeMap::new(),
-        );
+        let outcome = dispatch(&model, &capability, &definition.id, PLAN, BTreeMap::new());
 
         if MUTATING_RISKS.contains(&definition.risk) {
             assert!(

@@ -164,14 +164,8 @@ fn dispatch_request(
         serde_json::Value::Number(plan.body.windows_resize.original_size_bytes.into()),
     );
 
-    let request = dispatch(
-        graph,
-        &capability,
-        action,
-        plan.plan_hash.as_str(),
-        targets,
-    )
-    .map_err(|error| format!("dispatch refused: {error}"))?;
+    let request = dispatch(graph, &capability, action, plan.plan_hash.as_str(), targets)
+        .map_err(|error| format!("dispatch refused: {error}"))?;
 
     serde_json::to_string_pretty(&request)
         .map(|rendered| format!("{rendered}\n"))
