@@ -94,7 +94,7 @@ impl UbuntuPlan {
             return Err("target and recovery disk are not separate".into());
         }
         if t.size_bytes == 0
-            || t.logical_sector_bytes == 0
+            || t.logical_sector_bytes != 512
             || a.size_bytes == 0
             || a.size_bytes != t.size_bytes
             || self.body.deployment.chunk_bytes == 0

@@ -108,6 +108,7 @@ pub fn observe_target(path: &Path) -> Result<ObservedDevice, String> {
     if d.dev_type != "disk" || d.identity.stable_serial.is_empty() {
         return Err("target must be a whole disk with stable serial".into());
     }
+    require_supported_logical_sector(&d.identity)?;
     let duplicates = devices()?
         .into_iter()
         .filter(|x| {
@@ -122,7 +123,17 @@ pub fn observe_target(path: &Path) -> Result<ObservedDevice, String> {
     }
     Ok(d)
 }
+pub fn require_supported_logical_sector(id: &StableDiskIdentity) -> Result<(), String> {
+    if id.logical_sector_bytes != 512 {
+        return Err(format!(
+            "unsupported target logical sector size {}; only 512-byte sectors are authorized",
+            id.logical_sector_bytes
+        ));
+    }
+    Ok(())
+}
 pub fn resolve_unique(id: &StableDiskIdentity) -> Result<PathBuf, String> {
+    require_supported_logical_sector(id)?;
     let all = devices()?;
     let matches = all
         .iter()
@@ -273,4 +284,26 @@ pub fn verify_open_target(
         return Err("open target stable identity changed".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity(sector: u64) -> StableDiskIdentity {
+        StableDiskIdentity {
+            stable_serial: "TEST".into(),
+            stable_wwn: None,
+            size_bytes: 4096,
+            logical_sector_bytes: sector,
+        }
+    }
+
+    #[test]
+    fn deployment_scope_accepts_only_512_byte_logical_sectors() {
+        assert!(require_supported_logical_sector(&identity(512)).is_ok());
+        for sector in [0, 520, 4096] {
+            assert!(require_supported_logical_sector(&identity(sector)).is_err());
+        }
+    }
 }

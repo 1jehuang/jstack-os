@@ -224,6 +224,7 @@ mod linux {
         if !Path::new("/sys/firmware/efi").is_dir() {
             return Err("recovery host must be booted via UEFI".into());
         }
+        require_secure_boot_disabled(Path::new("/sys/firmware/efi/efivars"))?;
         let parent = if state.exists() {
             state.to_path_buf()
         } else {
@@ -247,6 +248,35 @@ mod linux {
         let (_, esp_disk) = mount_backing(esp_path, true)?;
         if esp_disk != root_disk || !loader_path.is_dir() {
             return Err("recovery ESP and EFI loader must be on the preserved boot disk".into());
+        }
+        Ok(())
+    }
+    fn require_secure_boot_disabled(efivars: &Path) -> Result<(), String> {
+        let entries = std::fs::read_dir(efivars).map_err(|e| {
+            format!("cannot establish Secure Boot state for unsigned artifact: {e}")
+        })?;
+        let mut secure_boot = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(err)?;
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("SecureBoot-")
+            {
+                secure_boot.push(entry.path());
+            }
+        }
+        if secure_boot.len() != 1 {
+            return Err(
+                "Secure Boot state is missing or ambiguous; unsigned artifact refused".into(),
+            );
+        }
+        let bytes = std::fs::read(&secure_boot[0]).map_err(|_| {
+            "Secure Boot state is unreadable; unsigned artifact refused".to_string()
+        })?;
+        // Linux efivarfs prepends four attribute bytes to the one-byte UEFI value.
+        if bytes.len() != 5 || bytes[4] != 0 {
+            return Err("Secure Boot is enabled or invalid; unsigned artifact refused".into());
         }
         Ok(())
     }
@@ -590,5 +620,35 @@ mod linux {
     }
     fn err<E: std::fmt::Display>(e: E) -> String {
         e.to_string()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn variable(root: &Path, name: &str, value: &[u8]) {
+            std::fs::write(root.join(name), value).unwrap();
+        }
+
+        #[test]
+        fn unsigned_artifact_requires_one_readable_disabled_secure_boot_variable() {
+            let root = tempfile::tempdir().unwrap();
+            assert!(require_secure_boot_disabled(root.path()).is_err());
+            variable(root.path(), "SecureBoot-test", &[7, 0, 0, 0, 0]);
+            assert!(require_secure_boot_disabled(root.path()).is_ok());
+            variable(root.path(), "SecureBoot-test", &[7, 0, 0, 0, 1]);
+            assert!(require_secure_boot_disabled(root.path()).is_err());
+            variable(root.path(), "SecureBoot-other", &[7, 0, 0, 0, 0]);
+            assert!(require_secure_boot_disabled(root.path()).is_err());
+        }
+
+        #[test]
+        fn malformed_secure_boot_state_fails_closed() {
+            let root = tempfile::tempdir().unwrap();
+            for bytes in [&[][..], &[0][..], &[7, 0, 0, 0, 0, 0][..]] {
+                variable(root.path(), "SecureBoot-test", bytes);
+                assert!(require_secure_boot_disabled(root.path()).is_err());
+            }
+        }
     }
 }
