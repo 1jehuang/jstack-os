@@ -39,6 +39,7 @@ mod linux {
         GraphModel::load_verified_ubuntu_whole_disk(GRAPH)
             .map_err(|e| format!("embedded graph invalid: {e}"))?;
         let a: Vec<String> = std::env::args().skip(1).collect();
+        validate_args(&a)?;
         match a.first().map(String::as_str) {
             Some("inspect") => {
                 let (d, s) = disk_state(&a)?;
@@ -84,6 +85,43 @@ mod linux {
                     .into(),
             ),
         }
+    }
+    fn validate_args(a: &[String]) -> Result<(), String> {
+        let command = a.first().ok_or("missing command")?.as_str();
+        let (valued, switches): (&[&str], &[&str]) = match command {
+            "inspect" | "init" => (&["--disk", "--state-dir"], &[]),
+            "prepare" => (&["--disk", "--state-dir", "--artifact-source"], &["--yes"]),
+            "deploy" | "resume" | "status" => (&["--plan"], &[]),
+            _ => return Err("unknown command".into()),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let mut index = 1;
+        while index < a.len() {
+            let argument = a[index].as_str();
+            if !seen.insert(argument.to_string()) {
+                return Err(format!("duplicate argument {argument}"));
+            }
+            if switches.contains(&argument) {
+                index += 1;
+                continue;
+            }
+            if !valued.contains(&argument) {
+                return Err(format!("unknown or unsupported argument {argument}"));
+            }
+            let value = a
+                .get(index + 1)
+                .ok_or_else(|| format!("missing value for {argument}"))?;
+            if value.is_empty() || value.starts_with("--") {
+                return Err(format!("missing value for {argument}"));
+            }
+            index += 2;
+        }
+        for required in valued {
+            if !seen.contains(*required) {
+                return Err(format!("missing {required}"));
+            }
+        }
+        Ok(())
     }
     fn disk_state(a: &[String]) -> Result<(PathBuf, PathBuf), String> {
         Ok((flag(a, "--disk")?.into(), flag(a, "--state-dir")?.into()))
@@ -648,6 +686,67 @@ mod linux {
             for bytes in [&[][..], &[0][..], &[7, 0, 0, 0, 0, 0][..]] {
                 variable(root.path(), "SecureBoot-test", bytes);
                 assert!(require_secure_boot_disabled(root.path()).is_err());
+            }
+        }
+
+        fn args(values: &[&str]) -> Vec<String> {
+            values.iter().map(|value| (*value).to_string()).collect()
+        }
+
+        #[test]
+        fn strict_parser_rejects_ambiguous_destructive_arguments_without_device_access() {
+            assert!(
+                validate_args(&args(&[
+                    "prepare",
+                    "--disk",
+                    "/dev/a",
+                    "--disk",
+                    "/dev/b",
+                    "--state-dir",
+                    "/s",
+                    "--artifact-source",
+                    "/i",
+                    "--yes"
+                ]))
+                .is_err()
+            );
+            assert!(
+                validate_args(&args(&[
+                    "prepare",
+                    "--disk",
+                    "/dev/a",
+                    "--state-dir",
+                    "/s",
+                    "--artifact-source",
+                    "/i",
+                    "--unknown"
+                ]))
+                .is_err()
+            );
+            assert!(validate_args(&args(&["deploy", "--plan", "/p", "--yes"])).is_err());
+            assert!(validate_args(&args(&["inspect", "--disk", "--state-dir", "/s"])).is_err());
+        }
+
+        #[test]
+        fn strict_parser_preserves_frozen_command_forms() {
+            for valid in [
+                args(&["inspect", "--disk", "/dev/a", "--state-dir", "/s"]),
+                args(&["init", "--state-dir", "/s", "--disk", "/dev/a"]),
+                args(&[
+                    "prepare",
+                    "--disk",
+                    "/dev/a",
+                    "--state-dir",
+                    "/s",
+                    "--artifact-source",
+                    "/i",
+                    "--yes",
+                ]),
+                args(&["deploy", "--plan", "/p"]),
+                args(&["resume", "--plan", "/p"]),
+                args(&["status", "--plan", "/p"]),
+            ] {
+                assert!(validate_args(&valid).is_ok(), "{valid:?}");
             }
         }
     }
