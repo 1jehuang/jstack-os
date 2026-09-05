@@ -110,3 +110,40 @@ Every external-cut case must cold-boot a witness before resume, classify the
 actual boundary from the durable journal and independent target/artifact range
 hashes, and reject a missed or overshot intended cut. A requested serial marker
 alone is not acceptance evidence.
+
+## Final-tree fresh installation and boot checkpoint
+
+Source revision `cb7d6c4` completed the public fresh-install and target-boot
+workflow in preserved workspace
+`/home/jeremy/.jcode/scratch/jstack-ubuntu-final64-mountfix-1788594203`.
+This closes the earlier disposable-firmware blocker for this workflow, but does
+not close the still-pending external interruption matrix.
+
+- The secboot-capable OVMF fixture with blank setup-mode VARS exposed disabled
+  Secure Boot. Production's missing, ambiguous and enabled-state refusals were
+  not weakened.
+- The first post-firmware attempt exposed a real propagated bootstrap mount:
+  the artifact source changed while it was copied. Revision `cb7d6c4` made the
+  bootstrap bind private and asserted its recursive artifact bind was absent
+  before prepare. The corrected run's retained source and promoted artifact
+  independently hashed to the same planned SHA-256,
+  `8de490d6b1a51fa955314ae9f5f4d77c9958177c1842a839bf15664f5162cfc2`.
+- The 64 MiB plan was
+  `8cbd35388b51082a436d121b71c55803003983cd3bcf7d88227ab950ac566201`.
+  The deployment emitted 384 intents and 384 advances, independently verified
+  the whole target, emitted exactly one completion marker, and returned
+  `E2E: INSTALL_OK`. Phase-one log SHA-256:
+  `2ecf7f53038d1e2cb81fff50405295322f4503f599500f4efc9012887271e1b5`.
+- The target then booted as the only disk under OVMF UEFI and emitted all 24
+  current `E2E-BOOT:` policy observations through `DONE`. Phase-two log
+  SHA-256: `0a5142745eb79587782f04310ce605f318718d074e16470dba0399623c75a649`.
+- The packaged static controller SHA-256 remained
+  `9c44529ed3613db750003a786fd3cb7b3fe42b488dea5528629aa0cf6c016691`.
+
+This is final-tree evidence for the fresh public path, offline artifact
+promotion, whole-target verification and target boot portions of UR-01, UR-03,
+UR-08, UR-11 and UR-14. The graph-derived external cold-witness/resume cases,
+completed no-write replay on this plan, and remaining real refusal cases remain
+open. At this checkpoint only 23 GiB remained on the scratch filesystem, below
+the safe budget for another prepared host plus preserved fault overlays; no
+campaign VM was started under that space constraint.
