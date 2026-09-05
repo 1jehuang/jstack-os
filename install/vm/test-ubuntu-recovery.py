@@ -118,19 +118,30 @@ def proc_identity(pid:int)->dict[str,Any]:
  except (FileNotFoundError,PermissionError): die("QEMU process is absent or unreadable")
  if not cmd or Path(cmd[0].decode(errors="replace")).name != "qemu-system-x86_64": die("PID is not the supervised QEMU")
  return {"starttime":stat.rsplit(")",1)[1].split()[19],"cmdline_sha256":hashlib.sha256(b"\0".join(cmd)).hexdigest()}
+def registered_identity(proc,timeout=2.0):
+ end=time.monotonic()+timeout
+ while True:
+  try: return proc_identity(proc.pid)
+  except SystemExit:
+   if proc.poll() is not None or time.monotonic()>=end: raise
+   time.sleep(.005)
 def supervise(a):
  mp=a.manifest.resolve();m=load(mp);w=mp.parent;p=case_paths(w,a.case_id);phase=a.phase
  lock=(w/"campaign.lock").open("a+");fcntl.flock(lock,fcntl.LOCK_EX)
  serial=p["run"]/(phase+".serial.log")
  log=(p["run"]/(phase+".qemu.log")).open("xb")
  proc=subprocess.Popen(qemu_argv(m,p,phase,serial),stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
+ failure=None
  try:
-  identity=proc_identity(proc.pid)
+  identity=registered_identity(proc)
   put(p["run"]/(phase+".process.json"),{"pid":proc.pid,"identity":identity,"argv":qemu_argv(m,p,phase,serial)})
-  rc=proc.wait()
+ except BaseException as exc:
+  failure=exc
+  print(f"QEMU registration failed for pid={proc.pid}: {exc}. Holding campaign lock until child exits.",file=sys.stderr,flush=True)
  finally:
-  if proc.poll() is None: proc.wait()
+  rc=proc.wait()
  put(p["run"]/(phase+".exit.json"),{"returncode":rc,"finished":int(time.time())})
+ if failure is not None: raise failure
 def cut(a):
  r=a.run.resolve();d=json.loads((r/"cut.process.json").read_text());pid=int(d["pid"])
  if proc_identity(pid) != d.get("identity"): die("stale or substituted QEMU PID")
