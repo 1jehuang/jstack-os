@@ -68,7 +68,10 @@ else
 log "initramfs + systemd-boot"
 sed -i 's/^MODULES=.*/MODULES=(btrfs)/; s/^HOOKS=.*/HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)/' /etc/mkinitcpio.conf
 mkinitcpio -P >/dev/null
-bootctl install >/dev/null
+# The installer may be constructing an offline, content-addressed disk artifact.
+# Never let that operation modify the recovery host's firmware NVRAM. The
+# removable fallback path and loader files written to the ESP remain bootable.
+bootctl --no-variables install >/dev/null
 PARTUUID=$(blkid -s PARTUUID -o value "$J_ROOT_PART")
 printf 'default jstack.conf\ntimeout 1\n' > /boot/loader/loader.conf
 cat > /boot/loader/entries/jstack.conf <<E

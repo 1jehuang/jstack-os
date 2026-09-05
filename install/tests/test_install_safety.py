@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).parents[1] / "jstack-install.sh"
+CHROOT_STAGE = Path(__file__).parents[1] / "chroot-stage.sh"
 
 
 class InstallerSafetyTests(unittest.TestCase):
@@ -123,6 +124,11 @@ class InstallerSafetyTests(unittest.TestCase):
         self.assertEqual(text.count('[ -z "$user" ] || chown "$user" "$db"'), 2)
         self.assertNotIn('chown alpm:alpm', text)
         self.assertNotIn("--cachedir /var/cache/pacman/pkg", text)
+
+    def test_bootloader_install_never_mutates_host_efi_variables(self):
+        text = CHROOT_STAGE.read_text()
+        self.assertIn("bootctl --no-variables install", text)
+        self.assertNotIn("bootctl install", text)
 
 
 if __name__ == "__main__":
