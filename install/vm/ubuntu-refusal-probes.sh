@@ -9,9 +9,11 @@ usage() {
 usage: ubuntu-refusal-probes.sh --marker FILE --installer FILE --plan FILE --target BLOCKDEV
 
 FILE must contain exactly: JSTK_DISPOSABLE_UBUNTU_REFUSAL_VM_V1
-The initialized state directory is the canonical parent of PLAN. The script only
-mutates private sibling copies on the same recovery filesystem, except optional
-read-only mount setup on an already existing target partition. It never writes the supplied target or state.
+PLAN must bind TARGET's observed serial exactly to JSTACK_TARGET_01. Its state
+directory must contain .jstk-disposable-refusal-state with exactly
+JSTK_DISPOSABLE_REFUSAL_STATE_V1. The script mutates private sibling copies. The
+artifact test reversibly flips one byte in this explicitly disposable state and
+restores that byte and verifies its full digest. It never writes TARGET.
 Run as root inside a disposable QEMU/KVM guest. Results are PASS/FAIL/SKIP/INCONCLUSIVE.
 EOF
 }
@@ -37,13 +39,47 @@ case "$virt" in qemu|kvm) ;; *) die "refusing non-QEMU/KVM environment (detected
 installer=$(readlink -f "$installer"); plan=$(readlink -f "$plan"); target=$(readlink -f "$target")
 state=$(dirname "$plan")
 [[ $state != / && -f $state/initialized.json ]] || die "plan parent is not initialized state"
+[[ -f $state/.jstk-disposable-refusal-state && $(cat "$state/.jstk-disposable-refusal-state") == JSTK_DISPOSABLE_REFUSAL_STATE_V1 ]] || die "state is not explicitly marked disposable"
 command -v python3 >/dev/null || die "python3 is required"
 command -v sha256sum >/dev/null || die "sha256sum is required"
+readarray -t identity < <(python3 - "$plan" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1])); print(x['body']['target']['stable_serial']); print(x['body']['target'].get('stable_wwn') or '')
+PY
+)
+[[ ${identity[0]} == JSTACK_TARGET_01 ]] || die "plan target serial is not dedicated JSTACK_TARGET_01"
+observed_serial=$(lsblk -dn -o SERIAL "$target" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+[[ $observed_serial == JSTACK_TARGET_01 ]] || die "observed target serial does not match dedicated plan identity"
+# Probe the same transaction lock used by the public controller. Release it
+# immediately because refusal cases must enter the controller far enough to
+# exercise their intended validation rather than being masked by our own lock.
+lock_path=$(python3 - "${identity[0]}" "${identity[1]}" <<'PY'
+import hashlib,json,sys
+serial,wwn=sys.argv[1:]
+opt='Some('+json.dumps(wwn,separators=(',',':'))+')' if wwn else 'None'
+print('/run/lock/jstack-ubuntu-'+hashlib.sha256(f'{serial}:{opt}'.encode()).hexdigest()+'.lock')
+PY
+)
+exec {transaction_lock}>"$lock_path"
+flock -n "$transaction_lock" || die "active target deployment detected"
+flock -u "$transaction_lock"
 
 work=$(mktemp -d "$(dirname "$state")/.jstk-refusal-probes.XXXXXX")
 mountpoint=
+restore_artifact= restore_hex= restore_hash=
+restore_retained_artifact() {
+  python3 - "$restore_artifact" "$restore_hex" <<'PY'
+import os,sys
+with open(sys.argv[1],'r+b') as f:
+    f.seek(0); f.write(bytes.fromhex(sys.argv[2])); f.flush(); os.fsync(f.fileno())
+PY
+  [[ $(sha256sum "$restore_artifact" | awk '{print $1}') == "$restore_hash" ]]
+}
 cleanup() {
   if [[ -n $mountpoint ]] && mountpoint -q "$mountpoint"; then umount "$mountpoint" || true; fi
+  if [[ -n $restore_artifact && -n $restore_hex ]]; then
+    restore_retained_artifact || printf 'HARNESS_REFUSAL: artifact trap restoration full digest mismatch\n' >&2
+  fi
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -104,19 +140,6 @@ copy_status_state() {
   cp -a "$plan" "$d/$(basename "$plan")"
   cp -a "$state/journal/$hash.wal" "$d/journal/$hash.wal"
 }
-# Deploy additionally needs initialization evidence and the selected artifact.
-# --sparse=always preserves holes. Refuse the optional case when there is not
-# enough free space rather than risking exhaustion of the recovery filesystem.
-copy_deploy_state() {
-  local d=$1 source=$2 bytes free
-  copy_status_state "$d"
-  cp -a "$state/initialized.json" "$d/initialized.json"
-  bytes=$(du -B1 --apparent-size "$source" | awk '{print $1}')
-  free=$(df -B1 --output=avail "$d" | tail -1 | tr -d ' ')
-  (( free > bytes + 1073741824 )) || return 1
-  mkdir -p "$d/$(dirname "${source#"$state/"}")"
-  cp --sparse=always --preserve=mode,ownership,timestamps "$source" "$d/${source#"$state/"}"
-}
 flip_first_byte() { python3 - "$1" <<'PY'
 import sys
 p=sys.argv[1]
@@ -136,6 +159,8 @@ PY
 }
 
 positive_status
+run_case duplicate-cli-argument 'duplicate argument --plan' "$state" "$installer" status --plan "$plan" --plan "$plan"
+run_case invalid-cli-argument 'unknown or unsupported argument --bogus' "$state" "$installer" status --plan "$plan" --bogus value
 
 c=$work/corrupt-plan; copy_status_state "$c"; cp_plan=$c/$(basename "$plan"); mutate_json "$cp_plan" plan-hash
 run_case corrupt-plan-hash 'exact plan authorization does not match' "$c" "$installer" status --plan "$cp_plan"
@@ -147,25 +172,39 @@ c=$work/corrupt-journal; copy_status_state "$c"; cp_plan=$c/$(basename "$plan")
 wal=$c/journal/$(plan_hash).wal
 if [[ -n $wal && -s $wal ]]; then
   flip_first_byte "$wal"
-  run_case corrupt-journal-copy 'journal chain corruption' "$c" "$installer" status --plan "$cp_plan"
+run_case corrupt-journal-copy 'journal chain corruption' "$c" "$installer" status --plan "$cp_plan"
 else
   printf 'SKIP case=corrupt-journal-copy reason=%q\n' 'isolated state has no nonempty journal'; ((skip+=1))
 fi
 
-# Tamper only the isolated promoted artifact. Identity or host-scope checks can
-# precede artifact verification after copying, so only the intended error passes.
-c=$work/artifact-tamper; cp_plan=$c/$(basename "$plan")
+c=$work/torn-journal; copy_status_state "$c"; cp_plan=$c/$(basename "$plan"); wal=$c/journal/$(plan_hash).wal
+printf 'TORN' >>"$wal"
+run_case torn-journal-tail-copy 'torn journal tail' "$c" "$installer" status --plan "$cp_plan"
+
+# This state is separately and explicitly marked disposable. Reversibly mutate
+# only its retained artifact because copying a target-sized image can exhaust the
+# recovery disk. The trap restores on signals; the normal path restores and
+# verifies the exact full digest before reporting success.
 source_artifact=$(python3 - "$plan" "$state" <<'PY'
 import json,os,sys
 x=json.load(open(sys.argv[1])); print(os.path.join(sys.argv[2],x['body']['artifact']['relative_store_path']))
 PY
 )
-if [[ -f $source_artifact && -s $source_artifact ]] && copy_deploy_state "$c" "$source_artifact"; then
-  artifact=$c/${source_artifact#"$state/"}
-  flip_first_byte "$artifact"
-  run_case artifact-tamper-copy 'retained artifact no longer matches the authorized plan' "$c" "$installer" resume --plan "$cp_plan"
+if [[ -f $source_artifact && -s $source_artifact ]]; then
+  restore_artifact=$source_artifact; restore_hash=$(sha256sum "$source_artifact" | awk '{print $1}')
+  restore_hex=$(python3 - "$source_artifact" <<'PY'
+import sys
+with open(sys.argv[1],'rb') as f: print(f.read(1).hex())
+PY
+)
+  flip_first_byte "$source_artifact"
+  run_case artifact-tamper-disposable-state 'retained artifact no longer matches the authorized plan' "$state" "$installer" resume --plan "$plan"
+  restore_retained_artifact || true
+  restored=$(sha256sum "$restore_artifact" | awk '{print $1}')
+  if [[ $restored == "$restore_hash" ]]; then printf 'PASS case=artifact-restore expected=%q observed=%q\n' 'exact full digest restored' "$restored"; ((pass+=1)); else printf 'FAIL case=artifact-restore expected=%q observed=%q\n' "$restore_hash" "$restored"; ((fail+=1)); fi
+  restore_artifact= restore_hex=
 else
-  printf 'SKIP case=artifact-tamper-copy reason=%q\n' 'artifact unavailable or insufficient space for selected sparse copy'; ((skip+=1))
+  printf 'SKIP case=artifact-tamper-disposable-state reason=%q\n' 'retained artifact unavailable'; ((skip+=1))
 fi
 
 # Public inspect overlap probes do not create state because an existing initialized
