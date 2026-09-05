@@ -40,7 +40,8 @@ installer=$(readlink -f "$installer"); plan=$(readlink -f "$plan"); target=$(rea
 state=$(dirname "$plan")
 [[ $state != / && -f $state/initialized.json ]] || die "plan parent is not initialized state"
 [[ $(lsblk -dn -o TYPE "$target" | tr -d ' ') == disk ]] || die "target is not a whole disk"
-[[ $(stat -Lc '%U:%h:%F' "$state") == root:1:directory ]] || die "state directory ownership/link/type is unsafe"
+# Directories legitimately have multiple links on ext4 (dot and child parents).
+[[ $(stat -Lc '%U:%F' "$state") == root:directory ]] || die "state directory ownership/type is unsafe"
 [[ $(stat -Lc '%U:%h:%F' "$plan") == 'root:1:regular file' ]] || die "plan ownership/link/type is unsafe"
 state_mode=$(stat -Lc '%a' "$state"); (( (8#$state_mode & 8#022) == 0 )) || die "state directory is group/world writable"
 [[ -f $state/.jstk-disposable-refusal-state && $(cat "$state/.jstk-disposable-refusal-state") == JSTK_DISPOSABLE_REFUSAL_STATE_V1 ]] || die "state is not explicitly marked disposable"
