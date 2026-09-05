@@ -28,6 +28,10 @@ class HarnessTests(unittest.TestCase):
    with self.assertRaises(SystemExit):h.case_paths(self.d,bad)
   comma=self.d/"bad,name";comma.write_bytes(b"x")
   with self.assertRaises(SystemExit):h.regular(comma)
+ def test_work_path_rejects_comma_and_symlink_ancestor(self):
+  with self.assertRaises(SystemExit):h.safe_work(self.d/"bad,work",False)
+  real=self.d/"real-parent";real.mkdir();alias=self.d/"alias";alias.symlink_to(real,target_is_directory=True)
+  with self.assertRaises(SystemExit):h.safe_work(alias/"work",False)
  def test_later_phase_symlink_is_not_regular(self):
   real=self.d/"real";real.write_bytes(b"x");link=self.d/"link";link.symlink_to(real)
   with self.assertRaises(SystemExit):h.regular(link)
@@ -40,6 +44,6 @@ class HarnessTests(unittest.TestCase):
  def test_fixed_qemu_is_offline_and_uses_only_bound_disks(self):
   w=self.prepare();m=h.load(w/"manifest.json");p=h.case_paths(w,"c")
   for k in ("host","target","vars"):p[k].parent.mkdir(parents=True,exist_ok=True);p[k].touch(exist_ok=True)
-  argv=h.qemu_argv(m,p,"cut",p["run"]/"s",p["run"]/"q")
+  argv=h.qemu_argv(m,p,"cut",p["run"]/"s")
   self.assertIn("none",argv[argv.index("-nic")+1:]);self.assertFalse(any("netdev" in x for x in argv));self.assertNotIn("/dev/sd", " ".join(argv))
 if __name__=="__main__":unittest.main()

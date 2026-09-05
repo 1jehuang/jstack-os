@@ -33,11 +33,25 @@ def regular(p: Path, suffix: str|None=None) -> Path:
  p=p.resolve(); st=p.stat()
  if not p.is_file() or st.st_nlink != 1 or (suffix and p.suffix != suffix): die(f"unsafe input {p}")
  return p
+def safe_work(path:Path, existing:bool)->Path:
+ if not path.is_absolute() or "," in str(path): die("unsafe work path")
+ current=Path(path.anchor)
+ parts=path.parts[1:] if path.anchor else path.parts
+ check=parts[:-1]
+ for part in check:
+  current=current/part
+  try: st=current.lstat()
+  except FileNotFoundError: die("work parent does not exist")
+  if current.is_symlink() or not current.is_dir(): die("work path has unsafe ancestor")
+ resolved=path.resolve()
+ if "," in str(resolved): die("unsafe resolved work path")
+ return resolved
 def put(path: Path, value: Any) -> None:
  fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600)
  with os.fdopen(fd,"w") as f: json.dump(value,f,sort_keys=True,indent=2);f.write("\n");f.flush();os.fsync(f.fileno())
 def bound(p: Path) -> dict[str,Any]: return {"path":str(regular(p)),"sha256":digest(p)}
 def load(path: Path) -> dict[str,Any]:
+ path=safe_work(path,True); regular(path)
  m=json.loads(path.read_text())
  if m.get("schema") != SCHEMA: die("wrong manifest schema")
  allowed={"schema","source_revision","memory_mib","cpus","binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"}
@@ -48,7 +62,7 @@ def load(path: Path) -> dict[str,Any]:
  return m
 
 def prepare(a):
- w=a.work.resolve()
+ w=safe_work(a.work,False)
  if w.exists(): die("work directory exists")
  w.mkdir(mode=0o700)
  m={"schema":SCHEMA,"source_revision":a.source_revision,"memory_mib":4096,"cpus":a.cpus,
@@ -64,7 +78,7 @@ def case_paths(w:Path,c:str)->dict[str,Path]:
  if not CASE_ID.fullmatch(c): die("invalid case id")
  r=w/"cases"/c
  return {"run":r,"host":r/"host.qcow2","target":r/"target.qcow2","vars":r/"vars.fd"}
-def qemu_argv(m,p,phase,serial,qmp):
+def qemu_argv(m,p,phase,serial):
  seed=Path(m[phase+"_seed"]["path"])
  return ["qemu-system-x86_64","-enable-kvm","-cpu","host","-m",str(m["memory_mib"]),
   "-smp",str(m["cpus"]),"-display","none","-monitor","none","-nic","none","-no-reboot",
@@ -75,7 +89,7 @@ def qemu_argv(m,p,phase,serial,qmp):
   "-drive",f"file={p['target']},if=none,id=target,format=qcow2",
   "-device","virtio-blk-pci,drive=target,serial=JSTACK_TARGET_01",
   "-drive",f"file={seed},if=virtio,format=raw,readonly=on",
-  "-chardev",f"file,id=serial0,path={serial}","-serial","chardev:serial0","-qmp",f"unix:{qmp},server=on,wait=off"]
+  "-chardev",f"file,id=serial0,path={serial}","-serial","chardev:serial0"]
 def start(a):
  mp=a.manifest.resolve();m=load(mp);w=mp.parent;p=case_paths(w,a.case_id)
  if a.phase=="cut":
@@ -97,25 +111,33 @@ def proc_identity(pid:int)->dict[str,Any]:
 def supervise(a):
  mp=a.manifest.resolve();m=load(mp);w=mp.parent;p=case_paths(w,a.case_id);phase=a.phase
  lock=(w/"campaign.lock").open("a+");fcntl.flock(lock,fcntl.LOCK_EX)
- serial=p["run"]/(phase+".serial.log");qmp=p["run"]/(phase+".qmp.sock")
+ serial=p["run"]/(phase+".serial.log")
  log=(p["run"]/(phase+".qemu.log")).open("xb")
- proc=subprocess.Popen(qemu_argv(m,p,phase,serial,qmp),stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
- identity=proc_identity(proc.pid)
- put(p["run"]/(phase+".process.json"),{"pid":proc.pid,"identity":identity,"argv":qemu_argv(m,p,phase,serial,qmp)})
- rc=proc.wait();put(p["run"]/(phase+".exit.json"),{"returncode":rc,"finished":int(time.time())})
+ proc=subprocess.Popen(qemu_argv(m,p,phase,serial),stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
+ try:
+  identity=proc_identity(proc.pid)
+  put(p["run"]/(phase+".process.json"),{"pid":proc.pid,"identity":identity,"argv":qemu_argv(m,p,phase,serial)})
+  rc=proc.wait()
+ finally:
+  if proc.poll() is None: proc.wait()
+ put(p["run"]/(phase+".exit.json"),{"returncode":rc,"finished":int(time.time())})
 def cut(a):
  r=a.run.resolve();d=json.loads((r/"cut.process.json").read_text());pid=int(d["pid"])
  if proc_identity(pid) != d.get("identity"): die("stale or substituted QEMU PID")
+ try: pidfd=os.pidfd_open(pid)
+ except (AttributeError,OSError): die("cannot bind QEMU process with pidfd")
  pat=re.compile(MARKERS[a.boundary]);end=time.monotonic()+a.timeout
  while time.monotonic()<end:
   text=(r/"cut.serial.log").read_text(errors="replace")
   hits=[x for x in text.splitlines() if pat.search(x)]
   if hits:
-   os.kill(pid,signal.SIGKILL);put(r/"cut-request.json",{"intended_boundary":a.boundary,"observed_marker":hits[-1],"pid":pid});print(hits[-1]);return
+   if proc_identity(pid) != d.get("identity"): die("QEMU identity changed before cut")
+   signal.pidfd_send_signal(pidfd,signal.SIGKILL)
+   os.close(pidfd);put(r/"cut-request.json",{"intended_boundary":a.boundary,"observed_marker":hits[-1],"pid":pid,"identity":d["identity"]});print(hits[-1]);return
   try: os.kill(pid,0)
   except ProcessLookupError: die("QEMU exited before marker")
   time.sleep(.2)
- die("marker timeout; detached supervisor and QEMU remain running")
+ os.close(pidfd);die("marker timeout; detached supervisor and QEMU remain running")
 def witness(a):
  r=a.run.resolve(); exitp=r/"witness.exit.json"
  if not exitp.exists(): die("witness VM has not exited")
