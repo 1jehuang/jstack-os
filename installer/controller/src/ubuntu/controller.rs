@@ -259,6 +259,9 @@ pub fn deploy_files(
     }
     if let Some((seq, offset, length, digest)) = replayed.pending_intent.take() {
         super::require_chunk()?;
+        if production_checks {
+            super::verify_open_target(&target, target_path, &p.body.target)?;
+        }
         write_or_admit(
             &journal,
             &mut source,
@@ -287,7 +290,8 @@ pub fn deploy_files(
     {
         super::require_chunk()?;
         if production_checks {
-            super::verify_unused_target(target_path, root)?
+            super::verify_unused_target(target_path, root)?;
+            super::verify_open_target(&target, target_path, &p.body.target)?;
         }
         journal.append(Event::Intent {
             seq: seq as u64,
@@ -317,6 +321,9 @@ pub fn deploy_files(
         ));
     }
     super::require_verify()?;
+    if production_checks {
+        super::verify_open_target(&target, target_path, &p.body.target)?;
+    }
     if hash_range(&target, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
         journal.append(Event::ManualRecovery {
             reason: "full target digest mismatch".into(),

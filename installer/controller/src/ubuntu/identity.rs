@@ -1,5 +1,7 @@
 use super::model::{RecoveryIdentity, StableDiskIdentity};
 use serde::Deserialize;
+use std::fs::File;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -219,6 +221,25 @@ pub fn verify_recovery_identity(
         || disk.identity.stable_wwn != expected.backing_wwn
     {
         return Err("recovery backing identity changed".into());
+    }
+    Ok(())
+}
+
+pub fn verify_open_target(
+    file: &File,
+    path: &Path,
+    expected: &StableDiskIdentity,
+) -> Result<(), String> {
+    let descriptor = file.metadata().map_err(|e| e.to_string())?;
+    let named = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    if !descriptor.file_type().is_block_device()
+        || !named.file_type().is_block_device()
+        || descriptor.rdev() != named.rdev()
+    {
+        return Err("open target descriptor is not the freshly resolved whole block device".into());
+    }
+    if observe_target(path)?.identity != *expected {
+        return Err("open target stable identity changed".into());
     }
     Ok(())
 }

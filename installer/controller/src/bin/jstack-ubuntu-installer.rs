@@ -158,6 +158,7 @@ mod linux {
         require_prepare()?;
         let (d, s) = disk_state(a)?;
         let src = PathBuf::from(flag(a, "--artifact-source")?);
+        secure_input_file(&src, "artifact source")?;
         verify_unused_target(&d, &s)?;
         if !s.join("initialized.json").is_file() {
             return Err("state directory was not initialized".into());
@@ -178,7 +179,12 @@ mod linux {
         let rel = PathBuf::from(format!("artifacts/{full}.raw"));
         let exe = std::env::current_exe().map_err(err)?;
         let durable_exe = s.join("jstack-ubuntu-installer");
-        if !durable_exe.exists() {
+        if durable_exe.exists() {
+            secure_input_file(&durable_exe, "persisted installer")?;
+            if hash_image(&exe, 1024 * 1024)?.0 != hash_image(&durable_exe, 1024 * 1024)?.0 {
+                return Err("persisted installer differs from running executable".into());
+            }
+        } else {
             copy_file(&exe, &durable_exe)?;
             std::fs::set_permissions(&durable_exe, std::fs::Permissions::from_mode(0o700))
                 .map_err(err)?
@@ -338,6 +344,15 @@ mod linux {
             off += n as u64
         }
         Ok((hex(&all.finalize()), out, size))
+    }
+    fn secure_input_file(p: &Path, what: &str) -> Result<(), String> {
+        let m = std::fs::symlink_metadata(p).map_err(err)?;
+        if !m.file_type().is_file() || m.file_type().is_symlink() || m.nlink() != 1 {
+            return Err(format!(
+                "{what} must be a regular single-link non-symlink file"
+            ));
+        }
+        Ok(())
     }
     fn sparse_copy(src: &Path, dst: &Path, chunk: u64) -> Result<(), String> {
         let mut i = File::open(src).map_err(err)?;
