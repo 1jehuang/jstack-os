@@ -1,8 +1,9 @@
 # Installing jstack OS from an Ubuntu host
 
-`install/jstack-install.sh` installs a complete jstack OS system onto a disk (or
-onto existing partitions) using Arch's `pacstrap` running on Ubuntu/Debian. No
-Arch ISO or USB needed. It also works from a running Arch system.
+`install/jstack-install.sh` constructs a complete bootable jstack OS disk image
+using Arch's `pacstrap` on a preserved Ubuntu/Debian recovery host, then deploys
+that immutable image through the pinned Ubuntu transaction controller. No Arch
+ISO or USB is needed.
 
 ## What gets installed
 
@@ -29,48 +30,51 @@ git clone https://github.com/1jehuang/jstack-os
 cd jstack-os
 
 # Whole disk (destroys everything on it):
-sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
-
-# Existing partitions (dual boot; ESP is reused, not wiped):
-sudo ./install/jstack-install.sh --root-part /dev/nvme0n1p5 --esp-part /dev/nvme0n1p1 --user jeremy
+sudo ./install/jstack-install.sh --disk /dev/disk/by-id/<target> \
+  --state-dir /var/lib/jstack-installer --user jeremy --hostname xps13
 ```
 
 Flags: `--password`, `--timezone` (default America/Los_Angeles), `--locale`,
-`--keymap`, `--mirror URL`, `--wipe-esp`, `--skip-source-pkgs`, `--yes`.
+`--keymap`, `--mirror URL`, `--skip-source-pkgs`, `--yes`.
 
-The host needs UEFI and internet. On Ubuntu the script uses a current official
+The host needs UEFI, internet during artifact construction, a persistent state
+directory, and its own bootable disk separate from the target. On Ubuntu the script uses a current official
 Arch bootstrap environment rather than Ubuntu's pacman and keyring. Before it
 formats or repartitions anything, it validates the inputs, initializes the
 keyring, synchronizes the package databases, and downloads the complete base
-package set with the same pacman configuration used by `pacstrap`. A failed
-repository sync or base-package download therefore leaves the target untouched.
+package set with the same pacman configuration used by `pacstrap`. All package
+and source builds finish in the offline image before deployment. A failed
+download or build therefore leaves the target untouched.
 The working mirrorlist is explicitly copied into the installed system.
 
-`install/jstack-install.sh` is the legacy direct shell installer. It does not run
-through the newer Rust installer controller or its state model, so those
-transaction and recovery guarantees do not protect this path. The preflight
-reduces one important risk, but it is not crash recovery and does not make an
-in-place replacement of the disk currently running the host safe.
+The public entrypoint cannot directly format the physical target. It asks the
+controller to inspect and initialize durable recovery state, constructs an
+exclusively owned regular-file image through a loop mapping, and then supplies
+that content-addressed image to the controller. Partition-only installation is
+outside this transaction model and is refused.
 
-This preflight cannot make the whole installation offline. Package builds can
-still fetch sources (`--skip-source-pkgs` only skips the optional source and AUR
-sets), and a mirror can fail after the preflight. If any command fails after
-formatting has started, the installer prints a prominent warning. Do not reboot
-into that incomplete target. Keep the live environment running and inspect or
-repair it. Rerunning the installer formats the target again and may destroy
-recoverable data. There is no automatic reboot recovery or rollback.
+Deployment records a durable intent for each fixed, plan-bound image chunk,
+flushes the effect, independently reads it back, and only then commits it. To
+recover after interruption, boot the preserved Ubuntu host and run the exact
+`jstack-ubuntu-installer resume --plan ...` command printed before deployment.
+This is explicit manual resume, not rollback or automatic recovery. Resume
+fails closed if the graph, plan, artifact, recovery disk, or target identity has
+changed. An incomplete target is never reported as complete.
 
 ## Stages
 
 1. `host_prep`: install host tools, prepare current Arch pacstrap/pacman, and init the keyring.
 2. `package_preflight`: sync repositories and cache the base system before destructive work.
-3. `partition`: GPT with 1G ESP + rest btrfs, or format the given root partition.
-4. `bootstrap`: `pacstrap` base, preserve the working mirrorlist, `genfstab`, copy this repo to
+3. `artifact`: create a private regular-file image, GPT with 1G ESP + btrfs, and never attach the physical target to the builder.
+4. `bootstrap`: `pacstrap` base into the image, preserve the working mirrorlist, `genfstab`, copy this repo to
    `/usr/src/jstack-os`, then `arch-chroot` into `install/chroot-stage.sh`.
 5. `chroot-stage`: locale/users, `makepkg` every `packages/*` as an unprivileged
    `builder` user and `pacman -U` them, apply systemd presets, autologin,
-   mkinitcpio, `bootctl install`, seed `/etc/skel` into the user's home, and
+   mkinitcpio, `bootctl --no-variables install`, seed `/etc/skel` into the user's home, and
    assert that no snapshot tooling is present and `jcode` is on PATH.
+6. `deploy`: bind the immutable artifact and chunk manifest to the confirmed
+   hardware plan, then intent/write/readback/commit each chunk and verify the
+   complete target before graph completion.
 
 ## Updating jcode
 

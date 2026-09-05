@@ -25,22 +25,23 @@ preinstalled agent harnesses.
 
 ## Installing from Ubuntu (or any Debian host)
 
-`install/jstack-install.sh` builds a complete jstack OS on a target disk from a
-running Ubuntu system. It fetches the official `archlinux-bootstrap` tarball
+`install/jstack-install.sh` builds a complete offline jstack OS disk image on a
+preserved Ubuntu recovery host, then deploys that image transactionally to a
+separate whole disk. It fetches the official `archlinux-bootstrap` tarball
 (Ubuntu's own pacman and keyring are too old to be trusted), pacstraps into
-btrfs subvolumes, builds every jstack package from this repo inside the target,
-and writes systemd-boot entries.
+btrfs subvolumes, builds every jstack package inside the offline image, and
+writes systemd-boot entries without modifying firmware variables.
 
-> **Warning:** This legacy shell installer is outside the newer installer state
-> model. It has no rollback or restart recovery. Use a disposable target, never
-> the mounted host disk, and read [the safety limits](docs/INSTALL_FROM_UBUNTU.md)
-> before running it.
+> **Supported scope:** the recovery host must remain bootable from a persistent
+> disk separate from the uniquely identifiable target. The artifact, plan,
+> controller, and journal are retained under `--state-dir`. Same-disk live
+> conversion, volatile recovery, mounted/swap targets, and partition-only
+> installation fail closed. Read [the safety limits](docs/INSTALL_FROM_UBUNTU.md).
 
 ```sh
 git clone https://github.com/1jehuang/jstack-os && cd jstack-os
-sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
-# or onto existing partitions:
-sudo ./install/jstack-install.sh --root-part /dev/nvme0n1p5 --esp-part /dev/nvme0n1p1 --user jeremy
+sudo ./install/jstack-install.sh --disk /dev/disk/by-id/<target> \
+  --state-dir /var/lib/jstack-installer --user jeremy --hostname xps13
 ```
 
 What you end up with (see `packages/jstack-base/files/POLICY.md`):
