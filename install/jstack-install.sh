@@ -93,6 +93,7 @@ done
 if [ -n "$DISK" ]; then
   [ -z "$ROOT_PART$ESP_PART" ] || die "use --disk OR --root-part/--esp-part"
   [ -b "$DISK" ] || die "$DISK is not a block device"
+  [ "$(blockdev --getss "$DISK")" = 512 ] || die "$DISK has an unsupported logical sector size; only 512-byte-sector targets are supported"
   # A whole-disk install must run from another disk or a live environment that
   # has copied itself to RAM and released every target-disk mount.  Without
   # this guard, running the advertised command from the installed Ubuntu host

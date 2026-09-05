@@ -12,7 +12,7 @@ CHROOT_STAGE = Path(__file__).parents[1] / "chroot-stage.sh"
 
 
 class InstallerSafetyTests(unittest.TestCase):
-    def run_instrumented(self, fail_preflight: bool, bootstrap: bool = False, die_after_destructive: bool = False, password: str = "secret", stdin: str = ""):
+    def run_instrumented(self, fail_preflight: bool, bootstrap: bool = False, die_after_destructive: bool = False, password: str = "secret", stdin: str = "", sector_size: int = 512):
         scratch = Path(os.environ.get("JCODE_SCRATCH_DIR", Path.home() / ".jcode" / "scratch"))
         scratch.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=scratch) as td:
@@ -56,7 +56,7 @@ class InstallerSafetyTests(unittest.TestCase):
             (bindir / "blockdev").write_text(
                 "#!/bin/sh\n"
                 'echo "blockdev $*" >> "$COMMAND_LOG"\n'
-                "echo 4294967296\n"
+                'case "$1" in --getss) echo "$SECTOR_SIZE";; *) echo 4294967296;; esac\n'
             )
             pacman = bindir / "pacman"
             pacman.write_text(
@@ -86,6 +86,7 @@ class InstallerSafetyTests(unittest.TestCase):
                 "COMMAND_LOG": str(log),
                 "LOOP_BACKING": str(root / "loop-backing"),
                 "JSTACK_UBUNTU_INSTALLER": str(controller),
+                "SECTOR_SIZE": str(sector_size),
             }
             result = subprocess.run(
                 [str(script), "--disk", "/dev/fake", "--state-dir", str(root / "state"), "--user", "tester", "--password", password, "--yes"],
@@ -114,6 +115,13 @@ class InstallerSafetyTests(unittest.TestCase):
         self.assertIn("-Syw", commands)
         self.assertNotIn("wipefs", commands)
         self.assertNotIn("INSTALLATION FAILED AFTER", result.stderr)
+
+    def test_non_512_sector_target_is_refused_before_host_or_target_effects(self):
+        result, commands = self.run_instrumented(False, sector_size=4096)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("only 512-byte-sector targets are supported", result.stderr)
+        self.assertNotIn("pacman", commands)
+        self.assertNotIn("wipefs", commands)
 
     def test_ubuntu_bootstrap_sync_failure_prevents_wipe(self):
         result, commands = self.run_instrumented(fail_preflight=True, bootstrap=True)

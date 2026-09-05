@@ -37,8 +37,12 @@ sudo ./install/jstack-install.sh --disk /dev/disk/by-id/<target> \
 Flags: `--password`, `--timezone` (default America/Los_Angeles), `--locale`,
 `--keymap`, `--mirror URL`, `--skip-source-pkgs`, `--yes`.
 
-The host needs UEFI, internet during artifact construction, a persistent state
-directory, and its own bootable disk separate from the target. On Ubuntu the script uses a current official
+The host needs UEFI with Secure Boot disabled, internet during artifact
+construction, a persistent state directory, and its own bootable disk separate
+from the target. The target must expose 512-byte logical sectors. Secure Boot
+enabled or indeterminate, and non-512-byte-sector targets, are refused before
+target writes because this release neither signs its boot chain nor builds the
+artifact with matching non-512 GPT geometry. On Ubuntu the script uses a current official
 Arch bootstrap environment rather than Ubuntu's pacman and keyring. Before it
 formats or repartitions anything, it validates the inputs, initializes the
 keyring, synchronizes the package databases, and downloads the complete base

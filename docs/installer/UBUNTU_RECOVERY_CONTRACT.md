@@ -12,6 +12,11 @@ pinned graph, exact confirmed plan, and durable journal remain on that host.
 The target is a different, uniquely identifiable whole disk. Target replacement
 is intentionally destructive and does not promise restoration of its old OS.
 
+The currently authorized hardware envelope is UEFI with Secure Boot observably
+disabled and a target with 512-byte logical sectors. Missing, unreadable,
+ambiguous, or enabled Secure Boot state and every other logical sector size are
+pre-write refusals. The local artifact boot chain is not signed.
+
 A RAM-only environment on the disk being erased is not a recovery environment.
 Same-disk conversion without retained durable bootable recovery, volatile state,
 ambiguous storage ancestry, and unsupported partition-only installation must be
