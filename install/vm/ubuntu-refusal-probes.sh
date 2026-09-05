@@ -76,13 +76,20 @@ PY
   [[ $(sha256sum "$restore_artifact" | awk '{print $1}') == "$restore_hash" ]]
 }
 cleanup() {
+  local restoration_failed=0
   if [[ -n $mountpoint ]] && mountpoint -q "$mountpoint"; then umount "$mountpoint" || true; fi
   if [[ -n $restore_artifact && -n $restore_hex ]]; then
-    restore_retained_artifact || printf 'HARNESS_REFUSAL: artifact trap restoration full digest mismatch\n' >&2
+    if ! restore_retained_artifact; then
+      restoration_failed=1
+      printf 'HARNESS_REFUSAL: artifact restoration full digest mismatch; retaining recovery evidence at %s\n' "$work" >&2
+    fi
   fi
-  rm -rf "$work"
+  (( restoration_failed != 0 )) || rm -rf "$work"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Content, relative path, type, mode, uid, gid, and symlink target. Reading does not
 # include atime, so harmless reads cannot hide writes or metadata changes.
@@ -197,12 +204,19 @@ import sys
 with open(sys.argv[1],'rb') as f: print(f.read(1).hex())
 PY
 )
+  printf '%s\n' "$restore_hex" >"$work/artifact-original-byte.hex"
+  printf '%s\n' "$restore_hash" >"$work/artifact-original-sha256"
+  printf '%s\n' "$restore_artifact" >"$work/artifact-path"
   flip_first_byte "$source_artifact"
   run_case artifact-tamper-disposable-state 'retained artifact no longer matches the authorized plan' "$state" "$installer" resume --plan "$plan"
-  restore_retained_artifact || true
   restored=$(sha256sum "$restore_artifact" | awk '{print $1}')
-  if [[ $restored == "$restore_hash" ]]; then printf 'PASS case=artifact-restore expected=%q observed=%q\n' 'exact full digest restored' "$restored"; ((pass+=1)); else printf 'FAIL case=artifact-restore expected=%q observed=%q\n' "$restore_hash" "$restored"; ((fail+=1)); fi
-  restore_artifact= restore_hex=
+  if restore_retained_artifact; then
+    restored=$(sha256sum "$restore_artifact" | awk '{print $1}')
+    printf 'PASS case=artifact-restore expected=%q observed=%q\n' 'exact full digest restored' "$restored"; ((pass+=1))
+    restore_artifact= restore_hex=
+  else
+    printf 'FAIL case=artifact-restore expected=%q observed=%q recovery_evidence=%s\n' "$restore_hash" "$restored" "$work"; ((fail+=1))
+  fi
 else
   printf 'SKIP case=artifact-tamper-disposable-state reason=%q\n' 'retained artifact unavailable'; ((skip+=1))
 fi
