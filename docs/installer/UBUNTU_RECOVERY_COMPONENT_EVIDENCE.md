@@ -7,6 +7,22 @@ must supply those observations on its frozen source tree.
 
 ## Observed checkpoint gates
 
+- Later complete-project gate `make -C installer check` passed on 2026-09-05
+  (task `885036uqkq`, 220.5 seconds), after the public shell routing fixes.
+- Static packaging through `make -C installer/controller ubuntu-static` passed.
+  The resulting executable was checked as static ELF with no interpreter and its
+  read-only missing-plan refusal was exercised. This is packaging evidence, not
+  deployment acceptance.
+- After VM harness review through `b483ead`, independent standard discovery
+  `python3 -m unittest discover -s install/tests -v` passed all 26 tests, and
+  `git diff --check` passed (task `5398065r6n`). The harness regressions include
+  path containment, process identity, fixed offline VM arguments and rejection
+  of inconsistent cold-witness evidence. They do not replace real VM cuts.
+- Actual earlier-controller cold recovery, boot and completed no-write behavior,
+  plus the final-code firmware refusal, are recorded separately in
+  [UBUNTU_RECOVERY_ACCEPTANCE.md](UBUNTU_RECOVERY_ACCEPTANCE.md). Its open final-code
+  rows remain open despite these component gates.
+
 - `make -C installer/controller check`: passed at the `3cd2ee6` checkpoint on
   2026-09-05, background task `5293078yxp`, 41.7 seconds. This includes formatting,
   all controller tests, strict Clippy, and the Windows MSVC cross-check.
