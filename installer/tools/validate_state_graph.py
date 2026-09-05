@@ -22,6 +22,11 @@ def main() -> int:
     parser.add_argument("--schema", type=Path)
     parser.add_argument("--trace-schema", type=Path)
     parser.add_argument(
+        "--ubuntu-whole-disk",
+        action="store_true",
+        help="validate the explicitly identified Ubuntu whole-disk model schema",
+    )
+    parser.add_argument(
         "--traces",
         type=Path,
         default=Path(__file__).resolve().parents[1] / "traces",
@@ -37,6 +42,18 @@ def main() -> int:
         f"model schema: {error}"
         for error in validate_against_schema(model, model_schema)
     ]
+    if args.ubuntu_whole_disk:
+        if model.get("model_id") != "jstack-ubuntu-whole-disk-v1":
+            errors.append("Ubuntu validation requires model_id jstack-ubuntu-whole-disk-v1")
+        if errors:
+            for error in errors:
+                print(f"ERROR: {error}", file=sys.stderr)
+            return 1
+        print(
+            f"validated schema for {len(model['states'])} states and "
+            f"{len(model['transitions'])} transitions"
+        )
+        return 0
     errors.extend(validate_model(model))
     trace_count = 0
     trace_ids: set[str] = set()

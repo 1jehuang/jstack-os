@@ -57,6 +57,7 @@ fn topology_ids_actor_and_refusal_terminal_are_exact() {
             "verified",
             "complete",
             "refused",
+            "manual_recovery",
         ]
     );
     assert_eq!(model.state(model.initial_state()).id, "discovered");
@@ -71,6 +72,12 @@ fn topology_ids_actor_and_refusal_terminal_are_exact() {
             .state(model.state_id("refused").unwrap())
             .terminal_outcome,
         Some(TerminalOutcome::SafeAbort)
+    );
+    assert_eq!(
+        model
+            .state(model.state_id("manual_recovery").unwrap())
+            .terminal_outcome,
+        Some(TerminalOutcome::ManualRecovery)
     );
     assert_eq!(model.actors(), &["ubuntu_host_controller"]);
     assert!(
@@ -95,11 +102,16 @@ fn mutations_have_durable_intent_commit_and_failure_edges() {
             mutating.push(transition.def.id.as_str());
             assert!(transition.def.journal.intent_before_actions);
             assert!(transition.def.journal.commit_after_postconditions);
+            let expected_failure = if transition.def.id == "deploy_chunk" {
+                "manual_recovery"
+            } else {
+                "refused"
+            };
             assert_eq!(
                 transition
                     .failure_to
                     .map(|state| model.state(state).id.as_str()),
-                Some("refused")
+                Some(expected_failure)
             );
             assert!(!transition.def.preconditions.is_empty());
             assert!(!transition.def.postconditions.is_empty());
@@ -142,6 +154,15 @@ fn chunk_loop_and_full_target_finalization_are_required() {
             .postconditions
             .iter()
             .any(|item| item == "target_chunk_digest_readback_verified")
+    );
+    assert!(
+        !chunk.def.postconditions.iter().any(|item| {
+            item == "chunk_commit_durable" || item == "deployment_cursor_monotonic"
+        })
+    );
+    assert_eq!(
+        chunk.failure_to.map(|state| model.state(state).id.as_str()),
+        Some("manual_recovery")
     );
 
     let finish = model.transition(model.transition_id("finish_deployment").unwrap());

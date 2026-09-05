@@ -1,5 +1,6 @@
 PYTHON ?= python3
 MODEL := model/installer-state-graph.json
+UBUNTU_MODEL := model/ubuntu-whole-disk-state-graph.json
 
 .PHONY: check toolchain validate test docs core staging controller vm-test vm-host progress progress-full
 
@@ -12,6 +13,7 @@ toolchain:
 
 validate:
 	$(PYTHON) tools/validate_state_graph.py $(MODEL)
+	$(PYTHON) tools/validate_state_graph.py --ubuntu-whole-disk $(UBUNTU_MODEL)
 
 test:
 	$(PYTHON) -m unittest discover -s tests -v

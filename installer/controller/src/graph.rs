@@ -17,7 +17,7 @@ pub const UBUNTU_WHOLE_DISK_MODEL_ID: &str = "jstack-ubuntu-whole-disk-v1";
 
 /// SHA-256 of `model/ubuntu-whole-disk-state-graph.json`.
 pub const UBUNTU_WHOLE_DISK_GRAPH_SHA256: &str =
-    "a1290d2de54094b62f3d2066427c15524f6449abdde5a8ef75654f3df3a93588";
+    "3c7cfc18ade7eb3810bd5e2fa68e5969ee82ef4adaf2d3785477d0ed50e922f4";
 
 /// Action risks that make a transition mutating and therefore subject to the
 /// intent/commit journal protocol. Mirrors the semantic validator.

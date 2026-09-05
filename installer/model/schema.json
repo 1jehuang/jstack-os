@@ -29,7 +29,14 @@
       "minLength": 1
     },
     "scope": {
-      "$ref": "#/$defs/scope"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/scope"
+        },
+        {
+          "$ref": "#/$defs/ubuntuWholeDiskScope"
+        }
+      ]
     },
     "actors": {
       "type": "array",
@@ -51,7 +58,8 @@
             "firmware",
             "jstack",
             "recovery",
-            "shared"
+            "shared",
+            "ubuntu_host"
           ]
         },
         "minItems": 1,
@@ -418,6 +426,57 @@
         "description": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "ubuntuWholeDiskScope": {
+      "type": "object",
+      "required": [
+        "host_os",
+        "firmware",
+        "partition_table",
+        "disk_layout",
+        "install_mode",
+        "jstack_filesystem",
+        "boot_partition",
+        "unsupported"
+      ],
+      "properties": {
+        "host_os": {
+          "type": "array",
+          "items": {
+            "const": "ubuntu"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "firmware": {
+          "const": "uefi"
+        },
+        "partition_table": {
+          "const": "gpt"
+        },
+        "disk_layout": {
+          "const": "separate_recovery_host_and_target_disk"
+        },
+        "install_mode": {
+          "const": "whole_disk_image"
+        },
+        "jstack_filesystem": {
+          "const": "btrfs"
+        },
+        "boot_partition": {
+          "const": "esp"
+        },
+        "unsupported": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
         }
       },
       "additionalProperties": false
