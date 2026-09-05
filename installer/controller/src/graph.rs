@@ -12,6 +12,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+/// Identity of the separately executable Ubuntu whole-disk deployment graph.
+pub const UBUNTU_WHOLE_DISK_MODEL_ID: &str = "jstack-ubuntu-whole-disk-v1";
+
+/// SHA-256 of `model/ubuntu-whole-disk-state-graph.json`.
+pub const UBUNTU_WHOLE_DISK_GRAPH_SHA256: &str =
+    "a1290d2de54094b62f3d2066427c15524f6449abdde5a8ef75654f3df3a93588";
+
 /// Action risks that make a transition mutating and therefore subject to the
 /// intent/commit journal protocol. Mirrors the semantic validator.
 pub const MUTATING_RISKS: [ActionRisk; 6] = [
@@ -271,7 +278,45 @@ pub fn load_verified(
     GraphModel::build(raw, actual)
 }
 
+/// Load the exact pinned Ubuntu whole-disk graph.
+///
+/// This is intentionally additive to [`load_verified`]. The existing loader
+/// remains bound to the Windows no-USB model through core's executable model
+/// identity check. Ubuntu has a distinct graph and pin, and therefore cannot
+/// weaken or substitute for that identity.
+pub fn load_verified_ubuntu_whole_disk(bytes: &[u8]) -> Result<GraphModel, GraphLoadError> {
+    GraphModel::load_verified_ubuntu_whole_disk(bytes)
+}
+
 impl GraphModel {
+    /// Load only the repository-pinned Ubuntu whole-disk graph.
+    ///
+    /// This is deliberately separate from [`load_verified`], whose identity
+    /// remains pinned by installer-core to the Windows dual-boot model.
+    pub fn load_verified_ubuntu_whole_disk(bytes: &[u8]) -> Result<Self, GraphLoadError> {
+        let expected = Hash256::parse(UBUNTU_WHOLE_DISK_GRAPH_SHA256)
+            .expect("the compiled-in Ubuntu graph digest is valid");
+        let actual = Hash256::from_bytes(Sha256::digest(bytes).into());
+        if actual != expected {
+            return Err(GraphLoadError::DigestMismatch { expected, actual });
+        }
+
+        let raw: RawModel = serde_json::from_slice(bytes)
+            .map_err(|error| GraphLoadError::Parse(error.to_string()))?;
+        if raw.model_id != UBUNTU_WHOLE_DISK_MODEL_ID {
+            return Err(GraphLoadError::Identity(
+                jstack_installer_core::StateGraphIdentityError::UnexpectedModelId {
+                    expected: UBUNTU_WHOLE_DISK_MODEL_ID,
+                    actual: raw.model_id,
+                },
+            ));
+        }
+        if raw.schema_version != 1 {
+            return Err(GraphLoadError::UnsupportedSchemaVersion(raw.schema_version));
+        }
+        Self::build(raw, actual)
+    }
+
     fn build(raw: RawModel, digest: Hash256) -> Result<Self, GraphLoadError> {
         let invalid = |message: String| GraphLoadError::Invalid(message);
 

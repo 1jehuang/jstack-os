@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "model_id": "jstack-ubuntu-whole-disk-v1",
+  "initial_state": "discovered",
+  "scope": {
+    "host_os": ["ubuntu"],
+    "firmware": "uefi",
+    "partition_table": "gpt",
+    "disk_layout": "separate_recovery_host_and_target_disk",
+    "install_mode": "whole_disk_image",
+    "jstack_filesystem": "btrfs",
+    "boot_partition": "esp",
+    "unsupported": [
+      "same_disk_host_and_target",
+      "recovery_state_on_target_only",
+      "mounted_or_in_use_target",
+      "ambiguous_device_identity",
+      "partition_only_install"
+    ]
+  },
+  "actors": ["ubuntu_host_controller"],
+  "actor_platforms": {
+    "ubuntu_host_controller": ["ubuntu_host"]
+  },
+  "guards": [
+    {"id": "scope_supported", "platform": "ubuntu_host", "description": "A separately bootable recovery host and unambiguous unused target disk are present."},
+    {"id": "artifact_staged_and_verified", "platform": "ubuntu_host", "description": "The complete bootable artifact is durable on the recovery host and matches its pinned digest."},
+    {"id": "plan_authorized", "platform": "ubuntu_host", "description": "The exact target identity, artifact digest, and deployment plan have been authorized."},
+    {"id": "next_chunk_bound", "platform": "ubuntu_host", "description": "The next chunk offset, length, and digest are bound by the authorized deployment plan."},
+    {"id": "all_chunks_verified", "platform": "ubuntu_host", "description": "Every planned chunk has a durable commit backed by target readback verification."},
+    {"id": "target_full_hash_verified", "platform": "ubuntu_host", "description": "Independent full-target verification matches the authorized artifact digest."}
+  ],
+  "actions": [
+    {"id": "inspect_scope", "platform": "ubuntu_host", "risk": "read_only", "idempotency": "idempotent", "recovery": "retry", "description": "Inspect host and target topology without writing either disk."},
+    {"id": "stage_artifact", "platform": "ubuntu_host", "risk": "staging_mutation", "idempotency": "content_addressed", "recovery": "reconcile", "description": "Copy the complete bootable artifact to preserved recovery-host storage under an intent and verify its digest before commit."},
+    {"id": "record_authorization", "platform": "ubuntu_host", "risk": "user_authorization", "idempotency": "idempotent", "recovery": "retry", "description": "Record authorization of the exact plan, target identity, and artifact digest."},
+    {"id": "write_chunk", "platform": "ubuntu_host", "risk": "disk_mutation", "idempotency": "reconcile_required", "recovery": "reconcile", "description": "Write one plan-bound chunk to the target after durable intent; completion requires flush and digest readback before commit.", "parameters": {"binding": ["target_identity", "offset_bytes", "length_bytes", "chunk_digest"]}},
+    {"id": "verify_chunk", "platform": "ubuntu_host", "risk": "read_only", "idempotency": "idempotent", "recovery": "retry", "description": "Read back the written chunk and verify its plan-bound digest."},
+    {"id": "verify_target", "platform": "ubuntu_host", "risk": "read_only", "idempotency": "idempotent", "recovery": "retry", "description": "Read the complete target and verify the full authorized artifact digest."},
+    {"id": "commit_complete", "platform": "ubuntu_host", "risk": "read_only", "idempotency": "idempotent", "recovery": "retry", "description": "Commit successful completion only after full-target verification."},
+    {"id": "record_refusal", "platform": "ubuntu_host", "risk": "read_only", "idempotency": "idempotent", "recovery": "retry", "description": "Record a fail-closed refusal without modifying the target."}
+  ],
+  "invariants": [
+    {"id": "separate_recovery_host", "description": "The bootable controller, artifact, and journal remain outside the target destruction domain.", "enforced_by": ["scope_supported", "prepare_artifact", "authorize_plan"]},
+    {"id": "stable_device_identity", "description": "Every target access is bound to and revalidates the authorized stable device identity.", "enforced_by": ["plan_authorized", "next_chunk_bound", "write_chunk", "verify_target"]},
+    {"id": "artifact_before_target_mutation", "description": "The complete artifact is staged and verified before the first target write.", "enforced_by": ["artifact_staged_and_verified", "begin_deployment"]},
+    {"id": "chunk_intent_readback_commit", "description": "Each chunk has durable intent before write and flush/readback digest verification before commit.", "enforced_by": ["deploy_chunk", "write_chunk", "verify_chunk"]},
+    {"id": "monotonic_chunk_progress", "description": "Only verified committed chunks advance durable deployment progress.", "enforced_by": ["deploy_chunk", "all_chunks_verified"]},
+    {"id": "final_full_hash_before_complete", "description": "Completion requires an independent full-target hash matching the authorized artifact.", "enforced_by": ["target_full_hash_verified", "finish_deployment", "complete_install"]}
+  ],
+  "states": [
+    {"id": "discovered", "phase": "discovery", "actor": "ubuntu_host_controller", "kind": "checkpoint", "ui_view": "scope", "description": "Host and candidate target have been discovered without mutation."},
+    {"id": "artifact_prepared", "phase": "staging", "actor": "ubuntu_host_controller", "kind": "checkpoint", "ui_view": "artifact", "description": "The complete bootable artifact is durable and verified on the preserved host."},
+    {"id": "authorized", "phase": "authorization", "actor": "ubuntu_host_controller", "kind": "checkpoint", "ui_view": "confirmation", "description": "The exact target identity and deployment plan are authorized."},
+    {"id": "deploying", "phase": "deployment", "actor": "ubuntu_host_controller", "kind": "checkpoint", "ui_view": "progress", "description": "Chunked deployment is in progress and resumable from verified commits."},
+    {"id": "verified", "phase": "verification", "actor": "ubuntu_host_controller", "kind": "checkpoint", "ui_view": "verification", "description": "The complete target matches the authorized full artifact digest."},
+    {"id": "complete", "phase": "terminal", "actor": "ubuntu_host_controller", "kind": "terminal", "ui_view": "complete", "terminal_outcome": "success", "description": "The verified whole-disk deployment completed successfully."},
+    {"id": "refused", "phase": "terminal", "actor": "ubuntu_host_controller", "kind": "terminal", "ui_view": "refused", "terminal_outcome": "safe_abort", "description": "Execution stopped without further target writes because a required safety condition was unsupported or ambiguous."}
+  ],
+  "transitions": [
+    {"id": "prepare_artifact", "from": "discovered", "to": "artifact_prepared", "failure_to": "refused", "event": "prepare", "actor": "ubuntu_host_controller", "guards": ["scope_supported"], "actions": ["inspect_scope", "stage_artifact"], "authorization": ["release_policy"], "journal": {"intent_before_actions": true, "commit_after_postconditions": true}, "preconditions": ["recovery_host_bootable", "target_outside_recovery_host", "artifact_source_verified"], "postconditions": ["artifact_durable_on_recovery_host", "staged_artifact_digest_verified"], "description": "Stage and verify the complete artifact on preserved storage before target mutation."},
+    {"id": "authorize_plan", "from": "artifact_prepared", "to": "authorized", "event": "authorize", "actor": "ubuntu_host_controller", "guards": ["artifact_staged_and_verified"], "actions": ["record_authorization"], "authorization": [], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["stable_target_identity_observed", "exact_plan_displayed"], "postconditions": ["exact_plan_authorization_recorded"], "description": "Authorize the exact target identity, image digest, and deployment plan."},
+    {"id": "begin_deployment", "from": "authorized", "to": "deploying", "event": "deploy", "actor": "ubuntu_host_controller", "guards": ["artifact_staged_and_verified", "plan_authorized"], "actions": [], "authorization": ["confirmed_plan"], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["target_identity_matches_authorized_plan", "no_target_chunk_committed"], "postconditions": ["deployment_cursor_initialized"], "description": "Enter deployment only after artifact preparation and exact plan authorization."},
+    {"id": "deploy_chunk", "from": "deploying", "to": "deploying", "failure_to": "refused", "event": "chunk", "actor": "ubuntu_host_controller", "guards": ["artifact_staged_and_verified", "plan_authorized", "next_chunk_bound"], "actions": ["write_chunk", "verify_chunk"], "authorization": ["confirmed_plan"], "journal": {"intent_before_actions": true, "commit_after_postconditions": true}, "preconditions": ["target_identity_matches_authorized_plan", "chunk_offset_and_digest_match_cursor", "chunk_not_committed_or_exact_preimage_observed"], "postconditions": ["target_chunk_flushed", "target_chunk_digest_readback_verified", "chunk_commit_durable", "deployment_cursor_monotonic"], "description": "Write exactly one bound chunk and commit progress only after flush and digest readback."},
+    {"id": "finish_deployment", "from": "deploying", "to": "verified", "event": "verify", "actor": "ubuntu_host_controller", "guards": ["artifact_staged_and_verified", "plan_authorized", "all_chunks_verified"], "actions": ["verify_target"], "authorization": ["confirmed_plan"], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["all_planned_chunks_have_verified_commits", "target_identity_matches_authorized_plan"], "postconditions": ["full_target_digest_readback_verified"], "description": "Independently hash the complete target after all chunks are committed."},
+    {"id": "complete_install", "from": "verified", "to": "complete", "event": "complete", "actor": "ubuntu_host_controller", "guards": ["plan_authorized", "target_full_hash_verified"], "actions": ["commit_complete"], "authorization": ["confirmed_plan"], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["full_target_digest_readback_verified"], "postconditions": ["success_terminal_committed"], "description": "Record success only for the independently verified target."},
+    {"id": "refuse_from_discovered", "from": "discovered", "to": "refused", "event": "refuse", "actor": "ubuntu_host_controller", "guards": [], "actions": ["record_refusal"], "authorization": [], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["refusal_reason_observed"], "postconditions": ["no_target_write_authorized"], "description": "Refuse an unsupported or ambiguous discovered topology."},
+    {"id": "refuse_from_artifact_prepared", "from": "artifact_prepared", "to": "refused", "event": "refuse", "actor": "ubuntu_host_controller", "guards": [], "actions": ["record_refusal"], "authorization": [], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["refusal_reason_observed"], "postconditions": ["no_target_write_authorized"], "description": "Refuse before plan authorization."},
+    {"id": "refuse_from_authorized", "from": "authorized", "to": "refused", "event": "refuse", "actor": "ubuntu_host_controller", "guards": [], "actions": ["record_refusal"], "authorization": [], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["refusal_reason_observed"], "postconditions": ["no_target_write_performed"], "description": "Refuse before the first target write."},
+    {"id": "refuse_from_deploying", "from": "deploying", "to": "refused", "event": "refuse", "actor": "ubuntu_host_controller", "guards": [], "actions": ["record_refusal"], "authorization": [], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["ambiguous_or_unsafe_target_state_observed"], "postconditions": ["automatic_target_writes_stopped"], "description": "Stop deployment without claiming rollback when target state is ambiguous."},
+    {"id": "refuse_from_verified", "from": "verified", "to": "refused", "event": "refuse", "actor": "ubuntu_host_controller", "guards": [], "actions": ["record_refusal"], "authorization": [], "journal": {"intent_before_actions": false, "commit_after_postconditions": false}, "preconditions": ["completion_precondition_failed"], "postconditions": ["success_not_recorded"], "description": "Refuse to claim completion when final evidence is no longer valid."}
+  ]
+}
