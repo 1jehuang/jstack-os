@@ -2,8 +2,10 @@
 """Sequential, overlay-only Ubuntu recovery QEMU campaign harness.
 
 QEMU is never run by ``prepare``. ``start`` launches a detached supervisor which
-owns the campaign lock until its QEMU child exits. The fixed argv has no network
-backend and accepts only regular qcow2/ISO inputs bound by the manifest.
+owns host-wide and campaign locks until its QEMU child exits. The host-wide lock
+serializes cooperating harness supervisors; manually launched or otherwise
+uncooperative QEMU processes remain outside its scope. The fixed argv has no
+network backend and accepts only regular qcow2/ISO inputs bound by the manifest.
 """
 from __future__ import annotations
 import argparse, fcntl, hashlib, json, os, re, shutil, signal, subprocess, sys, time
