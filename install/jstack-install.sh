@@ -16,7 +16,7 @@ set -Eeuo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MNT=""
 DISK="" ROOT_PART="" ESP_PART="" USERNAME="" HOSTNAME_="jstack" TZ_="America/Los_Angeles"
-LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR="" SEED="" SEED_PASS="${JSTACK_SEED_PASS:-}" JCODE_API_KEY=""
+LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR="" SEED="" SEED_PASS="${JSTACK_SEED_PASS:-}" JCODE_API_KEY="" SERIAL_CONSOLE=0
 STATE_DIR="" TARGET_DISK="" ARTIFACT_LOOP="" ARTIFACT_IMAGE="" BUILDING_ARTIFACT=0
 JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-network jstack-niri jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
 BASE_PKGS=(base base-devel linux linux-firmware btrfs-progs efibootmgr networkmanager iwd fish git sudo vim intel-ucode amd-ucode)
@@ -76,6 +76,7 @@ while [ $# -gt 0 ]; do
     --seed-pass) SEED_PASS=$2; shift 2 ;;
     --jcode-api-key) JCODE_API_KEY=$2; shift 2 ;;   # alternative to a seed: single Anthropic/OpenRouter-style key
     --state-dir) STATE_DIR=$2; shift 2 ;;
+    --serial-console) SERIAL_CONSOLE=1; shift ;;
     --yes) YES=1; shift ;;
     --chroot-stage) shift; exec "$REPO_DIR/install/chroot-stage.sh" "$@" ;;
     -h|--help) usage ;;
@@ -262,7 +263,7 @@ bootstrap() {
   touch "$MNT/.jstack-install-target"
   "$ARCH_CHROOT" "$MNT" /usr/bin/env \
     J_USER="$USERNAME" J_HOST="$HOSTNAME_" J_TZ="$TZ_" J_LOCALE="$LOCALE" J_KEYMAP="$KEYMAP" \
-    J_PASS="$PASSWORD" J_ROOT_PART="$ROOT_PART" J_SKIP_SOURCE="$SKIP_SOURCE_PKGS" \
+    J_PASS="$PASSWORD" J_ROOT_PART="$ROOT_PART" J_SKIP_SOURCE="$SKIP_SOURCE_PKGS" J_SERIAL_CONSOLE="$SERIAL_CONSOLE" \
     J_SEED="${SEED:+/root/jstack-seed.bundle}" JSTACK_SEED_PASS="$SEED_PASS" J_JCODE_API_KEY="$JCODE_API_KEY" \
     J_PKGS="${JSTACK_PKGS[*]}" J_SOURCE_PKGS="${SOURCE_PKGS[*]}" J_AUR_PKGS="${AUR_PKGS[*]}" \
     bash /usr/src/jstack-os/install/chroot-stage.sh

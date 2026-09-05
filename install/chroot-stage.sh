@@ -73,18 +73,20 @@ mkinitcpio -P >/dev/null
 # removable fallback path and loader files written to the ESP remain bootable.
 bootctl --no-variables install >/dev/null
 PARTUUID=$(blkid -s PARTUUID -o value "$J_ROOT_PART")
+SERIAL_OPTIONS=""
+[ "${J_SERIAL_CONSOLE:-0}" != 1 ] || SERIAL_OPTIONS=" console=ttyS0,115200n8 systemd.log_target=console"
 printf 'default jstack.conf\ntimeout 1\n' > /boot/loader/loader.conf
 cat > /boot/loader/entries/jstack.conf <<E
 title   jstack OS
 linux   /vmlinuz-linux
 initrd  /initramfs-linux.img
-options root=PARTUUID=$PARTUUID rootflags=subvol=@ rw rootfstype=btrfs zswap.enabled=0
+options root=PARTUUID=$PARTUUID rootflags=subvol=@ rw rootfstype=btrfs zswap.enabled=0$SERIAL_OPTIONS
 E
 cat > /boot/loader/entries/jstack-fallback.conf <<E
 title   jstack OS (fallback initramfs)
 linux   /vmlinuz-linux
 initrd  /initramfs-linux-fallback.img
-options root=PARTUUID=$PARTUUID rootflags=subvol=@ rw rootfstype=btrfs
+options root=PARTUUID=$PARTUUID rootflags=subvol=@ rw rootfstype=btrfs$SERIAL_OPTIONS
 E
 fi
 

@@ -175,6 +175,14 @@ class InstallerSafetyTests(unittest.TestCase):
         self.assertIn("bootctl --no-variables install", text)
         self.assertNotIn("bootctl install", text)
 
+    def test_serial_console_is_explicit_and_built_into_artifact(self):
+        installer = SCRIPT.read_text()
+        stage = CHROOT_STAGE.read_text()
+        self.assertIn("--serial-console) SERIAL_CONSOLE=1", installer)
+        self.assertIn('J_SERIAL_CONSOLE="$SERIAL_CONSOLE"', installer)
+        self.assertIn('J_SERIAL_CONSOLE:-0', stage)
+        self.assertEqual(stage.count("$SERIAL_OPTIONS"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
