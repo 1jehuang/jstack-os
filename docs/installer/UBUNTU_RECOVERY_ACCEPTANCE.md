@@ -191,3 +191,33 @@ baseline is
 The remaining external cut overlays were not started with only 22 GiB free,
 because preserving three expected ~5.5 GiB target overlays would already leave
 an unsafe filesystem margin before the rest of the required matrix.
+
+## Subsequent cold-cut campaign observations
+
+The capacity constraint above was worked around with fresh thin targets backed
+by the preserved installed image and a deliberately mismatched first 64 MiB
+chunk. This is a prepopulated-target fixture, not another blank-disk install.
+The separately recorded fresh public install remains the blank-disk evidence.
+All immutable backing ancestors are explicitly bound in campaign manifests.
+
+The following observations were independently checked by the coordinator on
+2026-09-05. They partially exercise UR-09 and UR-10, not the entire fault matrix.
+Paths below are relative to the campaign baseline directory recorded above.
+
+| Case | Actual cold witness | Observed recovery | Evidence |
+|---|---|---|---|
+| `commit-02` | Last valid record `Commit`, seq 0, cursor 0, first 64 MiB independently equal to artifact. Requested boundary matched. | After additional preserved fixture failures and forced stops, retry-b reached `COMPLETE`, printed `E2E-RESUME: rc=0`, and its systemd unit exited successfully. The retry began reconciling seq 1, so this is eventual recovery through multiple interruptions, not a clean first attempt directly from the original Commit record. | `commit-02-campaign/cases/commit-02/classified.json` SHA-256 `70a03e514e7e497ee6b3c0113703b9864eab5304cca890e08fac93f4cb24641f`; `resume-retry-b.serial.log` SHA-256 `bd2a1d574ca50e0fcb5471877b616f4fac65702e3c69dace7f880d13b2d836c7`; task `095109uxgd`. |
+| `advance-01` | Last valid record `Advance`, seq 0, cursor 67,108,864, committed range independently equal. Requested boundary matched. | Cold resume reached `COMPLETE`, printed rc 0, and QEMU exited 0. | `advance-01-campaign/cases/advance-01/classified.json` SHA-256 `4096615f833c432faae7a829f2f11295287e4eda0b386dca27f4e7261263f4e1`; `resume.serial.log` SHA-256 `59b4e0b379c09c0d79a1eb4494c74efcdeb3a6fd59912fafe9f7eabcca62c2a8`; task `271130os14`. |
+
+Earlier `readback-02` overshot into Advance and duplicated its witness output.
+It is not a passing readback case. `readback-03` did produce a matching pending
+Intent/effect-complete witness, but its first resumed VM was forcibly stopped
+without a captured successful process exit. Its completion marker alone does
+not close clean readback recovery acceptance. Those original logs are retained.
+
+Fixture corrections include faster external-cut observation, bounded QEMU
+process registration, preserved supervisor errors, and guest resume output
+capture that does not depend on a serial-getty-controlled terminal remaining
+writable. These harness changes are not changes to the pinned production graph.
+Independent install-test discovery passed 31 tests after registration fix
+`4460e39`; remaining actual boundary and refusal cases are still open.
