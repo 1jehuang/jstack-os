@@ -59,7 +59,7 @@ returned rc 0. The complete target qcow2 was unchanged across that command:
 These observations are compatibility evidence for UR-03, UR-05, UR-09,
 UR-10, UR-11, and UR-13. They are not final-tree closure.
 
-## Final-tree checkpoint and current blocker
+## Final-tree firmware-refusal checkpoint
 
 Attempted source revision:
 `f7ef7a402343d32e2d1fd4c50449eaee1ba3d1a0`.
@@ -84,7 +84,7 @@ The disposable blank target remains preserved. The acceptance fixture must boot
 firmware which exposes `SecureBoot=0`; production must not weaken the unknown or
 ambiguous-state refusal.
 
-## Explicitly open final-tree observations
+## Final-tree successful baseline
 
 ### Successful 64 MiB baseline after mount-isolation fix
 
@@ -109,28 +109,9 @@ existing policy observations including `E2E-BOOT: DONE` and powered off.
 - completed target qcow2 SHA-256:
   `8bfdf032eb432ef106c66e16a0abb01817b02b1727efaced2e0f0c3b1f7c5213`.
 
-This closes the fresh baseline and boot observation only. The external fault,
-identity, tamper, concurrency, and final no-op cases below remain open.
-
-The following remain open on a final frozen source revision:
-
-- UR-01: real public bypass, duplicate-flag, and builder physical-target cases.
-- UR-02: real adapter/graph observation agreement alongside final gates.
-- UR-03: fresh complete image staging followed by networkless deployment.
-- UR-04: real artifact, manifest, plan, target, and recovery identity tampering.
-- UR-05: all recovery ancestry overlap refusals and preserved-host comparison.
-- UR-06: enumeration change, same-size substitution, missing and duplicate identity.
-- UR-07: concurrent public deploy/resume through distinct aliases.
-- UR-08: real torn tail, stale plan, alias, corruption, and publication interruption.
-- UR-09: externally killed VMs at actual journal-observed intent, write, readback,
-  commit, and advance boundaries.
-- UR-10: cold witness followed by production resume for every supported boundary,
-  plus committed-target corruption refusal.
-- UR-11: final-tree whole-target verification, target-only UEFI boot, and exact
-  completed-resume no-write proof.
-- UR-12: host firmware/ESP comparisons across final-tree build, deployment, and cuts.
-- UR-13: final-tree retained recovery UX from a new cold process without checkout.
-- UR-14: completed real campaign and final frozen-tree gates.
+This verifies the fresh baseline and boot observation. The completed-resume
+no-write observation below verifies the positive no-op path. External fault,
+identity, tamper, concurrency, and refusal no-write cases remain incomplete.
 
 Every external-cut case must cold-boot a witness before resume, classify the
 actual boundary from the durable journal and independent target/artifact range
@@ -160,19 +141,20 @@ not close the still-pending external interruption matrix.
   the whole target, emitted exactly one completion marker, and returned
   `E2E: INSTALL_OK`. Phase-one log SHA-256:
   `2ecf7f53038d1e2cb81fff50405295322f4503f599500f4efc9012887271e1b5`.
-- The target then booted as the only disk under OVMF UEFI and emitted all 24
-  current `E2E-BOOT:` policy observations through `DONE`. Phase-two log
+- The target then booted as the only disk under OVMF UEFI and emitted all 25
+  current `E2E-BOOT:` policy observations through `DONE`. A direct grep of the
+  retained log confirmed the count is 25. Phase-two log
   SHA-256: `0a5142745eb79587782f04310ce605f318718d074e16470dba0399623c75a649`.
 - The packaged static controller SHA-256 remained
   `9c44529ed3613db750003a786fd3cb7b3fe42b488dea5528629aa0cf6c016691`.
 
 This is final-tree evidence for the fresh public path, offline artifact
 promotion, whole-target verification and target boot portions of UR-01, UR-03,
-UR-08, UR-11 and UR-14. The graph-derived external cold-witness/resume cases,
-completed no-write replay on this plan, and remaining real refusal cases remain
-open. At this checkpoint only 23 GiB remained on the scratch filesystem, below
-the safe budget for another prepared host plus preserved fault overlays; no
-campaign VM was started under that space constraint.
+UR-08, UR-11 and UR-14. The completed no-write replay below and the later Commit
+and Advance observations supersede those formerly open items. Other graph cuts
+and real refusal cases remain open. At this checkpoint only 23 GiB remained on
+the scratch filesystem, so no campaign VM was started at that time; the later
+thin-target campaign worked around that constraint.
 
 A subsequent target-preserving step cold-booted the retained host without a
 source checkout or network and resumed the completed final64 plan. It emitted
@@ -219,5 +201,47 @@ Fixture corrections include faster external-cut observation, bounded QEMU
 process registration, preserved supervisor errors, and guest resume output
 capture that does not depend on a serial-getty-controlled terminal remaining
 writable. These harness changes are not changes to the pinned production graph.
-Independent install-test discovery passed 31 tests after registration fix
+Independent install-test discovery passed 32 tests after registration fix
 `4460e39`; remaining actual boundary and refusal cases are still open.
+
+## UR-01 through UR-14 current evidence and gaps
+
+“Partial” below means that the named observation was obtained, not that the
+requirement is accepted. Compatibility evidence is identified separately and
+does not close a final-tree row. No row is marked complete.
+
+| ID | Current evidence | Status and remaining gap |
+|---|---|---|
+| UR-01 | The final-tree fresh workflow entered through the public controller and completed. `test_install_safety` invokes the unmodified public shell for duplicate arguments and `--chroot-stage`; these are real parser checks, not instrumented-shell results. | **Partial.** Those parser checks do not prove VM target preservation. Real guest no-write refusal evidence for bypass cases and a physical-target builder attempt remains open. |
+| UR-02 | The pinned Ubuntu graph drove the successful 64 MiB baseline and the observed Commit and Advance resumes. | **Partial.** Final real altered-graph/model, wrong-actor, and illegal-transition refusals, plus Windows-gate non-regression evidence, remain open. |
+| UR-03 | The final baseline staged a complete content-addressed artifact before deployment. The earlier compatibility recovery completed networkless. | **Partial.** A final-tree fresh staging-to-deployment run with the network deliberately disconnected at the required boundary remains open. |
+| UR-04 | The successful plan bound graph, artifact, target, recovery identity, and confirmation. | **Partial.** Real final-tree artifact, manifest, plan, target, recovery-identity, and confirmation tamper refusals with target no-write proof remain open. |
+| UR-05 | A retained host completed a cold networkless no-checkout resume; Commit and Advance cuts retained recovery availability. | **Partial.** Root, ESP, mounted, swap, state, and artifact ancestry overlap refusals and explicit preserved-host comparisons remain open. |
+| UR-06 | Stable identity was bound in successful plans. | **Open beyond baseline binding.** Enumeration change, same-size substitution, and missing, ambiguous, or duplicate serial/WWN cases need real observations. |
+| UR-07 | The controller has a target transaction lock, exercised only by single-writer runs here. | **Open.** Concurrent public deploy/resume attempts through distinct aliases have not produced retained real-guest evidence. |
+| UR-08 | Final staging promoted an artifact with matching hashes. Commit and Advance witnesses replayed authenticated journal records. | **Partial.** Torn-tail, stale-plan, symlink/hardlink, committed corruption, and interrupted-publication cases remain open in the real guest. |
+| UR-09 | The final campaign independently classified matching durable `Commit` and `Advance` boundaries; both ranges matched, and both eventually completed. | **Partial.** Intent, in-write/effect, and readback boundaries remain open. `commit-02` required later retries, so it is not evidence of a clean first resume. |
+| UR-10 | Cold production resume completed the verified Advance case and eventually recovered the Commit case. Earlier compatibility evidence reconciled a dangling intent/effect. | **Partial.** A clean final-tree resume for each supported boundary and committed-target corruption refusal remain open. |
+| UR-11 | Final baseline performed whole-target verification, booted the target alone under UEFI, emitted 25 policy observations, and a later completed resume returned rc 0 with identical target qcow hash, size, mtime, and allocated blocks and no write markers. | **Partial.** These positive paths are verified, but the remaining failure-state and post-completion-change refusals are not. |
+| UR-12 | The preserved host remained bootable through the observed final Commit and Advance campaigns. | **Partial.** Before/after firmware-variable and host ESP comparisons across build, deployment, and interruption cuts remain open. |
+| UR-13 | A new cold process on the retained host resumed without the source checkout or network; the completed no-op did the same. | **Partial.** Final recovery UX/service lifecycle evidence for all supported interrupted states remains open. |
+| UR-14 | A real final-tree fresh installation, target-only boot, completed no-op, and matching Commit and Advance cold witnesses are retained. | **Partial.** The refusal matrix and the remaining graph-derived interruption boundaries are incomplete, so this is not a completed frozen-tree campaign. |
+
+Every remaining external-cut case must cold-boot a witness before resume,
+classify the actual boundary from the durable journal and independent
+target/artifact range hashes, and reject a missed or overshot intended cut. A
+requested serial marker or completion marker alone is not acceptance evidence.
+
+## Refusal-probe attempts that are not passes
+
+The first canonical refusal-probe rerun stopped at its harness guard because the
+guard incorrectly required link count 1 for the ext4 state directory. Normal
+ext4 directories have link counts greater than 1. The guard was corrected to
+require a root-owned directory while retaining the regular single-link and mode
+checks for protected files. That stopped run is a harness failure, not a
+controller refusal pass. Any subsequent result must come from a fresh real guest
+run of the corrected probe and retain its output and exit status.
+
+Executor attempts affected by `earlyoom` are likewise failures to obtain a probe
+result. Process termination, a serial marker, or preserved partial output does
+not establish any refusal case. No UR row above treats those attempts as a pass.
