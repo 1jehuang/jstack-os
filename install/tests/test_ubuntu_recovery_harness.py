@@ -8,9 +8,10 @@ class HarnessTests(unittest.TestCase):
   for n in ("binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"):
    p=self.d/n;p.write_bytes(n.encode());self.files[n]=p
  def tearDown(self):self.t.cleanup()
- def prepare(self):
+ def prepare(self,backing=None):
   w=self.d/"work";args=[sys.executable,str(HARNESS),"prepare","--work",str(w),"--source-revision","dce4b67"]
   for n,p in self.files.items():args += ["--"+n.replace("_","-"),str(p)]
+  if backing:args += ["--backing-file",str(backing)]
   subprocess.run(args,check=True,capture_output=True);return w
  def test_discovered_prepare_binds_4096_and_all_inputs(self):
   w=self.prepare();m=json.loads((w/"manifest.json").read_text());self.assertEqual(m["memory_mib"],4096);self.assertEqual(m["schema"],h.SCHEMA)
@@ -20,6 +21,12 @@ class HarnessTests(unittest.TestCase):
   self.assertNotEqual(subprocess.run(args,capture_output=True).returncode,0)
  def test_digest_drift_refused(self):
   w=self.prepare();self.files["graph"].write_bytes(b"drift")
+  with self.assertRaises(SystemExit):h.load(w/"manifest.json")
+ def test_backing_file_drift_refused(self):
+  backing=self.d/"ancestor.qcow2";backing.write_bytes(b"ancestor")
+  w=self.prepare(backing);m=json.loads((w/"manifest.json").read_text())
+  self.assertEqual(m["backing_files"][0]["path"],str(backing))
+  backing.write_bytes(b"drift")
   with self.assertRaises(SystemExit):h.load(w/"manifest.json")
  def test_timestamped_real_marker_is_matched(self):
   self.assertRegex("[  44.2] JSTK_UBUNTU_COMMIT seq=1 offset=0 length=64",h.MARKERS["commit"])

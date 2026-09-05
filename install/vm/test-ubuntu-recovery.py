@@ -10,7 +10,7 @@ import argparse, fcntl, hashlib, json, os, re, shutil, signal, subprocess, sys, 
 from pathlib import Path
 from typing import Any, NoReturn
 
-SCHEMA = "jstack.ubuntu-recovery-campaign.v2"
+SCHEMA = "jstack.ubuntu-recovery-campaign.v3"
 PREFIX = "JSTK_VM_COLD_WITNESS="
 MARKERS = {
  "intent": r"JSTK_UBUNTU_INTENT\s", "write": r"JSTK_UBUNTU_WRITE_BEGIN\s",
@@ -54,11 +54,16 @@ def load(path: Path) -> dict[str,Any]:
  path=safe_work(path,True); regular(path)
  m=json.loads(path.read_text())
  if m.get("schema") != SCHEMA: die("wrong manifest schema")
- allowed={"schema","source_revision","memory_mib","cpus","binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"}
+ allowed={"schema","source_revision","memory_mib","cpus","binary","graph","host_base","target_base","backing_files","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"}
  if set(m) != allowed or m.get("memory_mib") != 4096 or not isinstance(m.get("cpus"),int) or not 1 <= m["cpus"] <= 8: die("invalid or extended manifest")
  for k in ("binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"):
   p=regular(Path(m[k]["path"])); expected=m[k].get("sha256","")
   if not HEX.fullmatch(expected) or digest(p)!=expected: die(f"{k} digest changed")
+ if not isinstance(m["backing_files"],list): die("invalid backing file bindings")
+ for i,b in enumerate(m["backing_files"]):
+  if set(b)!={"path","sha256"}: die("invalid backing file binding")
+  p=regular(Path(b["path"])); expected=b["sha256"]
+  if not HEX.fullmatch(expected) or digest(p)!=expected: die(f"backing file {i} digest changed")
  return m
 
 def prepare(a):
@@ -68,6 +73,7 @@ def prepare(a):
  m={"schema":SCHEMA,"source_revision":a.source_revision,"memory_mib":4096,"cpus":a.cpus,
     "binary":bound(a.binary),"graph":bound(a.graph),"host_base":bound(a.host_base),
     "target_base":bound(a.target_base),"ovmf_code":bound(a.ovmf_code),"ovmf_vars":bound(a.ovmf_vars),
+    "backing_files":[bound(p) for p in a.backing_file],
     "cut_seed":bound(a.cut_seed),"witness_seed":bound(a.witness_seed),"resume_seed":bound(a.resume_seed)}
  put(w/"manifest.json",m); print(w/"manifest.json")
 
@@ -184,6 +190,7 @@ def main():
  ap=argparse.ArgumentParser();s=ap.add_subparsers(dest="cmd",required=True)
  p=s.add_parser("prepare")
  for n in ("work","binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"):p.add_argument("--"+n.replace("_","-"),dest=n,type=Path,required=True)
+ p.add_argument("--backing-file",type=Path,action="append",default=[])
  p.add_argument("--source-revision",required=True);p.add_argument("--cpus",type=int,default=4);p.set_defaults(fn=prepare)
  p=s.add_parser("start");p.add_argument("--manifest",type=Path,required=True);p.add_argument("--case-id",required=True);p.add_argument("--phase",choices=("cut","witness","resume"),required=True);p.add_argument("--qemu-img",default="qemu-img");p.set_defaults(fn=start)
  p=s.add_parser("cut");p.add_argument("--run",type=Path,required=True);p.add_argument("--boundary",choices=MARKERS,required=True);p.add_argument("--timeout",type=float,default=600);p.set_defaults(fn=cut)
