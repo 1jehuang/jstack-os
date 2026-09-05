@@ -150,6 +150,10 @@ host_prep() {
   ARCH_CHROOT="$BOOT/usr/bin/arch-chroot"
   # pacman's CheckSpace needs the chroot root to be a mountpoint; bind it onto itself.
   mountpoint -q "$BOOT" || mount --bind "$BOOT" "$BOOT"
+  # Isolate the bootstrap mount before recursively binding the artifact below it.
+  # Otherwise a shared parent can retain a propagated peer of $BOOT/mnt after the
+  # explicit unmount, allowing late writes to race artifact hashing/promotion.
+  mount --make-private "$BOOT"
 
   log "Configuring bootstrap pacman"
   if [ -n "$MIRROR" ]; then
@@ -233,6 +237,7 @@ bootstrap() {
     mkdir -p "$BOOT/mnt"; mount --rbind "$MNT" "$BOOT/mnt"; mount --make-rslave "$BOOT/mnt"
     "$ARCH_CHROOT" "$BOOT" bash -c "pacstrap -c -K /mnt ${BASE_PKGS[*]} && genfstab -U /mnt > /mnt/etc/fstab"
     umount -R "$BOOT/mnt"
+    mountpoint -q "$BOOT/mnt" && die "bootstrap artifact bind remained mounted"
     mountpoint -q "$MNT/boot" || die "ESP unmounted unexpectedly after pacstrap"
   else
     pacstrap -c -C "$PACMAN_CONF" -K "$MNT" "${BASE_PKGS[@]}"

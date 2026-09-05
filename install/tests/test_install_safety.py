@@ -12,6 +12,18 @@ CHROOT_STAGE = Path(__file__).parents[1] / "chroot-stage.sh"
 
 
 class InstallerSafetyTests(unittest.TestCase):
+    def test_bootstrap_artifact_mount_is_isolated_and_gone_before_prepare(self):
+        text = SCRIPT.read_text()
+        private = text.index('mount --make-private "$BOOT"')
+        recursive_bind = text.index('mount --rbind "$MNT" "$BOOT/mnt"')
+        unmount = text.index('umount -R "$BOOT/mnt"')
+        absence_check = text.index('mountpoint -q "$BOOT/mnt" && die')
+        prepare = text.index('"$controller" prepare --disk')
+        self.assertLess(private, recursive_bind)
+        self.assertLess(recursive_bind, unmount)
+        self.assertLess(unmount, absence_check)
+        self.assertLess(absence_check, prepare)
+
     def test_real_public_cli_rejects_stage_escape_before_host_checks(self):
         result = subprocess.run(
             ["bash", str(SCRIPT), "--chroot-stage"],
