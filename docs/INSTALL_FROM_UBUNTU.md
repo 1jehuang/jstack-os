@@ -1,7 +1,7 @@
 # Installing jstack OS from an Ubuntu host
 
 `install/jstack-install.sh` constructs a complete bootable jstack OS disk image
-using Arch's `pacstrap` on a preserved Ubuntu/Debian recovery host, then deploys
+using Arch's `pacstrap` on a preserved Ubuntu recovery host, then deploys
 that immutable image through the pinned Ubuntu transaction controller. No Arch
 ISO or USB is needed.
 
@@ -25,9 +25,15 @@ Everything the reference machine has, minus the personal bits (see
 
 ## Usage
 
+First install `rustup`, `make`, and a native C compiler on the preserved Ubuntu
+host. The repository does not contain a prebuilt controller binary. Build its
+pinned static executable as your normal user before invoking the installer:
+
 ```sh
 git clone https://github.com/1jehuang/jstack-os
 cd jstack-os
+rustup toolchain install 1.85.0 --profile minimal --target x86_64-unknown-linux-musl
+make -C installer/controller ubuntu-static
 
 # Whole disk (destroys everything on it):
 sudo ./install/jstack-install.sh --disk /dev/disk/by-id/<target> \

@@ -23,7 +23,7 @@ preinstalled agent harnesses.
 - `docs/TRIAGE.md` - the keep/drop decision log for everything migrated
   from the reference machine
 
-## Installing from Ubuntu (or any Debian host)
+## Installing from Ubuntu
 
 `install/jstack-install.sh` builds a complete offline jstack OS disk image on a
 preserved Ubuntu recovery host, then deploys that image transactionally to a
@@ -40,9 +40,15 @@ writes systemd-boot entries without modifying firmware variables.
 
 ```sh
 git clone https://github.com/1jehuang/jstack-os && cd jstack-os
+rustup toolchain install 1.85.0 --profile minimal --target x86_64-unknown-linux-musl
+make -C installer/controller ubuntu-static
 sudo ./install/jstack-install.sh --disk /dev/disk/by-id/<target> \
   --state-dir /var/lib/jstack-installer --user jeremy --hostname xps13
 ```
+
+Building the controller requires `rustup`, `make`, and a native C compiler.
+Build it as your normal user before running the installer. Other Debian-based
+hosts are not accepted by this Ubuntu-specific recovery model.
 
 What you end up with (see `packages/jstack-base/files/POLICY.md`):
 
