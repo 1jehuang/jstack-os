@@ -19,6 +19,7 @@ MARKERS = {
 }
 HEX = re.compile(r"^[0-9a-f]{64}$")
 CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+HOST_LOCK_NAME = "jstack-ubuntu-recovery-qemu.lock"
 
 def die(s: str) -> NoReturn: raise SystemExit("REFUSED: " + s)
 def digest(p: Path) -> str:
@@ -84,6 +85,15 @@ def case_paths(w:Path,c:str)->dict[str,Path]:
  if not CASE_ID.fullmatch(c): die("invalid case id")
  r=w/"cases"/c
  return {"run":r,"host":r/"host.qcow2","target":r/"target.qcow2","vars":r/"vars.fd"}
+def host_lock():
+ runtime=Path(f"/run/user/{os.getuid()}")
+ st=runtime.stat()
+ if not runtime.is_dir() or runtime.is_symlink() or st.st_uid != os.getuid(): die("unsafe user runtime directory")
+ path=runtime/HOST_LOCK_NAME
+ fd=os.open(path,os.O_RDWR|os.O_CREAT|getattr(os,"O_NOFOLLOW",0),0o600)
+ lock=os.fdopen(fd,"a+")
+ fcntl.flock(lock,fcntl.LOCK_EX)
+ return lock
 def qemu_argv(m,p,phase,serial):
  seed=Path(m[phase+"_seed"]["path"])
  return ["qemu-system-x86_64","-enable-kvm","-cpu","host","-m",str(m["memory_mib"]),
@@ -127,6 +137,7 @@ def registered_identity(proc,timeout=2.0):
    time.sleep(.005)
 def supervise(a):
  mp=a.manifest.resolve();m=load(mp);w=mp.parent;p=case_paths(w,a.case_id);phase=a.phase
+ global_lock=host_lock()
  lock=(w/"campaign.lock").open("a+");fcntl.flock(lock,fcntl.LOCK_EX)
  serial=p["run"]/(phase+".serial.log")
  log=(p["run"]/(phase+".qemu.log")).open("xb")
