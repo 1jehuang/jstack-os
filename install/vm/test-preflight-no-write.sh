@@ -25,6 +25,7 @@ OVMF_VARS="${OVMF_VARS:-$(find_ovmf /usr/share/edk2/x64/OVMF_VARS.4m.fd /usr/sha
 for command in qemu-img qemu-system-x86_64 xorriso sha256sum guestfish; do
   command -v "$command" >/dev/null || { echo "missing command: $command" >&2; exit 2; }
 done
+
 [ -r "$BACKING" ] || { echo "missing Ubuntu backing: $BACKING" >&2; exit 2; }
 [ ! -e "$WORK" ] || { echo "refusing pre-existing WORK directory: $WORK" >&2; exit 2; }
 mkdir -p "$WORK/seed"
@@ -85,6 +86,20 @@ for spec in \
   echo "PREFLIGHT-E2E: guard-$name=PASS"
 done
 
+# Exercise both interactive empty-password forms through the public installer.
+set +e
+printf '\n' | "$INSTALLER" --disk /dev/vdb --user tester --yes > /tmp/empty-password.log 2>&1
+EMPTY_RC=$?
+"$INSTALLER" --disk /dev/vdb --user tester --yes </dev/null > /tmp/password-eof.log 2>&1
+EOF_RC=$?
+set -e
+[ "$EMPTY_RC" -ne 0 ] && [ "$EOF_RC" -ne 0 ]
+grep -q 'password must not be empty' /tmp/empty-password.log
+! grep -q 'Preflight:' /tmp/empty-password.log
+! grep -q 'Preflight:' /tmp/password-eof.log
+echo 'PREFLIGHT-E2E: empty-password=PASS'
+echo 'PREFLIGHT-E2E: password-eof=PASS'
+
 # Keep genuine synchronized databases available, but force a real pacman
 # package transfer failure after host_prep has refreshed databases/keyring.
 cat > /tmp/preflight-mirror.py <<'PY'
@@ -127,6 +142,19 @@ grep -q 'Preflight: downloading base system before modifying the target' /tmp/in
 grep -Eq 'failed retrieving file|failed to retrieve some files|The requested URL returned error|Service Unavailable' /tmp/install.log
 ! grep -q 'INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED' /tmp/install.log
 [ "$BEFORE" = "$AFTER" ]
+
+# Restore the intentionally removed package, then let preflight complete and
+# force the too-small target to fail after the installer has started its wipe.
+tar -C "$BOOT/var/cache/pacman/pkg" -xpf /mnt/cidata/pacman-cache.tar
+set +e
+"$INSTALLER" --disk /dev/vdb --user tester --password warning-secret --yes > /tmp/post-destructive.log 2>&1
+DESTRUCTIVE_RC=$?
+set -e
+cat /tmp/post-destructive.log
+[ "$DESTRUCTIVE_RC" -ne 0 ]
+grep -q 'INSTALLATION FAILED AFTER THE TARGET WAS MODIFIED' /tmp/post-destructive.log
+! grep -q 'warning-secret' /tmp/post-destructive.log
+echo 'PREFLIGHT-E2E: post-destructive-warning=PASS'
 echo 'PREFLIGHT-E2E: RESULT=PASS'
 GUEST
 chmod +x "$WORK/seed/run.sh" "$WORK/seed/jstack-install.sh"

@@ -119,6 +119,7 @@ echo "E2E-BOOT: tlp_policy=$(grep -v '^#' /etc/tlp.d/10-jstack.conf | grep '=' |
 echo "E2E-BOOT: network=$(grep -c '^wifi.backend=iwd$' /etc/NetworkManager/conf.d/jstack-wifi.conf) keyd=$(test -f /etc/keyd/default.conf && echo yes)"
 echo "E2E-BOOT: boot_timeout=$(awk '$1 == "timeout" {print $2}' /boot/loader/loader.conf) fallback=$(test -f /boot/loader/entries/jstack-fallback.conf && echo yes)"
 echo "E2E-BOOT: fstab_stable=$(awk '$1 !~ /^#/ && $1 ~ /^\/dev\// {bad=1} END {print bad ? "no" : "yes"}' /etc/fstab)"
+echo "E2E-BOOT: mirror_servers=$(grep -c '^Server = ' /etc/pacman.d/mirrorlist)"
 echo "E2E-BOOT: DONE"
 systemctl poweroff
 C
@@ -170,4 +171,5 @@ chk "E2E-BOOT: tlp_policy=.*CPU_SCALING_GOVERNOR_ON_AC=powersave.*CPU_SCALING_GO
 chk "E2E-BOOT: network=1 keyd=yes" "NetworkManager iwd backend and keyd policy"
 chk "E2E-BOOT: boot_timeout=1 fallback=yes" "systemd-boot timeout and fallback entry"
 chk "E2E-BOOT: fstab_stable=yes" "UUID-based fstab survives disk renumbering"
+chk "E2E-BOOT: mirror_servers=[1-9]" "working mirrorlist propagated into target"
 exit $fail
