@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# jstack OS installer: run from an Ubuntu/Debian (or Arch) host to install a
-# full jstack OS system onto a target disk or pre-made partitions.
+# jstack OS transactional installer: build a complete offline image on a
+# preserved Ubuntu/Debian (or Arch) recovery host, then deploy it to a separate
+# whole disk through the pinned Rust state machine.
 #
 #   sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
 #   sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --seed jstack-seed.tar.gz.enc
@@ -13,7 +14,7 @@
 set -Eeuo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MNT=/mnt/jstack
+MNT=""
 DISK="" ROOT_PART="" ESP_PART="" USERNAME="" HOSTNAME_="jstack" TZ_="America/Los_Angeles"
 LOCALE="en_US.UTF-8" KEYMAP="us" PASSWORD="" WIPE_ESP=0 YES=0 SKIP_SOURCE_PKGS=0 MIRROR="" SEED="" SEED_PASS="${JSTACK_SEED_PASS:-}" JCODE_API_KEY=""
 STATE_DIR="" TARGET_DISK="" ARTIFACT_LOOP="" ARTIFACT_IMAGE="" BUILDING_ARTIFACT=0
@@ -52,6 +53,7 @@ cleanup_artifact_build() {
     losetup -d "$ARTIFACT_LOOP" 2>/dev/null || true
     ARTIFACT_LOOP=""
   fi
+  [ -z "$MNT" ] || rmdir "$MNT" 2>/dev/null || true
 }
 trap 'cleanup_artifact_build; exit 130' INT
 trap 'cleanup_artifact_build; exit 143' TERM
@@ -179,7 +181,7 @@ package_preflight() {
 
 # ---------- partitioning ----------
 partition() {
-  echo "NOTE: this legacy shell installer has no automatic rollback or reboot recovery."
+  [ "$BUILDING_ARTIFACT" = 1 ] && echo "Building disposable offline image; the physical target is not attached here."
   if [ -n "$DISK" ]; then
     echo; lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS "$DISK"; echo
     echo "THIS WILL ERASE EVERYTHING ON $DISK."
@@ -267,17 +269,14 @@ bootstrap() {
 }
 
 transactional_install() {
-  local controller target_size build_dir plan_line plan_path
-  controller="${JSTACK_UBUNTU_INSTALLER:-$REPO_DIR/install/bin/jstack-ubuntu-installer}"
-  [ -x "$controller" ] || die "transactional controller not found at $controller"
+  local controller target_size build_dir plan_line plan_path confirmed
+  controller="$CONTROLLER"
   command -v losetup >/dev/null || die "losetup is required to construct the offline artifact"
   command -v blockdev >/dev/null || die "blockdev is required to size the offline artifact"
 
   # The state directory, retained artifact, plan, and journal must survive a
   # power loss. The controller independently proves that this directory is on
   # a persistent disk distinct from TARGET_DISK before any target write.
-  mkdir -p "$STATE_DIR/artifact-build"
-  chmod 700 "$STATE_DIR" "$STATE_DIR/artifact-build"
   build_dir="$STATE_DIR/artifact-build"
   ARTIFACT_IMAGE="$build_dir/pending-$PPID-$$.raw"
   ( set -o noclobber; : > "$ARTIFACT_IMAGE" ) || die "artifact build path already exists"
@@ -290,6 +289,8 @@ transactional_install() {
 
   log "Building the complete bootable installation artifact before target mutation"
   BUILDING_ARTIFACT=1
+  confirmed="$YES"
+  YES=1
   DISK="$ARTIFACT_LOOP"
   DESTRUCTIVE_STARTED=0
   partition
@@ -298,9 +299,12 @@ transactional_install() {
   bootstrap
   sync
   umount -R "$MNT"
+  rmdir "$MNT"
+  MNT=""
   losetup -d "$ARTIFACT_LOOP"
   ARTIFACT_LOOP=""
   BUILDING_ARTIFACT=0
+  YES="$confirmed"
 
   log "Authorizing the durable transactional deployment plan"
   if [ "$YES" = 1 ]; then
@@ -321,6 +325,15 @@ transactional_install() {
 if [ -n "$SEED" ] && [ -z "$SEED_PASS" ]; then case "$SEED" in *.enc) read -rsp "Seed passphrase: " SEED_PASS; echo ;; esac; fi
 if [ -z "$PASSWORD" ]; then read -rsp "Password for $USERNAME (also root): " PASSWORD; echo; fi
 [ -n "$PASSWORD" ] || die "password must not be empty"
+CONTROLLER="${JSTACK_UBUNTU_INSTALLER:-$REPO_DIR/install/bin/jstack-ubuntu-installer}"
+[ -x "$CONTROLLER" ] || die "transactional controller not found at $CONTROLLER"
+# Inspect is strictly read-only. Init is the sole creator of the trusted state
+# root, using no-follow/exclusive filesystem operations implemented by the
+# controller. The shell never chmods an existing user-selected path.
+"$CONTROLLER" inspect --disk "$DISK" --state-dir "$STATE_DIR"
+"$CONTROLLER" init --disk "$DISK" --state-dir "$STATE_DIR"
+MNT="$STATE_DIR/artifact-build/mnt-$$"
+mkdir -m 700 "$MNT" || die "private artifact mount path already exists"
 host_prep
 package_preflight
 TARGET_DISK="$DISK"

@@ -34,7 +34,12 @@ class InstallerSafetyTests(unittest.TestCase):
             bindir.mkdir()
             log = root / "commands"
             controller = root / "controller"
-            controller.write_text("#!/bin/sh\nexit 0\n")
+            controller.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" = init ]; then shift; while [ $# -gt 0 ]; do '
+                'case "$1" in --state-dir) mkdir -p "$2/artifact-build"; exit 0;; esac; shift; done; fi\n'
+                "exit 0\n"
+            )
             controller.chmod(0o755)
             generic = "#!/bin/sh\necho \"$(basename \"$0\") $*\" >> \"$COMMAND_LOG\"\nexit 0\n"
             for command in ("lsblk", "wipefs", "sgdisk", "partprobe", "udevadm", "sleep", "chown", "losetup", "blockdev"):
@@ -140,6 +145,17 @@ class InstallerSafetyTests(unittest.TestCase):
         refusal = "transactional Ubuntu installation supports only a separate whole disk"
         self.assertIn(refusal, text)
         self.assertLess(text.index(refusal), text.index("# ---------- host prerequisites ----------"))
+
+    def test_read_only_inspect_and_safe_init_precede_host_or_artifact_work(self):
+        text = SCRIPT.read_text()
+        inspect = '"$CONTROLLER" inspect --disk "$DISK" --state-dir "$STATE_DIR"'
+        init = '"$CONTROLLER" init --disk "$DISK" --state-dir "$STATE_DIR"'
+        self.assertLess(text.rindex(inspect), text.rindex(init))
+        self.assertLess(text.rindex(init), text.rindex("host_prep"))
+        self.assertNotIn('chmod 700 "$STATE_DIR"', text)
+        self.assertNotIn('mkdir -p "$STATE_DIR', text)
+        self.assertNotIn("MNT=/mnt/jstack", text)
+        self.assertIn('MNT="$STATE_DIR/artifact-build/mnt-$$"', text)
 
     def test_working_mirrorlist_is_installed_after_pacstrap(self):
         text = SCRIPT.read_text()
