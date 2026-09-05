@@ -79,6 +79,7 @@ fn fixture() -> (
         })
         .unwrap();
     journal.append(Event::Authorized).unwrap();
+    journal.append(Event::DeploymentStarted).unwrap();
     let target = d.path().join("target.raw");
     std::fs::write(&target, [0; 8]).unwrap();
     (d, pp, target, p)
@@ -174,9 +175,6 @@ fn replay_rejects_advance_verify_complete_and_manual_recovery_out_of_order() {
     assert_replay_rejects(Event::Advance { next_offset: 4 });
     assert_replay_rejects(Event::Verified);
     assert_replay_rejects(Event::Complete);
-    assert_replay_rejects(Event::ManualRecovery {
-        reason: "bad".into(),
-    });
     assert_replay_rejects(Event::Authorized);
 }
 

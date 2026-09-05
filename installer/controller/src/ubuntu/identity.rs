@@ -74,6 +74,27 @@ pub fn devices() -> Result<Vec<ObservedDevice>, String> {
     }
     Ok(v)
 }
+fn parent_device<'a>(
+    device: &ObservedDevice,
+    all: &'a [ObservedDevice],
+) -> Option<&'a ObservedDevice> {
+    let parent = device.pkname.as_deref()?;
+    all.iter().find(|d| {
+        d.path.to_string_lossy() == parent
+            || d.path.file_name().and_then(|n| n.to_str()) == Some(parent)
+    })
+}
+fn descends_from(device: &ObservedDevice, target: &Path, all: &[ObservedDevice]) -> bool {
+    let mut current = Some(device);
+    for _ in 0..=all.len() {
+        let Some(node) = current else { return false };
+        if node.path == target {
+            return true;
+        }
+        current = parent_device(node, all)
+    }
+    false
+}
 pub fn observe_target(path: &Path) -> Result<ObservedDevice, String> {
     let canonical = path.canonicalize().map_err(|e| e.to_string())?;
     let mut m = devices()?
@@ -126,13 +147,7 @@ pub fn resolve_unique(id: &StableDiskIdentity) -> Result<PathBuf, String> {
 pub fn verify_unused_target(path: &Path, state_dir: &Path) -> Result<(), String> {
     let target = observe_target(path)?;
     let all = devices()?;
-    let target_name = target
-        .path
-        .file_name()
-        .and_then(|x| x.to_str())
-        .ok_or("invalid target name")?;
-    let on_target =
-        |d: &ObservedDevice| d.path == target.path || d.pkname.as_deref() == Some(target_name);
+    let on_target = |d: &ObservedDevice| descends_from(d, &target.path, &all);
     if all
         .iter()
         .any(|d| on_target(d) && !d.mountpoints.is_empty())
@@ -141,17 +156,21 @@ pub fn verify_unused_target(path: &Path, state_dir: &Path) -> Result<(), String>
     }
     let swaps =
         std::fs::read_to_string("/proc/swaps").map_err(|e| format!("cannot inspect swaps: {e}"))?;
-    if swaps
+    for source in swaps
         .lines()
         .skip(1)
         .filter_map(|l| l.split_whitespace().next())
-        .any(|s| {
-            all.iter()
-                .find(|d| d.path == Path::new(s))
-                .is_some_and(&on_target)
-        })
     {
-        return Err("target is swap".into());
+        let canonical = Path::new(source)
+            .canonicalize()
+            .map_err(|_| "swap source cannot be mapped safely")?;
+        let device = all
+            .iter()
+            .find(|d| d.path.canonicalize().ok().as_ref() == Some(&canonical))
+            .ok_or("swap source absent from block topology")?;
+        if on_target(device) {
+            return Err("target is swap".into());
+        }
     }
     let state = state_dir
         .parent()
@@ -217,6 +236,18 @@ pub fn verify_recovery_identity(
             })
             .ok_or("recovery backing disk missing")?
     };
+    let duplicate = all
+        .iter()
+        .filter(|d| {
+            d.dev_type == "disk"
+                && (d.identity.stable_serial == disk.identity.stable_serial
+                    || (disk.identity.stable_wwn.is_some()
+                        && d.identity.stable_wwn == disk.identity.stable_wwn))
+        })
+        .count();
+    if duplicate != 1 {
+        return Err("recovery backing stable identity is ambiguous".into());
+    }
     if disk.identity.stable_serial != expected.backing_serial
         || disk.identity.stable_wwn != expected.backing_wwn
     {

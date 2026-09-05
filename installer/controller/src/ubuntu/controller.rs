@@ -93,13 +93,19 @@ fn replay_state(p: &UbuntuPlan, records: &[super::Record]) -> Result<ReplayState
                 }
                 state = "authorized";
             }
+            Event::DeploymentStarted => {
+                if state != "authorized" || pending.is_some() || committed.is_some() {
+                    return Err("deployment start is duplicate or out of order".into());
+                }
+                state = "deploying";
+            }
             Event::Intent {
                 seq,
                 offset,
                 length,
                 sha256,
             } => {
-                if state != "authorized" && state != "deploying"
+                if state != "deploying"
                     || pending.is_some()
                     || committed.is_some()
                     || *offset != next
@@ -224,6 +230,7 @@ pub fn deploy_files(
     }
     if initial.status.state == "authorized" {
         super::require_begin()?;
+        journal.append(Event::DeploymentStarted)?;
     }
     let mut target = OpenOptions::new()
         .read(true)

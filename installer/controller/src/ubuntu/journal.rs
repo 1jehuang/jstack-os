@@ -20,6 +20,7 @@ pub enum Event {
         size_bytes: u64,
     },
     Authorized,
+    DeploymentStarted,
     Intent {
         seq: u64,
         offset: u64,
