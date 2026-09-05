@@ -13,6 +13,8 @@ pub mod replica;
 pub mod runtime;
 pub mod simulator;
 pub mod trace;
+#[cfg(target_os = "linux")]
+pub mod ubuntu;
 
 pub use authority::*;
 pub use graph::*;
@@ -22,3 +24,5 @@ pub use replica::*;
 pub use runtime::*;
 pub use simulator::*;
 pub use trace::*;
+#[cfg(target_os = "linux")]
+pub use ubuntu::*;

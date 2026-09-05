@@ -14,12 +14,18 @@ path = "src/lib.rs"
 name = "jstack-installer"
 path = "src/bin/jstack-installer.rs"
 
+[[bin]]
+name = "jstack-ubuntu-installer"
+path = "src/bin/jstack-ubuntu-installer.rs"
+
 [dependencies]
 jstack-installer-core = { path = "../core" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.10.9"
 thiserror = "2.0.19"
+fs4 = "1.1.0"
 
 [dev-dependencies]
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["alloc", "zeroize"] }
+tempfile = "3.23.0"
