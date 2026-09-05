@@ -32,7 +32,7 @@ class InstallerSafetyTests(unittest.TestCase):
             bindir.mkdir()
             log = root / "commands"
             generic = "#!/bin/sh\necho \"$(basename \"$0\") $*\" >> \"$COMMAND_LOG\"\nexit 0\n"
-            for command in ("lsblk", "wipefs", "sgdisk", "partprobe", "udevadm", "sleep"):
+            for command in ("lsblk", "wipefs", "sgdisk", "partprobe", "udevadm", "sleep", "chown"):
                 p = bindir / command
                 p.write_text(generic)
                 p.chmod(0o755)
@@ -106,6 +106,10 @@ class InstallerSafetyTests(unittest.TestCase):
         self.assertGreater(text.index(copy), text.index('pacstrap -c -C "$PACMAN_CONF"'))
         self.assertIn('pacman --config "$PACMAN_CONF" --dbpath "$db"', text)
         self.assertIn("db=$(mktemp -d)", text)
+        self.assertIn('pacman-conf DownloadUser', text)
+        self.assertIn('pacman-conf --config "$PACMAN_CONF" DownloadUser', text)
+        self.assertEqual(text.count('[ -z "$user" ] || chown "$user" "$db"'), 2)
+        self.assertNotIn('chown alpm:alpm', text)
         self.assertNotIn("--cachedir /var/cache/pacman/pkg", text)
 
 

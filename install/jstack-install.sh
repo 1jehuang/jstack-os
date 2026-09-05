@@ -149,10 +149,12 @@ host_prep() {
 package_preflight() {
   log "Preflight: downloading base system before modifying the target"
   if [ -n "$BOOT" ]; then
-    "$ARCH_CHROOT" "$BOOT" bash -c 'db=$(mktemp -d); pacman --dbpath "$db" -Syw --noconfirm "$@"; rc=$?; rm -rf "$db"; exit "$rc"' bash "${BASE_PKGS[@]}"
+    "$ARCH_CHROOT" "$BOOT" bash -c 'db=$(mktemp -d); user=$(pacman-conf DownloadUser 2>/dev/null || true); [ -z "$user" ] || chown "$user" "$db"; pacman --dbpath "$db" -Syw --noconfirm "$@"; rc=$?; rm -rf "$db"; exit "$rc"' bash "${BASE_PKGS[@]}"
   else
-    local db
+    local db user
     db=$(mktemp -d)
+    user=$(pacman-conf --config "$PACMAN_CONF" DownloadUser 2>/dev/null || true)
+    [ -z "$user" ] || chown "$user" "$db"
     pacman --config "$PACMAN_CONF" --dbpath "$db" -Syw --noconfirm "${BASE_PKGS[@]}"
     rm -rf "$db"
   fi
