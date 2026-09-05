@@ -53,7 +53,8 @@ cleanup_artifact_build() {
     ARTIFACT_LOOP=""
   fi
 }
-trap cleanup_artifact_build INT TERM
+trap 'cleanup_artifact_build; exit 130' INT
+trap 'cleanup_artifact_build; exit 143' TERM
 
 while [ $# -gt 0 ]; do
   case "$1" in
