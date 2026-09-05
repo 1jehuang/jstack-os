@@ -88,6 +88,8 @@ fn refuses(events: Vec<Event>) {
     let (d, path, target, plan) = fixture();
     assert_eq!(status(&path).unwrap().state, "authorized");
     let j = Journal::open(d.path(), &plan.plan_hash).unwrap();
+    j.append(Event::DeploymentStarted).unwrap();
+    assert_eq!(status(&path).unwrap().state, "deploying");
     for event in events {
         j.append(event).unwrap();
     }
@@ -222,4 +224,85 @@ fn status_rejects_symlinked_journal() {
     std::fs::rename(&wal, &moved).unwrap();
     std::os::unix::fs::symlink(&moved, &wal).unwrap();
     assert!(status(&path).is_err());
+}
+
+#[test]
+fn chunk_intent_cannot_skip_durable_deployment_start() {
+    let (d, path, _, plan) = fixture();
+    assert_eq!(status(&path).unwrap().state, "authorized");
+    Journal::open(d.path(), &plan.plan_hash)
+        .unwrap()
+        .append(Event::Intent {
+            seq: 0,
+            offset: 0,
+            length: 4,
+            sha256: hx(b"abcd"),
+        })
+        .unwrap();
+    assert!(status(&path).is_err());
+}
+
+#[test]
+fn staged_but_unauthorized_transaction_never_writes_target() {
+    let (d, path, target, plan) = fixture();
+    let wal = d
+        .path()
+        .join("journal")
+        .join(format!("{}.wal", plan.plan_hash));
+    // Replace only this test's own disposable journal with a valid staged prefix.
+    std::fs::remove_file(&wal).unwrap();
+    let journal = Journal::open(d.path(), &plan.plan_hash).unwrap();
+    for event in [
+        Event::StageIntent {
+            artifact_sha256: hx(b"abcdefgh"),
+            size_bytes: 8,
+        },
+        Event::StageCommit {
+            artifact_sha256: hx(b"abcdefgh"),
+            size_bytes: 8,
+        },
+    ] {
+        journal.append(event).unwrap();
+    }
+    assert_eq!(status(&path).unwrap().state, "artifact_prepared");
+    let before = std::fs::read(&target).unwrap();
+    let result = deploy_files(&path, &target, false);
+    assert_eq!(
+        std::fs::read(&target).unwrap(),
+        before,
+        "unapproved history changed target"
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn restart_after_verified_completes_without_duplicate_verification_record() {
+    let (d, path, target, plan) = fixture();
+    deploy_files(&path, &target, false).unwrap();
+    let journal = Journal::open(d.path(), &plan.plan_hash).unwrap();
+    let records = journal.read_strict().unwrap();
+    let wal = d
+        .path()
+        .join("journal")
+        .join(format!("{}.wal", plan.plan_hash));
+    std::fs::remove_file(&wal).unwrap();
+    let journal = Journal::open(d.path(), &plan.plan_hash).unwrap();
+    for r in records {
+        if !matches!(r.event, Event::Complete) {
+            journal.append(r.event).unwrap();
+        }
+    }
+    assert_eq!(status(&path).unwrap().state, "verified");
+    deploy_files(&path, &target, false).unwrap();
+    assert_eq!(status(&path).unwrap().state, "complete");
+    assert_eq!(
+        journal
+            .read_strict()
+            .unwrap()
+            .iter()
+            .filter(|r| matches!(r.event, Event::Verified))
+            .count(),
+        1
+    );
+    assert_eq!(std::fs::read(target).unwrap(), b"abcdefgh");
 }
