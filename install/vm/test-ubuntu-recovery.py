@@ -107,8 +107,10 @@ def start(a):
  else:
   for k in ("host","target","vars"): regular(p[k])
  serial=p["run"]/(a.phase+".serial.log"); serial.open("x").close()
+ supervisor_log=(p["run"]/(a.phase+".supervisor.log")).open("xb")
  cmd=[sys.executable,str(Path(__file__).resolve()),"_supervise","--manifest",str(mp),"--case-id",a.case_id,"--phase",a.phase]
- proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+ proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=supervisor_log,stderr=subprocess.STDOUT,start_new_session=True)
+ supervisor_log.close()
  put(p["run"]/(a.phase+".supervisor.json"),{"pid":proc.pid,"started":int(time.time())});print(proc.pid)
 def proc_identity(pid:int)->dict[str,Any]:
  try:
@@ -144,7 +146,7 @@ def cut(a):
    os.close(pidfd);put(r/"cut-request.json",{"intended_boundary":a.boundary,"observed_marker":hits[-1],"pid":pid,"identity":d["identity"]});print(hits[-1]);return
   try: os.kill(pid,0)
   except ProcessLookupError: die("QEMU exited before marker")
-  time.sleep(.2)
+  time.sleep(.005)
  os.close(pidfd);die("marker timeout; detached supervisor and QEMU remain running")
 def validate_witness(f:dict[str,Any],case_id:str)->None:
  required=("case_id","journal_sha256","journal_bytes","last_valid_kind","last_valid_seq","last_valid_offset","last_valid_length","next_offset","pending_intent","target_range_sha256","artifact_range_sha256","range_equal","committed_previous_equal")
