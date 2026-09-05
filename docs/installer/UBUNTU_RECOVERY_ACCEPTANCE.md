@@ -86,6 +86,32 @@ ambiguous-state refusal.
 
 ## Explicitly open final-tree observations
 
+### Successful 64 MiB baseline after mount-isolation fix
+
+Revision `cb7d6c4` made the bootstrap bind private and refused a retained
+artifact bind before promotion. A fresh run in
+`/home/jeremy/.jcode/scratch/jstack-ubuntu-final64-mountfix-1788594203`
+then passed the public transactional installation and target-only UEFI boot.
+The plan was
+`8cbd35388b51082a436d121b71c55803003983cd3bcf7d88227ab950ac566201`.
+The controller emitted authorization, 384 64 MiB chunk transactions, whole
+target completion, and `E2E: INSTALL_OK`. The installed target emitted all 25
+existing policy observations including `E2E-BOOT: DONE` and powered off.
+
+- static controller SHA-256:
+  `9c44529ed3613db750003a786fd3cb7b3fe42b488dea5528629aa0cf6c016691`;
+- phase-one log SHA-256:
+  `2ecf7f53038d1e2cb81fff50405295322f4503f599500f4efc9012887271e1b5`;
+- target boot log SHA-256:
+  `0a5142745eb79587782f04310ce605f318718d074e16470dba0399623c75a649`;
+- completed recovery-host qcow2 SHA-256:
+  `d217836711f54398d9787e6703ac1382f160099d6a37dab8b6f6e9a77b10dadc`;
+- completed target qcow2 SHA-256:
+  `8bfdf032eb432ef106c66e16a0abb01817b02b1727efaced2e0f0c3b1f7c5213`.
+
+This closes the fresh baseline and boot observation only. The external fault,
+identity, tamper, concurrency, and final no-op cases below remain open.
+
 The following remain open on a final frozen source revision:
 
 - UR-01: real public bypass, duplicate-flag, and builder physical-target cases.

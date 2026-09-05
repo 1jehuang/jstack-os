@@ -81,7 +81,9 @@ def case_paths(w:Path,c:str)->dict[str,Path]:
 def qemu_argv(m,p,phase,serial):
  seed=Path(m[phase+"_seed"]["path"])
  return ["qemu-system-x86_64","-enable-kvm","-cpu","host","-m",str(m["memory_mib"]),
-  "-smp",str(m["cpus"]),"-display","none","-monitor","none","-nic","none","-no-reboot",
+  "-smp",str(m["cpus"]),"-machine","q35,smm=on","-global",
+  "driver=cfi.pflash01,property=secure,value=on",
+  "-display","none","-monitor","none","-nic","none","-no-reboot",
   "-drive",f"if=pflash,format=raw,readonly=on,file={m['ovmf_code']['path']}",
   "-drive",f"if=pflash,format=raw,file={p['vars']}",
   "-drive",f"file={p['host']},if=none,id=recovery,format=qcow2",
