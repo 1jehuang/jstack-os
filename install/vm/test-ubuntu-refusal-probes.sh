@@ -21,6 +21,10 @@ grep -Fq 'target_before=%s target_after=%s state_before=%s state_after=%s' "$scr
 grep -Fq 'else verdict=INCONCLUSIVE' "$script"
 grep -Fq 'systemd-detect-virt --vm' "$script"
 grep -Fq "mount -o ro" "$script"
+grep -Fq '"$state/journal/$hash.wal"' "$script"
+grep -Fq 'cp --sparse=always' "$script"
+grep -Fq "b[0]^0xff" "$script"
+! grep -Fq '"$state"/.' "$script"
 ! grep -Eq '(^|[[:space:]])(mkfs|wipefs|sgdisk|parted)[[:space:]]' "$script"
 ! grep -Fq 'of="$target"' "$script"
 printf 'host-side refusal harness checks passed (not VM acceptance)\n'

@@ -91,7 +91,41 @@ positive_status() {
   if [[ $rc -eq 0 && $out == *STATE=* && $out == *NEXT_OFFSET=* && $tb == "$ta" && $sb == "$sa" ]]; then verdict=PASS; ((pass+=1)); else verdict=FAIL; ((fail+=1)); fi
   emit "$verdict" status-positive 'zero + STATE/NEXT_OFFSET' "rc=$rc ${out//$'\n'/ | }" "$tb" "$ta" "$sb" "$sa"
 }
-copy_state() { local d=$1; mkdir "$d"; cp -a --reflink=auto "$state"/. "$d"/; }
+plan_hash() { python3 - "$plan" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1]))['plan_hash'])
+PY
+}
+# Copy only inputs needed by status. Copying the entire state can duplicate a
+# target-sized artifact and artifact-build workspace on non-reflink filesystems.
+copy_status_state() {
+  local d=$1 hash
+  hash=$(plan_hash); mkdir "$d" "$d/journal"
+  cp -a "$plan" "$d/$(basename "$plan")"
+  cp -a "$state/journal/$hash.wal" "$d/journal/$hash.wal"
+}
+# Deploy additionally needs initialization evidence and the selected artifact.
+# --sparse=always preserves holes. Refuse the optional case when there is not
+# enough free space rather than risking exhaustion of the recovery filesystem.
+copy_deploy_state() {
+  local d=$1 source=$2 bytes free
+  copy_status_state "$d"
+  cp -a "$state/initialized.json" "$d/initialized.json"
+  bytes=$(du -B1 --apparent-size "$source" | awk '{print $1}')
+  free=$(df -B1 --output=avail "$d" | tail -1 | tr -d ' ')
+  (( free > bytes + 1073741824 )) || return 1
+  mkdir -p "$d/$(dirname "${source#"$state/"}")"
+  cp --sparse=always --preserve=mode,ownership,timestamps "$source" "$d/${source#"$state/"}"
+}
+flip_first_byte() { python3 - "$1" <<'PY'
+import sys
+p=sys.argv[1]
+with open(p,'r+b') as f:
+    b=f.read(1)
+    if not b: raise SystemExit('cannot flip byte in empty file')
+    f.seek(0); f.write(bytes([b[0]^0xff])); f.flush()
+PY
+}
 mutate_json() { python3 - "$@" <<'PY'
 import json,sys
 p,kind=sys.argv[1:]; x=json.load(open(p))
@@ -103,16 +137,16 @@ PY
 
 positive_status
 
-c=$work/corrupt-plan; copy_state "$c"; cp_plan=$c/$(basename "$plan"); mutate_json "$cp_plan" plan-hash
+c=$work/corrupt-plan; copy_status_state "$c"; cp_plan=$c/$(basename "$plan"); mutate_json "$cp_plan" plan-hash
 run_case corrupt-plan-hash 'exact plan authorization does not match' "$c" "$installer" status --plan "$cp_plan"
 
-c=$work/unauthorized; copy_state "$c"; cp_plan=$c/$(basename "$plan"); mutate_json "$cp_plan" confirmation
+c=$work/unauthorized; copy_status_state "$c"; cp_plan=$c/$(basename "$plan"); mutate_json "$cp_plan" confirmation
 run_case unauthorized-confirmation 'exact plan authorization does not match' "$c" "$installer" status --plan "$cp_plan"
 
-c=$work/corrupt-journal; copy_state "$c"; cp_plan=$c/$(basename "$plan")
-wal=$(find "$c/journal" -maxdepth 1 -type f -name '*.wal' -print -quit 2>/dev/null || true)
+c=$work/corrupt-journal; copy_status_state "$c"; cp_plan=$c/$(basename "$plan")
+wal=$c/journal/$(plan_hash).wal
 if [[ -n $wal && -s $wal ]]; then
-  printf '\377' | dd of="$wal" bs=1 seek=0 conv=notrunc status=none
+  flip_first_byte "$wal"
   run_case corrupt-journal-copy 'journal chain corruption' "$c" "$installer" status --plan "$cp_plan"
 else
   printf 'SKIP case=corrupt-journal-copy reason=%q\n' 'isolated state has no nonempty journal'; ((skip+=1))
@@ -120,17 +154,18 @@ fi
 
 # Tamper only the isolated promoted artifact. Identity or host-scope checks can
 # precede artifact verification after copying, so only the intended error passes.
-c=$work/artifact-tamper; copy_state "$c"; cp_plan=$c/$(basename "$plan")
-artifact=$(python3 - "$cp_plan" "$c" <<'PY'
+c=$work/artifact-tamper; cp_plan=$c/$(basename "$plan")
+source_artifact=$(python3 - "$plan" "$state" <<'PY'
 import json,os,sys
 x=json.load(open(sys.argv[1])); print(os.path.join(sys.argv[2],x['body']['artifact']['relative_store_path']))
 PY
 )
-if [[ -f $artifact && -s $artifact ]]; then
-  printf '\377' | dd of="$artifact" bs=1 seek=0 conv=notrunc status=none
+if [[ -f $source_artifact && -s $source_artifact ]] && copy_deploy_state "$c" "$source_artifact"; then
+  artifact=$c/${source_artifact#"$state/"}
+  flip_first_byte "$artifact"
   run_case artifact-tamper-copy 'retained artifact no longer matches the authorized plan' "$c" "$installer" resume --plan "$cp_plan"
 else
-  printf 'SKIP case=artifact-tamper-copy reason=%q\n' 'isolated promoted artifact unavailable'; ((skip+=1))
+  printf 'SKIP case=artifact-tamper-copy reason=%q\n' 'artifact unavailable or insufficient space for selected sparse copy'; ((skip+=1))
 fi
 
 # Public inspect overlap probes do not create state because an existing initialized
@@ -145,16 +180,26 @@ else
 fi
 
 part=$(lsblk -lnpo NAME,TYPE "$target" | awk '$2=="part"{print $1;exit}')
-if [[ -n $part && -b $part ]]; then
+fstype=$([[ -n $part ]] && blkid -o value -s TYPE "$part" 2>/dev/null || true)
+if [[ -n $part && -b $part && $fstype == vfat ]]; then
+  setup_before=$(target_digest)
   mountpoint=$work/target-mounted; mkdir "$mountpoint"
   if mount -o ro "$part" "$mountpoint" 2>/dev/null; then
     run_case target-mounted 'mounted' "$state" "$installer" inspect --disk "$target" --state-dir "$state"
     umount "$mountpoint"; mountpoint=
+    setup_after=$(target_digest)
+    if [[ $setup_before != "$setup_after" ]]; then
+      printf 'FAIL case=target-mounted-setup expected=%q observed=%q target_before=%s target_after=%s\n' 'read-only mount setup preserves full target' 'target changed across mount+unmount' "$setup_before" "$setup_after"
+      ((fail+=1))
+    else
+      printf 'PASS case=target-mounted-setup expected=%q observed=%q target_before=%s target_after=%s\n' 'read-only mount setup preserves full target' 'unchanged' "$setup_before" "$setup_after"
+      ((pass+=1))
+    fi
   else
     printf 'SKIP case=target-mounted reason=%q\n' 'existing target partition could not be mounted read-only'; ((skip+=1))
   fi
 else
-  printf 'SKIP case=target-mounted reason=%q\n' 'target has no existing partition'; ((skip+=1))
+  printf 'SKIP case=target-mounted reason=%q\n' 'target has no existing vfat partition safe for read-only mount'; ((skip+=1))
 fi
 
 printf 'SUMMARY pass=%d fail=%d skip=%d inconclusive=%d\n' "$pass" "$fail" "$skip" "$inconclusive"
