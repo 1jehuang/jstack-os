@@ -107,7 +107,14 @@ install/jstack-install.sh` and all six tests in
 `install.tests.test_install_safety`. These checks do not turn the blocked full
 install into acceptance.
 
-The broader transactional installer crash-recovery architecture described under
-`docs/installer/` remains unimplemented. Neither the earlier fault VM nor a
+Integration of the transactional controller and crash-recovery machinery described under
+`docs/installer/` into this legacy shell path remains unimplemented. Neither the earlier fault VM nor a
 future legacy-installer happy-path boot proves that architecture or makes this
 legacy destructive script transaction-safe.
+
+Independent review directly invoked the public full-VM script for three guard
+cases: an existing `WORK`, insufficient free space, and invalid `MIN_FREE_GIB`.
+All returned status 1 with the corresponding refusal. A sentinel named
+`target.qcow2` in the existing directory remained byte-identical, and neither
+new requested work directory was created. These are real public harness checks,
+not evidence that installation or boot succeeded.
