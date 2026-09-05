@@ -31,6 +31,11 @@ running Ubuntu system. It fetches the official `archlinux-bootstrap` tarball
 btrfs subvolumes, builds every jstack package from this repo inside the target,
 and writes systemd-boot entries.
 
+> **Warning:** This legacy shell installer is outside the newer installer state
+> model. It has no rollback or restart recovery. Use a disposable target, never
+> the mounted host disk, and read [the safety limits](docs/INSTALL_FROM_UBUNTU.md)
+> before running it.
+
 ```sh
 git clone https://github.com/1jehuang/jstack-os && cd jstack-os
 sudo ./install/jstack-install.sh --disk /dev/nvme0n1 --user jeremy --hostname xps13
