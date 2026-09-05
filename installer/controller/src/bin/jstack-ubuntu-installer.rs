@@ -28,6 +28,13 @@ mod linux {
         target: StableDiskIdentity,
         recovery: RecoveryIdentity,
     }
+    fn facts(ids: &[&str]) -> Result<Evidence, String> {
+        let mut e = Evidence::new();
+        for id in ids {
+            e.observe(id, true)?
+        }
+        Ok(e)
+    }
     pub fn run() -> Result<(), String> {
         GraphModel::load_verified_ubuntu_whole_disk(GRAPH)
             .map_err(|e| format!("embedded graph invalid: {e}"))?;
@@ -84,6 +91,7 @@ mod linux {
             .ok_or_else(|| format!("missing {n}"))
     }
     fn inspect(d: &Path, s: &Path) -> Result<(), String> {
+        verify_host_scope(s)?;
         verify_unused_target(d, s)?;
         if s.exists() {
             return validate_init(d, s);
@@ -106,7 +114,35 @@ mod linux {
         }
         Ok(())
     }
+    fn verify_host_scope(state: &Path) -> Result<(), String> {
+        let os = std::fs::read_to_string("/etc/os-release").map_err(err)?;
+        if !os.lines().any(|l| l == "ID=ubuntu" || l == "ID=\"ubuntu\"") {
+            return Err("recovery host must be Ubuntu".into());
+        }
+        if !Path::new("/sys/firmware/efi").is_dir() {
+            return Err("recovery host must be booted via UEFI".into());
+        }
+        let parent = nearest(state)?;
+        let out = Command::new("findmnt")
+            .args(["-n", "-o", "FSTYPE", "--target"])
+            .arg(parent)
+            .output()
+            .map_err(err)?;
+        let fs = String::from_utf8(out.stdout).map_err(err)?;
+        if !out.status.success() || matches!(fs.trim(), "tmpfs" | "ramfs" | "overlay") {
+            return Err("recovery state must be on persistent storage".into());
+        }
+        let boot = Command::new("findmnt")
+            .args(["-n", "--target", "/boot"])
+            .status()
+            .map_err(err)?;
+        if !boot.success() {
+            return Err("recovery host boot filesystem is unavailable".into());
+        }
+        Ok(())
+    }
     fn init(d: &Path, s: &Path) -> Result<(), String> {
+        verify_host_scope(s)?;
         verify_unused_target(d, s)?;
         if s.exists() {
             return validate_init(d, s);
@@ -155,8 +191,8 @@ mod linux {
         verify_recovery_identity(s, &evidence.recovery)
     }
     fn prepare(a: &[String]) -> Result<(), String> {
-        require_prepare()?;
         let (d, s) = disk_state(a)?;
+        verify_host_scope(&s)?;
         let src = PathBuf::from(flag(a, "--artifact-source")?);
         secure_input_file(&src, "artifact source")?;
         verify_unused_target(&d, &s)?;
@@ -225,12 +261,23 @@ mod linux {
         plan.validate()?;
         let journal = Journal::open(&s, &hash)?;
         let existing = journal.read()?;
+        let pre = facts(&[
+            "scope_supported",
+            "release_policy",
+            "recovery_host_bootable",
+            "target_outside_recovery_host",
+            "artifact_source_verified",
+        ])?;
+        let mut prepare_permit = begin_transition("discovered", "prepare", &pre)?;
+        prepare_permit.require_action("inspect_scope", &Evidence::new())?;
         if existing.is_empty() {
             journal.append(Event::StageIntent {
                 artifact_sha256: full.clone(),
                 size_bytes: size,
             })?;
         }
+        let intent = facts(&["action_intent_durable"])?;
+        prepare_permit.require_action("stage_artifact", &intent)?;
         let dst = s.join(&rel);
         if !dst.parent().unwrap().exists() {
             std::fs::create_dir(dst.parent().unwrap()).map_err(err)?;
@@ -240,6 +287,13 @@ mod linux {
         }
         if hash_image(&dst, chunk_bytes)?.0 != full {
             return Err("promoted artifact verification failed".into());
+        }
+        let post = facts(&[
+            "artifact_durable_on_recovery_host",
+            "staged_artifact_digest_verified",
+        ])?;
+        if prepare_permit.finish(&post)? != "artifact_prepared" {
+            return Err("graph prepare destination mismatch".into());
         }
         if journal
             .read()?
@@ -267,13 +321,23 @@ mod linux {
         }
         let pp = s.join(format!("plan-{hash}.json"));
         durable_write(&pp, &serde_json::to_vec_pretty(&plan).map_err(err)?)?;
-        require_authorize()?;
+        let pre = facts(&[
+            "artifact_staged_and_verified",
+            "stable_target_identity_observed",
+            "exact_plan_displayed",
+        ])?;
+        let mut permit = begin_transition("artifact_prepared", "authorize", &pre)?;
+        permit.require_action("record_authorization", &Evidence::new())?;
         if journal
             .read()?
             .iter()
             .all(|r| !matches!(r.event, Event::Authorized))
         {
             journal.append(Event::Authorized)?;
+        }
+        let post = facts(&["exact_plan_authorization_recorded"])?;
+        if permit.finish(&post)? != "authorized" {
+            return Err("graph authorization destination mismatch".into());
         }
         marker(&format!("JSTK_UBUNTU_AUTHORIZED plan={hash}"));
         println!("PLAN_PATH={}", pp.canonicalize().map_err(err)?.display());
@@ -347,7 +411,12 @@ mod linux {
     }
     fn secure_input_file(p: &Path, what: &str) -> Result<(), String> {
         let m = std::fs::symlink_metadata(p).map_err(err)?;
-        if !m.file_type().is_file() || m.file_type().is_symlink() || m.nlink() != 1 {
+        if !m.file_type().is_file()
+            || m.file_type().is_symlink()
+            || m.nlink() != 1
+            || m.uid() != 0
+            || m.mode() & 0o022 != 0
+        {
             return Err(format!(
                 "{what} must be a regular single-link non-symlink file"
             ));

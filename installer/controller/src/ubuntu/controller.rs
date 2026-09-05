@@ -10,6 +10,13 @@ pub struct Status {
     pub state: &'static str,
     pub next_offset: u64,
 }
+fn evidence(ids: &[&str]) -> Result<super::Evidence, String> {
+    let mut e = super::Evidence::new();
+    for id in ids {
+        e.observe(id, true)?
+    }
+    Ok(e)
+}
 pub fn read_plan(path: &Path) -> Result<(UbuntuPlan, PathBuf), String> {
     let supplied = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if supplied.file_type().is_symlink() {
@@ -229,7 +236,18 @@ pub fn deploy_files(
         return Err("transaction requires manual recovery".into());
     }
     if initial.status.state == "authorized" {
-        super::require_begin()?;
+        let pre = evidence(&[
+            "artifact_staged_and_verified",
+            "plan_authorized",
+            "confirmed_plan",
+            "target_identity_matches_authorized_plan",
+            "no_target_chunk_committed",
+        ])?;
+        let permit = super::begin_transition("authorized", "deploy", &pre)?;
+        let post = evidence(&["deployment_cursor_initialized"])?;
+        if permit.finish(&post)? != "deploying" {
+            return Err("graph deployment destination mismatch".into());
+        }
         journal.append(Event::DeploymentStarted)?;
     }
     let mut target = OpenOptions::new()
@@ -265,19 +283,39 @@ pub fn deploy_files(
         s.next_offset = offset + length;
     }
     if let Some((seq, offset, length, digest)) = replayed.pending_intent.take() {
-        super::require_chunk()?;
         if production_checks {
             super::verify_open_target(&target, target_path, &p.body.target)?;
         }
-        write_or_admit(
-            &journal,
-            &mut source,
-            &mut target,
+        let pre = evidence(&[
+            "artifact_staged_and_verified",
+            "plan_authorized",
+            "next_chunk_bound",
+            "confirmed_plan",
+            "target_identity_matches_authorized_plan",
+            "chunk_offset_and_digest_match_cursor",
+            "chunk_not_committed_or_exact_preimage_observed",
+        ])?;
+        let mut permit = super::begin_transition("deploying", "chunk", &pre)?;
+        let action = evidence(&["action_intent_durable"])?;
+        permit.require_action("write_chunk", &action)?;
+        permit.require_action("verify_chunk", &action)?;
+        write_or_admit(&mut source, &mut target, seq, offset, length, &digest)?;
+        let post = evidence(&[
+            "target_chunk_flushed",
+            "target_chunk_digest_readback_verified",
+        ])?;
+        if permit.finish(&post)? != "deploying" {
+            return Err("graph chunk destination mismatch".into());
+        }
+        journal.append(Event::Commit {
             seq,
             offset,
             length,
-            &digest,
-        )?;
+            sha256: digest.clone(),
+        })?;
+        marker(&format!(
+            "JSTK_UBUNTU_COMMIT seq={seq} offset={offset} length={length}"
+        ));
         journal.append(Event::Advance {
             next_offset: offset + length,
         })?;
@@ -295,23 +333,34 @@ pub fn deploy_files(
         .enumerate()
         .skip_while(|(_, c)| c.offset < s.next_offset)
     {
-        super::require_chunk()?;
         if production_checks {
             super::verify_unused_target(target_path, root)?;
             super::verify_open_target(&target, target_path, &p.body.target)?;
         }
+        let pre = evidence(&[
+            "artifact_staged_and_verified",
+            "plan_authorized",
+            "next_chunk_bound",
+            "confirmed_plan",
+            "target_identity_matches_authorized_plan",
+            "chunk_offset_and_digest_match_cursor",
+            "chunk_not_committed_or_exact_preimage_observed",
+        ])?;
+        let mut permit = super::begin_transition("deploying", "chunk", &pre)?;
         journal.append(Event::Intent {
             seq: seq as u64,
             offset: c.offset,
             length: c.length,
             sha256: c.sha256.clone(),
         })?;
+        let action = evidence(&["action_intent_durable"])?;
+        permit.require_action("write_chunk", &action)?;
+        permit.require_action("verify_chunk", &action)?;
         marker(&format!(
             "JSTK_UBUNTU_INTENT seq={seq} offset={} length={}",
             c.offset, c.length
         ));
         write_or_admit(
-            &journal,
             &mut source,
             &mut target,
             seq as u64,
@@ -319,6 +368,23 @@ pub fn deploy_files(
             c.length,
             &c.sha256,
         )?;
+        let post = evidence(&[
+            "target_chunk_flushed",
+            "target_chunk_digest_readback_verified",
+        ])?;
+        if permit.finish(&post)? != "deploying" {
+            return Err("graph chunk destination mismatch".into());
+        }
+        journal.append(Event::Commit {
+            seq: seq as u64,
+            offset: c.offset,
+            length: c.length,
+            sha256: c.sha256.clone(),
+        })?;
+        marker(&format!(
+            "JSTK_UBUNTU_COMMIT seq={seq} offset={} length={}",
+            c.offset, c.length
+        ));
         journal.append(Event::Advance {
             next_offset: c.offset + c.length,
         })?;
@@ -327,24 +393,57 @@ pub fn deploy_files(
             c.offset + c.length
         ));
     }
-    super::require_verify()?;
+    let ready = replay_state(&p, &journal.read()?)?;
+    if ready.status.next_offset != p.body.artifact.size_bytes
+        || ready.pending_intent.is_some()
+        || ready.committed_unadvanced.is_some()
+    {
+        return Err("not all chunks have verified durable advances".into());
+    }
     if production_checks {
         super::verify_open_target(&target, target_path, &p.body.target)?;
     }
+    let pre = evidence(&[
+        "artifact_staged_and_verified",
+        "plan_authorized",
+        "all_chunks_verified",
+        "confirmed_plan",
+        "all_planned_chunks_have_verified_commits",
+        "target_identity_matches_authorized_plan",
+    ])?;
+    let mut permit = super::begin_transition("deploying", "verify", &pre)?;
+    permit.require_action("verify_target", &super::Evidence::new())?;
     if hash_range(&target, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
         journal.append(Event::ManualRecovery {
             reason: "full target digest mismatch".into(),
         })?;
         return Err("full target digest mismatch".into());
     }
+    let post = evidence(&["full_target_digest_readback_verified"])?;
+    if permit.finish(&post)? != "verified" {
+        return Err("graph verify destination mismatch".into());
+    }
     journal.append(Event::Verified)?;
-    super::require_complete()?;
+    let pre = evidence(&[
+        "plan_authorized",
+        "target_full_hash_verified",
+        "confirmed_plan",
+        "full_target_digest_readback_verified",
+    ])?;
+    let mut permit = super::begin_transition("verified", "complete", &pre)?;
+    permit.require_action("commit_complete", &super::Evidence::new())?;
     journal.append(Event::Complete)?;
+    if replay_state(&p, &journal.read()?)?.status.state != "complete" {
+        return Err("durable completion did not replay".into());
+    }
+    let post = evidence(&["success_terminal_committed"])?;
+    if permit.finish(&post)? != "complete" {
+        return Err("graph complete destination mismatch".into());
+    }
     marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
     Ok(())
 }
 fn write_or_admit(
-    j: &Journal,
     src: &mut File,
     dst: &mut File,
     seq: u64,
@@ -357,12 +456,15 @@ fn write_or_admit(
     if hex(&Sha256::digest(&b)) != digest {
         return Err("staged source chunk mismatch".into());
     }
-    if hash_range(dst, off, len)? != digest {
+    let wrote = hash_range(dst, off, len)? != digest;
+    if wrote {
         marker(&format!(
             "JSTK_UBUNTU_WRITE_BEGIN seq={seq} offset={off} length={len}"
         ));
         dst.write_all_at(&b, off).map_err(err)?;
-        dst.sync_data().map_err(err)?;
+    }
+    dst.sync_data().map_err(err)?;
+    if wrote {
         marker(&format!(
             "JSTK_UBUNTU_WRITE_END seq={seq} offset={off} length={len}"
         ));
@@ -372,15 +474,6 @@ fn write_or_admit(
     }
     marker(&format!(
         "JSTK_UBUNTU_READBACK_OK seq={seq} offset={off} length={len}"
-    ));
-    j.append(Event::Commit {
-        seq,
-        offset: off,
-        length: len,
-        sha256: digest.into(),
-    })?;
-    marker(&format!(
-        "JSTK_UBUNTU_COMMIT seq={seq} offset={off} length={len}"
     ));
     Ok(())
 }
