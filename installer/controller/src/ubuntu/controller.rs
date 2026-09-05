@@ -235,6 +235,9 @@ pub fn deploy_files(
     if initial.status.state == "manual_recovery" {
         return Err("transaction requires manual recovery".into());
     }
+    if matches!(initial.status.state, "discovered" | "artifact_prepared") {
+        return Err("deployment is not durably authorized".into());
+    }
     if initial.status.state == "authorized" {
         let pre = evidence(&[
             "artifact_staged_and_verified",
@@ -255,6 +258,19 @@ pub fn deploy_files(
         .write(true)
         .open(target_path)
         .map_err(err)?;
+    if initial.status.state == "verified" {
+        if production_checks {
+            super::verify_open_target(&target, target_path, &p.body.target)?;
+        }
+        if hash_range(&target, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
+            return Err(
+                "verified target changed before completion; manual recovery required".into(),
+            );
+        }
+        complete_only(&p, &journal)?;
+        marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
+        return Ok(());
+    }
     let records = journal.read()?;
     let mut replayed = replay_state(&p, &records)?;
     let mut s = replayed.status.clone();
@@ -403,6 +419,11 @@ pub fn deploy_files(
     if production_checks {
         super::verify_open_target(&target, target_path, &p.body.target)?;
     }
+    verify_and_complete(&p, &journal, &target)?;
+    marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
+    Ok(())
+}
+fn verify_and_complete(p: &UbuntuPlan, journal: &Journal, target: &File) -> Result<(), String> {
     let pre = evidence(&[
         "artifact_staged_and_verified",
         "plan_authorized",
@@ -424,6 +445,9 @@ pub fn deploy_files(
         return Err("graph verify destination mismatch".into());
     }
     journal.append(Event::Verified)?;
+    complete_only(p, journal)
+}
+fn complete_only(p: &UbuntuPlan, journal: &Journal) -> Result<(), String> {
     let pre = evidence(&[
         "plan_authorized",
         "target_full_hash_verified",
@@ -433,14 +457,13 @@ pub fn deploy_files(
     let mut permit = super::begin_transition("verified", "complete", &pre)?;
     permit.require_action("commit_complete", &super::Evidence::new())?;
     journal.append(Event::Complete)?;
-    if replay_state(&p, &journal.read()?)?.status.state != "complete" {
+    if replay_state(p, &journal.read()?)?.status.state != "complete" {
         return Err("durable completion did not replay".into());
     }
     let post = evidence(&["success_terminal_committed"])?;
     if permit.finish(&post)? != "complete" {
         return Err("graph complete destination mismatch".into());
     }
-    marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
     Ok(())
 }
 fn write_or_admit(

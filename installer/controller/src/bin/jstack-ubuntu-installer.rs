@@ -259,6 +259,20 @@ mod linux {
             },
         };
         plan.validate()?;
+        eprintln!(
+            "Exact destructive plan:\n{}",
+            serde_json::to_string_pretty(&plan).map_err(err)?
+        );
+        if !a.iter().any(|x| x == "--yes") {
+            eprintln!("Type exactly '{phrase}' to approve the local image and authorize the plan:");
+            let mut answer = String::new();
+            BufReader::new(File::open("/dev/tty").map_err(err)?)
+                .read_line(&mut answer)
+                .map_err(err)?;
+            if answer.trim_end() != phrase {
+                return Err("exact destructive confirmation did not match".into());
+            }
+        }
         let journal = Journal::open(&s, &hash)?;
         let existing = journal.read()?;
         let pre = facts(&[
@@ -304,20 +318,6 @@ mod linux {
                 artifact_sha256: full.clone(),
                 size_bytes: size,
             })?;
-        }
-        eprintln!(
-            "Exact destructive plan:\n{}",
-            serde_json::to_string_pretty(&plan).map_err(err)?
-        );
-        if !a.iter().any(|x| x == "--yes") {
-            eprintln!("Type exactly '{phrase}' to authorize the plan:");
-            let mut answer = String::new();
-            BufReader::new(File::open("/dev/tty").map_err(err)?)
-                .read_line(&mut answer)
-                .map_err(err)?;
-            if answer.trim_end() != phrase {
-                return Err("exact destructive confirmation did not match".into());
-            }
         }
         let pp = s.join(format!("plan-{hash}.json"));
         durable_write(&pp, &serde_json::to_vec_pretty(&plan).map_err(err)?)?;
