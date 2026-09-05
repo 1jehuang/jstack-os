@@ -242,6 +242,18 @@ checks for protected files. That stopped run is a harness failure, not a
 controller refusal pass. Any subsequent result must come from a fresh real guest
 run of the corrected probe and retain its output and exit status.
 
-Executor attempts affected by `earlyoom` are likewise failures to obtain a probe
-result. Process termination, a serial marker, or preserved partial output does
-not establish any refusal case. No UR row above treats those attempts as a pass.
+The `readback-06` attempt did not reach its requested marker. Its retained
+`cut.qemu.log` reports `terminating on signal 15 from pid 976
+(/usr/bin/earlyoom)`, and task `816526nseu` failed before a boundary marker.
+The host journal records `earlyoom` killing a 2 GiB QEMU process (PID 1250019)
+at 09:01:12 and another 4 GiB QEMU process (PID 1250454) at 09:01:17. These
+were host-side resource kills, not guest refusal or recovery output, and provide
+no acceptance result.
+
+At that checkpoint the host had about 1.4 GiB RAM available. Unrelated active
+desktop hot-reload libraries occupied about 5.4 GiB of tmpfs and were not safe
+to remove. New VM launches were paused rather than risk another unobserved cut
+or disrupt unrelated work. The remaining actual cases in the matrix, including
+Intent/write/readback cuts and the real refusal matrix, remain open until a
+serialized run has sufficient memory. Existing VM paths and logs are retained.
+No UR row above treats the resource-killed attempts as a pass.
