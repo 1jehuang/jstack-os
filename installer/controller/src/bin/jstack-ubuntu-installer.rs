@@ -16,12 +16,18 @@ mod linux {
     use jstack_installer_controller::ubuntu::*;
     use sha2::{Digest, Sha256};
     use std::fs::{File, OpenOptions};
-    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
     const GRAPH: &[u8] = include_bytes!("../../../model/ubuntu-whole-disk-state-graph.json");
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct InitEvidence {
+        schema: String,
+        target: StableDiskIdentity,
+        recovery: RecoveryIdentity,
+    }
     pub fn run() -> Result<(), String> {
         GraphModel::load_verified_ubuntu_whole_disk(GRAPH)
             .map_err(|e| format!("embedded graph invalid: {e}"))?;
@@ -80,10 +86,7 @@ mod linux {
     fn inspect(d: &Path, s: &Path) -> Result<(), String> {
         verify_unused_target(d, s)?;
         if s.exists() {
-            return Err(
-                "state directory already exists; init is idempotent only after initialization"
-                    .into(),
-            );
+            return validate_init(d, s);
         }
         let parent = nearest(s)?;
         safe_parent(&parent)?;
@@ -106,11 +109,7 @@ mod linux {
     fn init(d: &Path, s: &Path) -> Result<(), String> {
         verify_unused_target(d, s)?;
         if s.exists() {
-            let ev = s.join("initialized.json");
-            if ev.is_file() {
-                return Ok(());
-            }
-            return Err("preexisting state directory is not initialized".into());
+            return validate_init(d, s);
         }
         let parent = s.parent().ok_or("state root needs parent")?;
         safe_parent(&nearest(parent)?)?;
@@ -122,14 +121,41 @@ mod linux {
             std::fs::Permissions::from_mode(0o700),
         )
         .map_err(err)?;
+        let target = observe_target(d)?.identity;
+        let (filesystem_uuid, backing_serial, backing_wwn) = recovery(s)?;
+        let evidence = InitEvidence {
+            schema: "jstack-ubuntu-state-v1".into(),
+            target,
+            recovery: RecoveryIdentity {
+                filesystem_uuid,
+                backing_serial,
+                backing_wwn,
+            },
+        };
         durable_write(
             &s.join("initialized.json"),
-            b"{\"schema\":\"jstack-ubuntu-state-v1\"}\n",
+            &serde_json::to_vec(&evidence).map_err(err)?,
         )?;
-        sync_dir(s);
+        sync_dir(s)?;
         Ok(())
     }
+    fn validate_init(d: &Path, s: &Path) -> Result<(), String> {
+        let m = std::fs::symlink_metadata(s).map_err(err)?;
+        if !m.is_dir() || m.file_type().is_symlink() || m.uid() != 0 || m.mode() & 0o077 != 0 {
+            return Err("unsafe initialized state root".into());
+        }
+        let evidence: InitEvidence =
+            serde_json::from_reader(File::open(s.join("initialized.json")).map_err(err)?)
+                .map_err(err)?;
+        if evidence.schema != "jstack-ubuntu-state-v1"
+            || observe_target(d)?.identity != evidence.target
+        {
+            return Err("initialized state identity mismatch".into());
+        }
+        verify_recovery_identity(s, &evidence.recovery)
+    }
     fn prepare(a: &[String]) -> Result<(), String> {
+        require_prepare()?;
         let (d, s) = disk_state(a)?;
         let src = PathBuf::from(flag(a, "--artifact-source")?);
         verify_unused_target(&d, &s)?;
@@ -150,14 +176,6 @@ mod linux {
             ));
         }
         let rel = PathBuf::from(format!("artifacts/{full}.raw"));
-        let dst = s.join(&rel);
-        std::fs::create_dir_all(dst.parent().unwrap()).map_err(err)?;
-        if !dst.exists() {
-            sparse_copy(&src, &dst, chunk_bytes)?
-        }
-        if hash_image(&dst, chunk_bytes)?.0 != full {
-            return Err("promoted artifact verification failed".into());
-        }
         let exe = std::env::current_exe().map_err(err)?;
         let durable_exe = s.join("jstack-ubuntu-installer");
         if !durable_exe.exists() {
@@ -180,33 +198,77 @@ mod linux {
                 backing_wwn,
             },
             artifact: ArtifactManifest {
-                sha256: full,
+                sha256: full.clone(),
                 size_bytes: size,
-                relative_store_path: rel,
+                relative_store_path: rel.clone(),
                 chunks,
             },
             deployment: Deployment { chunk_bytes },
         };
         let hash = hex(&Sha256::digest(serde_json::to_vec(&body).map_err(err)?));
         let phrase = format!("ERASE {}", body.target.stable_serial);
-        if !a.iter().any(|x| x == "--yes") {
-            return Err(format!(
-                "confirmation required: rerun with --yes after verifying '{phrase}'"
-            ));
-        }
         let plan = UbuntuPlan {
             schema_version: PLAN_SCHEMA.into(),
             plan_hash: hash.clone(),
             body,
             confirmation: Confirmation {
-                exact_phrase: phrase,
+                exact_phrase: phrase.clone(),
                 confirmed_plan_hash: hash.clone(),
             },
         };
         plan.validate()?;
+        let journal = Journal::open(&s, &hash)?;
+        let existing = journal.read()?;
+        if existing.is_empty() {
+            journal.append(Event::StageIntent {
+                artifact_sha256: full.clone(),
+                size_bytes: size,
+            })?;
+        }
+        let dst = s.join(&rel);
+        if !dst.parent().unwrap().exists() {
+            std::fs::create_dir(dst.parent().unwrap()).map_err(err)?;
+        }
+        if !dst.exists() {
+            sparse_copy(&src, &dst, chunk_bytes)?;
+        }
+        if hash_image(&dst, chunk_bytes)?.0 != full {
+            return Err("promoted artifact verification failed".into());
+        }
+        if journal
+            .read()?
+            .iter()
+            .all(|r| !matches!(r.event, Event::StageCommit { .. }))
+        {
+            journal.append(Event::StageCommit {
+                artifact_sha256: full.clone(),
+                size_bytes: size,
+            })?;
+        }
+        eprintln!(
+            "Exact destructive plan:\n{}",
+            serde_json::to_string_pretty(&plan).map_err(err)?
+        );
+        if !a.iter().any(|x| x == "--yes") {
+            eprintln!("Type exactly '{phrase}' to authorize the plan:");
+            let mut answer = String::new();
+            BufReader::new(File::open("/dev/tty").map_err(err)?)
+                .read_line(&mut answer)
+                .map_err(err)?;
+            if answer.trim_end() != phrase {
+                return Err("exact destructive confirmation did not match".into());
+            }
+        }
         let pp = s.join(format!("plan-{hash}.json"));
         durable_write(&pp, &serde_json::to_vec_pretty(&plan).map_err(err)?)?;
-        Journal::open(&s, &hash)?.append(Event::Authorized)?;
+        require_authorize()?;
+        if journal
+            .read()?
+            .iter()
+            .all(|r| !matches!(r.event, Event::Authorized))
+        {
+            journal.append(Event::Authorized)?;
+        }
         marker(&format!("JSTK_UBUNTU_AUTHORIZED plan={hash}"));
         println!("PLAN_PATH={}", pp.canonicalize().map_err(err)?.display());
         Ok(())
@@ -299,7 +361,7 @@ mod linux {
             off += n as u64
         }
         o.set_len(size).and_then(|_| o.sync_all()).map_err(err)?;
-        sync_dir(dst.parent().unwrap());
+        sync_dir(dst.parent().unwrap())?;
         Ok(())
     }
     fn copy_file(a: &Path, b: &Path) -> Result<(), String> {
@@ -316,11 +378,11 @@ mod linux {
             .map_err(err)?;
         f.write_all(b).and_then(|_| f.sync_all()).map_err(err)?;
         std::fs::rename(&tmp, p).map_err(err)?;
-        sync_dir(p.parent().unwrap());
+        sync_dir(p.parent().unwrap())?;
         Ok(())
     }
-    fn sync_dir(p: &Path) {
-        let _ = File::open(p).and_then(|f| f.sync_all());
+    fn sync_dir(p: &Path) -> Result<(), String> {
+        File::open(p).and_then(|f| f.sync_all()).map_err(err)
     }
     fn err<E: std::fmt::Display>(e: E) -> String {
         e.to_string()

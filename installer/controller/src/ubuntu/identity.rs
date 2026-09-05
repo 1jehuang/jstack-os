@@ -1,4 +1,4 @@
-use super::model::StableDiskIdentity;
+use super::model::{RecoveryIdentity, StableDiskIdentity};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -85,10 +85,34 @@ pub fn observe_target(path: &Path) -> Result<ObservedDevice, String> {
     if d.dev_type != "disk" || d.identity.stable_serial.is_empty() {
         return Err("target must be a whole disk with stable serial".into());
     }
+    let duplicates = devices()?
+        .into_iter()
+        .filter(|x| {
+            x.dev_type == "disk"
+                && (x.identity.stable_serial == d.identity.stable_serial
+                    || (d.identity.stable_wwn.is_some()
+                        && x.identity.stable_wwn == d.identity.stable_wwn))
+        })
+        .count();
+    if duplicates != 1 {
+        return Err("target stable serial/WWN is ambiguous".into());
+    }
     Ok(d)
 }
 pub fn resolve_unique(id: &StableDiskIdentity) -> Result<PathBuf, String> {
-    let m = devices()?
+    let all = devices()?;
+    let matches = all
+        .iter()
+        .filter(|d| {
+            d.dev_type == "disk"
+                && (d.identity.stable_serial == id.stable_serial
+                    || (id.stable_wwn.is_some() && d.identity.stable_wwn == id.stable_wwn))
+        })
+        .count();
+    if matches != 1 {
+        return Err("stable target identity is missing or ambiguous".into());
+    }
+    let m = all
         .into_iter()
         .filter(|d| d.dev_type == "disk" && d.identity == *id)
         .collect::<Vec<_>>();
@@ -99,14 +123,31 @@ pub fn resolve_unique(id: &StableDiskIdentity) -> Result<PathBuf, String> {
 }
 pub fn verify_unused_target(path: &Path, state_dir: &Path) -> Result<(), String> {
     let target = observe_target(path)?;
-    if !target.mountpoints.is_empty() {
+    let all = devices()?;
+    let target_name = target
+        .path
+        .file_name()
+        .and_then(|x| x.to_str())
+        .ok_or("invalid target name")?;
+    let on_target =
+        |d: &ObservedDevice| d.path == target.path || d.pkname.as_deref() == Some(target_name);
+    if all
+        .iter()
+        .any(|d| on_target(d) && !d.mountpoints.is_empty())
+    {
         return Err("target ancestry is mounted".into());
     }
-    let swaps = std::fs::read_to_string("/proc/swaps").unwrap_or_default();
+    let swaps =
+        std::fs::read_to_string("/proc/swaps").map_err(|e| format!("cannot inspect swaps: {e}"))?;
     if swaps
         .lines()
         .skip(1)
-        .any(|l| l.split_whitespace().next() == Some(target.path.to_string_lossy().as_ref()))
+        .filter_map(|l| l.split_whitespace().next())
+        .any(|s| {
+            all.iter()
+                .find(|d| d.path == Path::new(s))
+                .is_some_and(&on_target)
+        })
     {
         return Err("target is swap".into());
     }
@@ -121,8 +162,63 @@ pub fn verify_unused_target(path: &Path, state_dir: &Path) -> Result<(), String>
         .output()
         .map_err(|e| e.to_string())?;
     let source = String::from_utf8_lossy(&out.stdout);
-    if source.trim() == target.path.to_string_lossy() {
+    let state_source = Path::new(source.trim())
+        .canonicalize()
+        .map_err(|_| "state filesystem source is not a resolvable block device")?;
+    if all
+        .iter()
+        .find(|d| d.path.canonicalize().ok().as_ref() == Some(&state_source))
+        .is_some_and(on_target)
+    {
         return Err("state is on target".into());
+    }
+    Ok(())
+}
+
+pub fn verify_recovery_identity(
+    state_dir: &Path,
+    expected: &RecoveryIdentity,
+) -> Result<(), String> {
+    let out = Command::new("findmnt")
+        .args(["-n", "-o", "UUID,SOURCE", "--target"])
+        .arg(state_dir)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err("cannot inspect recovery filesystem".into());
+    }
+    let text = String::from_utf8(out.stdout).map_err(|e| e.to_string())?;
+    let mut fields = text.split_whitespace();
+    if fields.next() != Some(expected.filesystem_uuid.as_str()) {
+        return Err("recovery filesystem UUID changed".into());
+    }
+    let source = Path::new(fields.next().ok_or("recovery source missing")?)
+        .canonicalize()
+        .map_err(|_| "recovery source is not a block device")?;
+    let all = devices()?;
+    let part = all
+        .iter()
+        .find(|d| d.path.canonicalize().ok().as_ref() == Some(&source))
+        .ok_or("recovery source missing from topology")?;
+    let disk = if part.dev_type == "disk" {
+        part
+    } else {
+        let parent = part
+            .pkname
+            .as_deref()
+            .ok_or("recovery backing disk missing")?;
+        all.iter()
+            .find(|d| {
+                d.dev_type == "disk"
+                    && (d.path.file_name().and_then(|x| x.to_str()) == Some(parent)
+                        || d.path.to_string_lossy() == parent)
+            })
+            .ok_or("recovery backing disk missing")?
+    };
+    if disk.identity.stable_serial != expected.backing_serial
+        || disk.identity.stable_wwn != expected.backing_wwn
+    {
+        return Err("recovery backing identity changed".into());
     }
     Ok(())
 }

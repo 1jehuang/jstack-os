@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 use super::model::hex;
@@ -10,6 +11,14 @@ const COMMIT: &[u8; 8] = b"JUBCMT1\0";
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum Event {
+    StageIntent {
+        artifact_sha256: String,
+        size_bytes: u64,
+    },
+    StageCommit {
+        artifact_sha256: String,
+        size_bytes: u64,
+    },
     Authorized,
     Intent {
         seq: u64,
@@ -54,10 +63,9 @@ pub struct Journal {
 impl Journal {
     pub fn open_existing(root: &Path, plan_hash: &str) -> Result<Self, String> {
         let path = root.join("journal").join(format!("{plan_hash}.wal"));
-        let meta = std::fs::symlink_metadata(&path).map_err(err)?;
-        if !meta.file_type().is_file() {
-            return Err("journal is not a regular file".into());
-        }
+        validate_directory(root)?;
+        validate_directory(&root.join("journal"))?;
+        validate_regular(&path)?;
         Ok(Self {
             path,
             plan_hash: plan_hash.into(),
@@ -65,15 +73,23 @@ impl Journal {
     }
     pub fn open(root: &Path, plan_hash: &str) -> Result<Self, String> {
         let dir = root.join("journal");
-        std::fs::create_dir_all(&dir).map_err(err)?;
+        validate_directory(root)?;
+        if !dir.exists() {
+            std::fs::create_dir(&dir).map_err(err)?;
+        }
+        validate_directory(&dir)?;
         sync_dir(&dir)?;
         let path = dir.join(format!("{plan_hash}.wal"));
-        let f = OpenOptions::new()
+        if path.exists() {
+            validate_regular(&path)?;
+        }
+        let f = nofollow_options()
             .create(true)
             .read(true)
             .append(true)
             .open(&path)
             .map_err(err)?;
+        validate_regular(&path)?;
         f.sync_all().map_err(err)?;
         sync_dir(&dir)?;
         Ok(Self {
@@ -83,6 +99,7 @@ impl Journal {
     }
     pub fn read(&self) -> Result<Vec<Record>, String> {
         let mut f = OpenOptions::new()
+            .custom_flags(O_NOFOLLOW)
             .read(true)
             .write(true)
             .open(&self.path)
@@ -94,6 +111,7 @@ impl Journal {
     }
     pub fn read_strict(&self) -> Result<Vec<Record>, String> {
         let mut f = OpenOptions::new()
+            .custom_flags(O_NOFOLLOW)
             .read(true)
             .open(&self.path)
             .map_err(err)?;
@@ -104,6 +122,7 @@ impl Journal {
     }
     pub fn append(&self, event: Event) -> Result<Record, String> {
         let mut f = OpenOptions::new()
+            .custom_flags(O_NOFOLLOW)
             .read(true)
             .append(true)
             .open(&self.path)
@@ -130,6 +149,26 @@ impl Journal {
         let _ = fs4::FileExt::unlock(&f);
         Ok(record)
     }
+}
+const O_NOFOLLOW: i32 = 0o400000;
+fn nofollow_options() -> OpenOptions {
+    let mut o = OpenOptions::new();
+    o.custom_flags(O_NOFOLLOW);
+    o
+}
+fn validate_directory(path: &Path) -> Result<(), String> {
+    let m = std::fs::symlink_metadata(path).map_err(err)?;
+    if !m.file_type().is_dir() || m.file_type().is_symlink() {
+        return Err("unsafe journal directory".into());
+    }
+    Ok(())
+}
+fn validate_regular(path: &Path) -> Result<(), String> {
+    let m = std::fs::symlink_metadata(path).map_err(err)?;
+    if !m.file_type().is_file() || m.file_type().is_symlink() || m.nlink() != 1 {
+        return Err("unsafe journal file".into());
+    }
+    Ok(())
 }
 fn parse(f: &mut File, truncate: bool, plan: &str) -> Result<Vec<Record>, String> {
     let len = f.metadata().map_err(err)?.len();

@@ -65,10 +65,20 @@ fn fixture() -> (
     };
     let pp = d.path().join("plan.json");
     std::fs::write(&pp, serde_json::to_vec(&p).unwrap()).unwrap();
-    Journal::open(d.path(), &hash)
-        .unwrap()
-        .append(Event::Authorized)
+    let journal = Journal::open(d.path(), &hash).unwrap();
+    journal
+        .append(Event::StageIntent {
+            artifact_sha256: p.body.artifact.sha256.clone(),
+            size_bytes: 8,
+        })
         .unwrap();
+    journal
+        .append(Event::StageCommit {
+            artifact_sha256: p.body.artifact.sha256.clone(),
+            size_bytes: 8,
+        })
+        .unwrap();
+    journal.append(Event::Authorized).unwrap();
     let target = d.path().join("target.raw");
     std::fs::write(&target, [0; 8]).unwrap();
     (d, pp, target, p)
@@ -148,4 +158,73 @@ fn plan_drift_and_committed_journal_corruption_stop() {
             .read_strict()
             .is_err()
     )
+}
+
+fn assert_replay_rejects(event: Event) {
+    let (d, p, _, plan) = fixture();
+    Journal::open(d.path(), &plan.plan_hash)
+        .unwrap()
+        .append(event)
+        .unwrap();
+    assert!(status(&p).is_err());
+}
+
+#[test]
+fn replay_rejects_advance_verify_complete_and_manual_recovery_out_of_order() {
+    assert_replay_rejects(Event::Advance { next_offset: 4 });
+    assert_replay_rejects(Event::Verified);
+    assert_replay_rejects(Event::Complete);
+    assert_replay_rejects(Event::ManualRecovery {
+        reason: "bad".into(),
+    });
+    assert_replay_rejects(Event::Authorized);
+}
+
+#[test]
+fn commit_before_advance_resume_appends_only_advance() {
+    let (d, p, t, plan) = fixture();
+    let j = Journal::open(d.path(), &plan.plan_hash).unwrap();
+    let c = &plan.body.artifact.chunks[0];
+    std::fs::write(&t, b"abcd\0\0\0\0").unwrap();
+    j.append(Event::Intent {
+        seq: 0,
+        offset: 0,
+        length: 4,
+        sha256: c.sha256.clone(),
+    })
+    .unwrap();
+    j.append(Event::Commit {
+        seq: 0,
+        offset: 0,
+        length: 4,
+        sha256: c.sha256.clone(),
+    })
+    .unwrap();
+    deploy_files(&p, &t, false).unwrap();
+    let records = j.read().unwrap();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| matches!(r.event, Event::Intent { seq: 0, .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| matches!(r.event, Event::Commit { seq: 0, .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn replay_rejects_records_after_complete_terminal() {
+    let (d, p, t, plan) = fixture();
+    deploy_files(&p, &t, false).unwrap();
+    Journal::open(d.path(), &plan.plan_hash)
+        .unwrap()
+        .append(Event::Verified)
+        .unwrap();
+    assert!(status(&p).is_err());
 }

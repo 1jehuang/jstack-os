@@ -32,19 +32,76 @@ pub fn status(plan_path: &Path) -> Result<Status, String> {
     replay(&p, &records)
 }
 fn replay(p: &UbuntuPlan, records: &[super::Record]) -> Result<Status, String> {
+    Ok(replay_state(p, records)?.status)
+}
+
+type ChunkTuple = (u64, u64, u64, String);
+struct ReplayState {
+    status: Status,
+    pending_intent: Option<ChunkTuple>,
+    committed_unadvanced: Option<ChunkTuple>,
+}
+
+fn replay_state(p: &UbuntuPlan, records: &[super::Record]) -> Result<ReplayState, String> {
     let mut next = 0;
-    let mut state = "authorized";
-    let mut pending = None;
+    let mut state = "discovered";
+    let mut pending: Option<ChunkTuple> = None;
+    let mut committed: Option<ChunkTuple> = None;
+    let mut staging = false;
+    let mut terminal = false;
     for r in records {
+        if terminal {
+            return Err("journal contains a record after a terminal state".into());
+        }
         match &r.event {
-            Event::Authorized => {}
+            Event::StageIntent {
+                artifact_sha256,
+                size_bytes,
+            } => {
+                if state != "discovered"
+                    || staging
+                    || artifact_sha256 != &p.body.artifact.sha256
+                    || *size_bytes != p.body.artifact.size_bytes
+                {
+                    return Err(
+                        "artifact staging intent is duplicate, out of order, or unbound".into(),
+                    );
+                }
+                staging = true;
+            }
+            Event::StageCommit {
+                artifact_sha256,
+                size_bytes,
+            } => {
+                if state != "discovered"
+                    || !staging
+                    || artifact_sha256 != &p.body.artifact.sha256
+                    || *size_bytes != p.body.artifact.size_bytes
+                {
+                    return Err("artifact staging commit has no exact intent".into());
+                }
+                staging = false;
+                state = "artifact_prepared";
+            }
+            Event::Authorized => {
+                if state != "artifact_prepared"
+                    || staging
+                    || pending.is_some()
+                    || committed.is_some()
+                {
+                    return Err("authorization is duplicate or out of order".into());
+                }
+                state = "authorized";
+            }
             Event::Intent {
                 seq,
                 offset,
                 length,
                 sha256,
             } => {
-                if pending.is_some()
+                if state != "authorized" && state != "deploying"
+                    || pending.is_some()
+                    || committed.is_some()
                     || *offset != next
                     || p.body
                         .artifact
@@ -64,25 +121,54 @@ fn replay(p: &UbuntuPlan, records: &[super::Record]) -> Result<Status, String> {
                 length,
                 sha256,
             } => {
-                if pending.take() != Some((*seq, *offset, *length, sha256.clone())) {
+                let exact = (*seq, *offset, *length, sha256.clone());
+                if pending.take() != Some(exact.clone()) || committed.is_some() {
                     return Err("commit has no exact intent".into());
                 }
+                committed = Some(exact);
             }
             Event::Advance { next_offset } => {
-                let c = p.body.artifact.chunks.iter().find(|c| c.offset == next);
-                if c.map(|c| c.offset + c.length) != Some(*next_offset) {
+                let Some((_, offset, length, _)) = committed.take() else {
+                    return Err("cursor advance has no immediately committed chunk".into());
+                };
+                if offset != next || offset.checked_add(length) != Some(*next_offset) {
                     return Err("cursor advance is not a committed chunk".into());
                 }
                 next = *next_offset
             }
-            Event::Verified => state = "verified",
-            Event::Complete => state = "complete",
-            Event::ManualRecovery { .. } => state = "manual_recovery",
+            Event::Verified => {
+                if state != "deploying"
+                    || pending.is_some()
+                    || committed.is_some()
+                    || next != p.body.artifact.size_bytes
+                {
+                    return Err("target verified before all chunks advanced".into());
+                }
+                state = "verified"
+            }
+            Event::Complete => {
+                if state != "verified" {
+                    return Err("completion lacks full verification".into());
+                }
+                state = "complete";
+                terminal = true;
+            }
+            Event::ManualRecovery { .. } => {
+                if state != "deploying" && state != "verified" {
+                    return Err("manual recovery recorded before target mutation".into());
+                }
+                state = "manual_recovery";
+                terminal = true;
+            }
         }
     }
-    Ok(Status {
-        state,
-        next_offset: next,
+    Ok(ReplayState {
+        status: Status {
+            state,
+            next_offset: next,
+        },
+        pending_intent: pending,
+        committed_unadvanced: committed,
     })
 }
 pub fn deploy_files(
@@ -92,20 +178,6 @@ pub fn deploy_files(
 ) -> Result<(), String> {
     let (p, cp) = read_plan(plan_path)?;
     let root = cp.parent().ok_or("plan has no parent")?;
-    let journal = Journal::open(root, &p.plan_hash)?;
-    let records = journal.read()?;
-    let initial = replay(&p, &records)?;
-    if initial.state == "complete" {
-        marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
-        return Ok(());
-    }
-    if production_checks {
-        super::verify_unused_target(target_path, root)?;
-        let resolved = super::resolve_unique(&p.body.target)?;
-        if resolved.canonicalize().map_err(err)? != target_path.canonicalize().map_err(err)? {
-            return Err("resolved device differs from plan identity".into());
-        }
-    }
     let lock_name = hex(&Sha256::digest(
         format!(
             "{}:{:?}",
@@ -126,16 +198,41 @@ pub fn deploy_files(
         .map_err(err)?;
     fs4::FileExt::try_lock(&lock)
         .map_err(|_| "target transaction already has a writer".to_string())?;
+    if production_checks {
+        super::verify_unused_target(target_path, root)?;
+        super::verify_recovery_identity(root, &p.body.recovery)?;
+        let resolved = super::resolve_unique(&p.body.target)?;
+        if resolved.canonicalize().map_err(err)? != target_path.canonicalize().map_err(err)? {
+            return Err("resolved device differs from plan identity".into());
+        }
+    }
+    let journal = Journal::open(root, &p.plan_hash)?;
+    let records = journal.read()?;
+    let initial = replay_state(&p, &records)?;
     let artifact_path = p.artifact_path(root);
     secure_regular(&artifact_path)?;
     let mut source = File::open(&artifact_path).map_err(err)?;
+    if hash_range(&source, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
+        return Err("retained artifact no longer matches the authorized plan".into());
+    }
+    if initial.status.state == "complete" {
+        marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
+        return Ok(());
+    }
+    if initial.status.state == "manual_recovery" {
+        return Err("transaction requires manual recovery".into());
+    }
+    if initial.status.state == "authorized" {
+        super::require_begin()?;
+    }
     let mut target = OpenOptions::new()
         .read(true)
         .write(true)
         .open(target_path)
         .map_err(err)?;
     let records = journal.read()?;
-    let mut s = replay(&p, &records)?;
+    let mut replayed = replay_state(&p, &records)?;
+    let mut s = replayed.status.clone();
     // Validate every durable commit before considering a pending intent.
     for r in &records {
         if let Event::Commit {
@@ -150,28 +247,18 @@ pub fn deploy_files(
             }
         }
     }
-    let pending = records
-        .iter()
-        .rev()
-        .find_map(|r| {
-            if let Event::Intent {
-                seq,
-                offset,
-                length,
-                sha256,
-            } = &r.event
-            {
-                Some((*seq, *offset, *length, sha256.clone()))
-            } else {
-                None
-            }
-        })
-        .filter(|x| {
-            !records
-                .iter()
-                .any(|r| matches!(&r.event,Event::Commit{seq,..} if *seq==x.0))
-        });
-    if let Some((seq, offset, length, digest)) = pending {
+    if let Some((_, offset, length, _)) = replayed.committed_unadvanced.take() {
+        journal.append(Event::Advance {
+            next_offset: offset + length,
+        })?;
+        marker(&format!(
+            "JSTK_UBUNTU_ADVANCE next_offset={}",
+            offset + length
+        ));
+        s.next_offset = offset + length;
+    }
+    if let Some((seq, offset, length, digest)) = replayed.pending_intent.take() {
+        super::require_chunk()?;
         write_or_admit(
             &journal,
             &mut source,
@@ -198,6 +285,7 @@ pub fn deploy_files(
         .enumerate()
         .skip_while(|(_, c)| c.offset < s.next_offset)
     {
+        super::require_chunk()?;
         if production_checks {
             super::verify_unused_target(target_path, root)?
         }
@@ -228,6 +316,7 @@ pub fn deploy_files(
             c.offset + c.length
         ));
     }
+    super::require_verify()?;
     if hash_range(&target, 0, p.body.artifact.size_bytes)? != p.body.artifact.sha256 {
         journal.append(Event::ManualRecovery {
             reason: "full target digest mismatch".into(),
@@ -235,6 +324,7 @@ pub fn deploy_files(
         return Err("full target digest mismatch".into());
     }
     journal.append(Event::Verified)?;
+    super::require_complete()?;
     journal.append(Event::Complete)?;
     marker(&format!("JSTK_UBUNTU_COMPLETE plan={}", p.plan_hash));
     Ok(())
