@@ -6,7 +6,8 @@
 #   WORK=/path ... to change scratch dir
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-WORK="${WORK:-${JCODE_SCRATCH_DIR:-/tmp}/jstack-ubuntu-e2e}"
+WORK="${WORK:-${JCODE_SCRATCH_DIR:-/tmp}/jstack-ubuntu-e2e-$(date +%s)-$$}"
+MIN_FREE_GIB="${MIN_FREE_GIB:-12}"
 UBUNTU_IMG_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 # Allow callers to override the firmware paths, while supporting both the
 # Arch/Fedora-style edk2 location and Ubuntu's OVMF package layout.
@@ -18,18 +19,31 @@ find_ovmf() {
 }
 OVMF_CODE="${OVMF_CODE:-$(find_ovmf /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/OVMF/OVMF_CODE_4M.fd)}"
 OVMF_VARS="${OVMF_VARS:-$(find_ovmf /usr/share/edk2/x64/OVMF_VARS.4m.fd /usr/share/OVMF/OVMF_VARS_4M.fd)}"
-MEM="${MEM:-4096}"; CPUS="${CPUS:-4}"
-mkdir -p "$WORK"; cd "$WORK"
 log() { printf '\033[1;35m[e2e]\033[0m %s\n' "$*"; }
+die() { log "REFUSED: $*" >&2; exit 1; }
+MEM="${MEM:-4096}"; CPUS="${CPUS:-4}"
+
+# A successful run has historically consumed about 8 GiB despite sparse qcow2
+# disks. Keep a margin for package churn and never overwrite a prior proof run.
+case "$MIN_FREE_GIB" in ''|*[!0-9]*) die "MIN_FREE_GIB must be a non-negative integer" ;; esac
+[ ! -e "$WORK" ] || die "WORK already exists; choose a new path (preserving $WORK)"
+work_parent=$(dirname "$WORK")
+mkdir -p "$work_parent"
+free_kib=$(df -Pk "$work_parent" | awk 'NR == 2 {print $4}')
+need_kib=$((MIN_FREE_GIB * 1024 * 1024))
+[ "$free_kib" -ge "$need_kib" ] || die "insufficient free space at $work_parent: need ${MIN_FREE_GIB} GiB, have $((free_kib / 1024 / 1024)) GiB"
+for tool in curl qemu-img qemu-system-x86_64 tar xorriso timeout; do
+  command -v "$tool" >/dev/null || die "required tool not found: $tool"
+done
+mkdir "$WORK"; cd "$WORK"
 
 # 1. Ubuntu base image
 [ -f noble.img ] || { log "downloading Ubuntu noble cloud image"; curl -fL --retry 3 -o noble.img "$UBUNTU_IMG_URL"; }
-rm -f ubuntu.qcow2 target.qcow2
 qemu-img create -q -f qcow2 -b noble.img -F qcow2 ubuntu.qcow2 20G
 qemu-img create -q -f qcow2 target.qcow2 24G
 
 # 2. Seed ISO: cloud-init + repo tarball
-rm -rf seed; mkdir -p seed
+mkdir seed
 tar -C "$REPO" --anchored --no-wildcards-match-slash --exclude=.git --exclude='./installer/*/target' --exclude='./packages/*/pkg' --exclude='./packages/*/src' \
     --exclude='*.pkg.tar.zst' --exclude='./packages/tofi-jstack/tofi' -czf seed/repo.tgz .
 cat > seed/meta-data <<'M'

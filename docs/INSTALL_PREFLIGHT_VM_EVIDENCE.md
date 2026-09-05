@@ -65,3 +65,49 @@ full-install harness.
 The successful serial log used for this evidence was
 `~/.jcode/scratch/jstack-preflight-vm-downloaduser/serial.log`. This is a local
 review artifact, not a checked-in or permanently retained test fixture.
+
+## Full-install follow-up at `556b2a9` (2026-09-04 PDT)
+
+The full public `install/vm/test-ubuntu.sh` workflow was attempted from
+`556b2a91e43796a9eec5c76520308eba8896bee0`. It was **resource-blocked before
+creating any artifact**. `df` reported 3.4 GiB available on `/home`; the real
+command refused with status 1 and:
+
+```text
+[e2e] REFUSED: insufficient free space at /home/jeremy/.jcode/scratch: need 12 GiB, have 3 GiB
+```
+
+The alternate `arch-linux-desktop` host could not be inspected or used: the
+non-interactive SSH connection timed out after 10 seconds. No host block device
+was passed through. Existing proof images were not removed. In particular, the
+older 8.1 GiB `jstack-ubuntu-e2e` directory and the three prior preflight proof
+directories were preserved. A full run has previously consumed about 8 GiB, so
+forcing it into 3.4 GiB would risk filling the host filesystem.
+
+The harness now defaults to a unique work directory, rejects every existing
+`WORK` path instead of deleting its qcow2 and seed contents, checks required
+tools, and requires 12 GiB free before downloading or creating run artifacts.
+`MIN_FREE_GIB` remains configurable for a deliberately provisioned environment.
+
+### Remaining acceptance map
+
+| Changed/public output | Evidence at `556b2a9` | Acceptance state |
+|---|---|---|
+| Full package preflight cache is consumed by real `pacstrap -c` | Source/unit linkage only; full VM stopped at disk-capacity guard | **Blocked, not accepted** |
+| Working mirrors are propagated into the installed target | Unit ordering check passes; no target created in this attempt | **Blocked, not accepted** |
+| Installed target boots under UEFI | Full VM could not start safely | **Blocked, not accepted** |
+| Created user has passwordless sudo | Full VM could not start safely | **Blocked, not accepted** |
+| Empty interactive password and EOF are refused before host preparation/wipe | `python -m unittest -v install.tests.test_install_safety` passes `test_empty_password_or_eof_prevents_host_prep_and_wipe` | Synthetic regression accepted; real VM prompt remains unobserved |
+| Failure after destructive work prints recovery warning without disclosing secrets | Both post-destructive warning unit cases pass | Synthetic regression accepted; real destructive fault remains unobserved |
+| Failed real package preflight leaves target byte-identical and prints no post-destruction warning | Prior real fault VM evidence and retained hashes/log above | Real fault-path accepted for the earlier installer hash; not a full success-path substitute |
+| Full harness preserves prior run directories and refuses unsafe capacity | Direct guard execution returned status 1 before creating the requested unique work path; shell syntax check passes | Accepted for the harness guard |
+
+Commands completed on this revision were `bash -n install/vm/test-ubuntu.sh
+install/jstack-install.sh` and all six tests in
+`install.tests.test_install_safety`. These checks do not turn the blocked full
+install into acceptance.
+
+The broader transactional installer crash-recovery architecture described under
+`docs/installer/` remains unimplemented. Neither the earlier fault VM nor a
+future legacy-installer happy-path boot proves that architecture or makes this
+legacy destructive script transaction-safe.
