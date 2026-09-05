@@ -55,7 +55,7 @@ def load(path: Path) -> dict[str,Any]:
  m=json.loads(path.read_text())
  if m.get("schema") != SCHEMA: die("wrong manifest schema")
  allowed={"schema","source_revision","memory_mib","cpus","binary","graph","host_base","target_base","backing_files","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"}
- if set(m) != allowed or m.get("memory_mib") != 4096 or not isinstance(m.get("cpus"),int) or not 1 <= m["cpus"] <= 8: die("invalid or extended manifest")
+ if set(m) != allowed or m.get("memory_mib") not in (2048, 4096) or not isinstance(m.get("cpus"),int) or not 1 <= m["cpus"] <= 8: die("invalid or extended manifest")
  for k in ("binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"):
   p=regular(Path(m[k]["path"])); expected=m[k].get("sha256","")
   if not HEX.fullmatch(expected) or digest(p)!=expected: die(f"{k} digest changed")
@@ -70,7 +70,7 @@ def prepare(a):
  w=safe_work(a.work,False)
  if w.exists(): die("work directory exists")
  w.mkdir(mode=0o700)
- m={"schema":SCHEMA,"source_revision":a.source_revision,"memory_mib":4096,"cpus":a.cpus,
+ m={"schema":SCHEMA,"source_revision":a.source_revision,"memory_mib":a.memory_mib,"cpus":a.cpus,
     "binary":bound(a.binary),"graph":bound(a.graph),"host_base":bound(a.host_base),
     "target_base":bound(a.target_base),"ovmf_code":bound(a.ovmf_code),"ovmf_vars":bound(a.ovmf_vars),
     "backing_files":[bound(p) for p in a.backing_file],
@@ -204,6 +204,7 @@ def main():
  p=s.add_parser("prepare")
  for n in ("work","binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"):p.add_argument("--"+n.replace("_","-"),dest=n,type=Path,required=True)
  p.add_argument("--backing-file",type=Path,action="append",default=[])
+ p.add_argument("--memory-mib",type=int,choices=(2048,4096),default=4096)
  p.add_argument("--source-revision",required=True);p.add_argument("--cpus",type=int,default=4);p.set_defaults(fn=prepare)
  p=s.add_parser("start");p.add_argument("--manifest",type=Path,required=True);p.add_argument("--case-id",required=True);p.add_argument("--phase",choices=("cut","witness","resume"),required=True);p.add_argument("--qemu-img",default="qemu-img");p.set_defaults(fn=start)
  p=s.add_parser("cut");p.add_argument("--run",type=Path,required=True);p.add_argument("--boundary",choices=MARKERS,required=True);p.add_argument("--timeout",type=float,default=600);p.set_defaults(fn=cut)

@@ -8,11 +8,17 @@ class HarnessTests(unittest.TestCase):
   for n in ("binary","graph","host_base","target_base","ovmf_code","ovmf_vars","cut_seed","witness_seed","resume_seed"):
    p=self.d/n;p.write_bytes(n.encode());self.files[n]=p
  def tearDown(self):self.t.cleanup()
- def prepare(self,backing=None):
+ def prepare(self,backing=None,memory=None):
   w=self.d/"work";args=[sys.executable,str(HARNESS),"prepare","--work",str(w),"--source-revision","dce4b67"]
   for n,p in self.files.items():args += ["--"+n.replace("_","-"),str(p)]
   if backing:args += ["--backing-file",str(backing)]
+  if memory is not None:args += ["--memory-mib",str(memory)]
   subprocess.run(args,check=True,capture_output=True);return w
+ def test_low_memory_is_explicit_and_manifest_bound(self):
+  w=self.prepare(memory=2048);m=h.load(w/"manifest.json")
+  self.assertEqual(m["memory_mib"],2048)
+  args=h.qemu_argv(m,h.case_paths(w,"low-memory"),"cut",w/"serial.log")
+  self.assertEqual(args[args.index("-m")+1],"2048")
  def test_discovered_prepare_binds_4096_and_all_inputs(self):
   w=self.prepare();m=json.loads((w/"manifest.json").read_text());self.assertEqual(m["memory_mib"],4096);self.assertEqual(m["schema"],h.SCHEMA)
  def test_prepare_never_overwrites(self):
