@@ -54,6 +54,11 @@ mod linux {
             Some("deploy") | Some("resume") => {
                 let p = flag(&a, "--plan")?;
                 let (plan, canonical_plan) = read_plan(Path::new(&p))?;
+                verify_host_scope(
+                    canonical_plan
+                        .parent()
+                        .ok_or("plan has no state directory")?,
+                )?;
                 let target = resolve_unique(&plan.body.target)?;
                 let durable_executable = canonical_plan
                     .parent()
@@ -96,16 +101,60 @@ mod linux {
         if s.exists() {
             return validate_init(d, s);
         }
-        let parent = nearest(s)?;
+        let parent = secure_new_state_parent(s)?;
         safe_parent(&parent)?;
         Ok(())
     }
-    fn nearest(p: &Path) -> Result<PathBuf, String> {
-        let mut x = p.to_path_buf();
-        while !x.exists() {
-            x = x.parent().ok_or("no existing state parent")?.to_path_buf()
+    fn secure_new_state_parent(state: &Path) -> Result<PathBuf, String> {
+        if !state.is_absolute() {
+            return Err("state path must be absolute".into());
         }
-        x.canonicalize().map_err(err)
+        let parent = state.parent().ok_or("state path needs a parent")?;
+        if !parent.exists() {
+            return Err("state path must be exactly one new child of an existing parent".into());
+        }
+        let mut current = PathBuf::from("/");
+        for component in parent.components() {
+            match component {
+                std::path::Component::RootDir => continue,
+                std::path::Component::Normal(name) => current.push(name),
+                _ => return Err("state path contains unsupported components".into()),
+            }
+            let m = std::fs::symlink_metadata(&current).map_err(err)?;
+            if !m.file_type().is_dir()
+                || m.file_type().is_symlink()
+                || m.uid() != 0
+                || m.mode() & 0o022 != 0
+            {
+                return Err("state ancestor is unsafe".into());
+            }
+        }
+        if state.file_name().is_none() {
+            return Err("state path lacks dedicated child name".into());
+        }
+        Ok(parent.to_path_buf())
+    }
+    fn secure_existing_components(path: &Path) -> Result<(), String> {
+        if !path.is_absolute() {
+            return Err("state path must be absolute".into());
+        }
+        let mut current = PathBuf::from("/");
+        for c in path.components() {
+            match c {
+                std::path::Component::RootDir => continue,
+                std::path::Component::Normal(n) => current.push(n),
+                _ => return Err("state path contains unsupported components".into()),
+            }
+            let m = std::fs::symlink_metadata(&current).map_err(err)?;
+            if !m.file_type().is_dir()
+                || m.file_type().is_symlink()
+                || m.uid() != 0
+                || m.mode() & 0o022 != 0
+            {
+                return Err("state path has unsafe directory component".into());
+            }
+        }
+        Ok(())
     }
     fn safe_parent(p: &Path) -> Result<(), String> {
         let m = std::fs::symlink_metadata(p).map_err(err)?;
@@ -122,15 +171,50 @@ mod linux {
         if !Path::new("/sys/firmware/efi").is_dir() {
             return Err("recovery host must be booted via UEFI".into());
         }
-        let parent = nearest(state)?;
+        let parent = if state.exists() {
+            state.to_path_buf()
+        } else {
+            secure_new_state_parent(state)?
+        };
         let out = Command::new("findmnt")
-            .args(["-n", "-o", "FSTYPE", "--target"])
+            .args(["-n", "-o", "FSTYPE,SOURCE", "--target"])
             .arg(parent)
             .output()
             .map_err(err)?;
-        let fs = String::from_utf8(out.stdout).map_err(err)?;
-        if !out.status.success() || matches!(fs.trim(), "tmpfs" | "ramfs" | "overlay") {
+        let output = String::from_utf8(out.stdout).map_err(err)?;
+        let mut fields = output.split_whitespace();
+        let fs = fields.next().ok_or("recovery filesystem type missing")?;
+        let source = fields.next().ok_or("recovery filesystem source missing")?;
+        if !out.status.success() || !matches!(fs, "ext4" | "xfs" | "btrfs") {
             return Err("recovery state must be on persistent storage".into());
+        }
+        let source = Path::new(source)
+            .canonicalize()
+            .map_err(|_| "recovery source is not a local block device")?;
+        let all = devices()?;
+        let node = all
+            .iter()
+            .find(|d| d.path.canonicalize().ok().as_ref() == Some(&source))
+            .ok_or("recovery source absent from block topology")?;
+        let disk = if node.dev_type == "disk" {
+            node
+        } else if node.dev_type == "part" {
+            let p = node
+                .pkname
+                .as_deref()
+                .ok_or("partition backing disk missing")?;
+            all.iter()
+                .find(|d| {
+                    d.dev_type == "disk"
+                        && (d.path.to_string_lossy() == p
+                            || d.path.file_name().and_then(|n| n.to_str()) == Some(p))
+                })
+                .ok_or("partition does not have a simple whole-disk parent")?
+        } else {
+            return Err("complex recovery storage topology is unsupported".into());
+        };
+        if disk.identity.stable_serial.is_empty() {
+            return Err("recovery disk lacks stable identity".into());
         }
         let boot = Command::new("findmnt")
             .args(["-n", "--target", "/boot"])
@@ -147,8 +231,8 @@ mod linux {
         if s.exists() {
             return validate_init(d, s);
         }
-        let parent = s.parent().ok_or("state root needs parent")?;
-        safe_parent(&nearest(parent)?)?;
+        let parent = secure_new_state_parent(s)?;
+        safe_parent(&parent)?;
         std::fs::create_dir(s).map_err(err)?;
         std::fs::set_permissions(s, std::fs::Permissions::from_mode(0o700)).map_err(err)?;
         std::fs::create_dir(s.join("artifact-build")).map_err(err)?;
@@ -176,13 +260,24 @@ mod linux {
         Ok(())
     }
     fn validate_init(d: &Path, s: &Path) -> Result<(), String> {
+        secure_existing_components(s)?;
         let m = std::fs::symlink_metadata(s).map_err(err)?;
         if !m.is_dir() || m.file_type().is_symlink() || m.uid() != 0 || m.mode() & 0o077 != 0 {
             return Err("unsafe initialized state root".into());
         }
+        let evidence_path = s.join("initialized.json");
+        secure_input_file(&evidence_path, "initialization evidence")?;
+        let build = s.join("artifact-build");
+        let bm = std::fs::symlink_metadata(&build).map_err(err)?;
+        if !bm.file_type().is_dir()
+            || bm.file_type().is_symlink()
+            || bm.uid() != 0
+            || bm.mode() & 0o077 != 0
+        {
+            return Err("unsafe artifact-build directory".into());
+        }
         let evidence: InitEvidence =
-            serde_json::from_reader(File::open(s.join("initialized.json")).map_err(err)?)
-                .map_err(err)?;
+            serde_json::from_reader(File::open(evidence_path).map_err(err)?).map_err(err)?;
         if evidence.schema != "jstack-ubuntu-state-v1"
             || observe_target(d)?.identity != evidence.target
         {
