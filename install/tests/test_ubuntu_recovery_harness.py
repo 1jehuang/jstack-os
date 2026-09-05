@@ -23,6 +23,20 @@ class HarnessTests(unittest.TestCase):
   with self.assertRaises(SystemExit):h.load(w/"manifest.json")
  def test_timestamped_real_marker_is_matched(self):
   self.assertRegex("[  44.2] JSTK_UBUNTU_COMMIT seq=1 offset=0 length=64",h.MARKERS["commit"])
+ def test_case_id_containment_and_comma_paths_fail_closed(self):
+  for bad in ("../escape","/absolute","a/b",""):
+   with self.assertRaises(SystemExit):h.case_paths(self.d,bad)
+  comma=self.d/"bad,name";comma.write_bytes(b"x")
+  with self.assertRaises(SystemExit):h.regular(comma)
+ def test_later_phase_symlink_is_not_regular(self):
+  real=self.d/"real";real.write_bytes(b"x");link=self.d/"link";link.symlink_to(real)
+  with self.assertRaises(SystemExit):h.regular(link)
+ def test_process_identity_rejects_non_qemu_pid(self):
+  with self.assertRaises(SystemExit):h.proc_identity(subprocess.os.getpid())
+ def test_nonzero_witness_exit_is_refused(self):
+  r=self.d/"case";r.mkdir();(r/"witness.exit.json").write_text('{"returncode":1}')
+  a=type("A",(),{"run":r,"case_id":"case"})()
+  with self.assertRaises(SystemExit):h.witness(a)
  def test_fixed_qemu_is_offline_and_uses_only_bound_disks(self):
   w=self.prepare();m=h.load(w/"manifest.json");p=h.case_paths(w,"c")
   for k in ("host","target","vars"):p[k].parent.mkdir(parents=True,exist_ok=True);p[k].touch(exist_ok=True)

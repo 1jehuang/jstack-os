@@ -18,6 +18,7 @@ MARKERS = {
  "advance": r"JSTK_UBUNTU_ADVANCE\s", "complete": r"JSTK_UBUNTU_COMPLETE\s",
 }
 HEX = re.compile(r"^[0-9a-f]{64}$")
+CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 def die(s: str) -> NoReturn: raise SystemExit("REFUSED: " + s)
 def digest(p: Path) -> str:
@@ -28,7 +29,7 @@ def digest(p: Path) -> str:
 def regular(p: Path, suffix: str|None=None) -> Path:
  try: raw=p.lstat()
  except FileNotFoundError: die(f"missing input {p}")
- if p.is_symlink() or not p.is_absolute(): die(f"unsafe input {p}")
+ if p.is_symlink() or not p.is_absolute() or "," in str(p): die(f"unsafe input {p}")
  p=p.resolve(); st=p.stat()
  if not p.is_file() or st.st_nlink != 1 or (suffix and p.suffix != suffix): die(f"unsafe input {p}")
  return p
@@ -60,6 +61,7 @@ def overlay(base: Path,out: Path,qemu_img: str):
  if out.exists(): die("overlay exists")
  subprocess.run([qemu_img,"create","-q","-f","qcow2","-F","qcow2","-b",str(base),str(out)],check=True)
 def case_paths(w:Path,c:str)->dict[str,Path]:
+ if not CASE_ID.fullmatch(c): die("invalid case id")
  r=w/"cases"/c
  return {"run":r,"host":r/"host.qcow2","target":r/"target.qcow2","vars":r/"vars.fd"}
 def qemu_argv(m,p,phase,serial,qmp):
@@ -81,22 +83,30 @@ def start(a):
   overlay(Path(m["host_base"]["path"]),p["host"],a.qemu_img);overlay(Path(m["target_base"]["path"]),p["target"],a.qemu_img)
   shutil.copyfile(m["ovmf_vars"]["path"],p["vars"])
  else:
-  for k in ("host","target","vars"):
-   if not p[k].is_file(): die("case overlay missing")
+  for k in ("host","target","vars"): regular(p[k])
  serial=p["run"]/(a.phase+".serial.log"); serial.open("x").close()
  cmd=[sys.executable,str(Path(__file__).resolve()),"_supervise","--manifest",str(mp),"--case-id",a.case_id,"--phase",a.phase]
  proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
  put(p["run"]/(a.phase+".supervisor.json"),{"pid":proc.pid,"started":int(time.time())});print(proc.pid)
+def proc_identity(pid:int)->dict[str,Any]:
+ try:
+  stat=Path(f"/proc/{pid}/stat").read_text();cmd=Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+ except (FileNotFoundError,PermissionError): die("QEMU process is absent or unreadable")
+ if not cmd or Path(cmd[0].decode(errors="replace")).name != "qemu-system-x86_64": die("PID is not the supervised QEMU")
+ return {"starttime":stat.rsplit(")",1)[1].split()[19],"cmdline_sha256":hashlib.sha256(b"\0".join(cmd)).hexdigest()}
 def supervise(a):
  mp=a.manifest.resolve();m=load(mp);w=mp.parent;p=case_paths(w,a.case_id);phase=a.phase
  lock=(w/"campaign.lock").open("a+");fcntl.flock(lock,fcntl.LOCK_EX)
  serial=p["run"]/(phase+".serial.log");qmp=p["run"]/(phase+".qmp.sock")
  log=(p["run"]/(phase+".qemu.log")).open("xb")
  proc=subprocess.Popen(qemu_argv(m,p,phase,serial,qmp),stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
- put(p["run"]/(phase+".process.json"),{"pid":proc.pid,"argv":qemu_argv(m,p,phase,serial,qmp)})
+ identity=proc_identity(proc.pid)
+ put(p["run"]/(phase+".process.json"),{"pid":proc.pid,"identity":identity,"argv":qemu_argv(m,p,phase,serial,qmp)})
  rc=proc.wait();put(p["run"]/(phase+".exit.json"),{"returncode":rc,"finished":int(time.time())})
 def cut(a):
- r=a.run.resolve();d=json.loads((r/"cut.process.json").read_text());pid=int(d["pid"]);pat=re.compile(MARKERS[a.boundary]);end=time.monotonic()+a.timeout
+ r=a.run.resolve();d=json.loads((r/"cut.process.json").read_text());pid=int(d["pid"])
+ if proc_identity(pid) != d.get("identity"): die("stale or substituted QEMU PID")
+ pat=re.compile(MARKERS[a.boundary]);end=time.monotonic()+a.timeout
  while time.monotonic()<end:
   text=(r/"cut.serial.log").read_text(errors="replace")
   hits=[x for x in text.splitlines() if pat.search(x)]
@@ -109,6 +119,7 @@ def cut(a):
 def witness(a):
  r=a.run.resolve(); exitp=r/"witness.exit.json"
  if not exitp.exists(): die("witness VM has not exited")
+ if json.loads(exitp.read_text()).get("returncode") != 0: die("witness VM did not power off cleanly")
  lines=(r/"witness.serial.log").read_text(errors="replace").splitlines(); frames=[]
  for x in lines:
   if PREFIX in x: frames.append(json.loads(x.split(PREFIX,1)[1]))
@@ -129,6 +140,7 @@ def witness(a):
  f["actual_boundary"]=actual;f["intended_boundary"]=intended;f["intended_cut_matched"]=(exact.get(intended)==actual)
  st=(r/"target.qcow2").stat();f["target_qcow_host"]={"size":st.st_size,"mtime_ns":st.st_mtime_ns,"blocks":st.st_blocks}
  put(r/"classified.json",f);print(json.dumps(f,sort_keys=True))
+ if not f["intended_cut_matched"]: raise SystemExit(2)
 def main():
  ap=argparse.ArgumentParser();s=ap.add_subparsers(dest="cmd",required=True)
  p=s.add_parser("prepare")
