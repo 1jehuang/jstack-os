@@ -79,7 +79,9 @@ changing anything under `install/` or `packages/`.
 
 ## Design rules
 
-1. Nothing is hand-copied onto the ISO. Everything ships inside a package.
+1. Installed desktop defaults ship inside packages. The versioned `iso/` profile
+   generates live-only installer, trust-marker, launcher, and help assets. The
+   offline installer removes those live-only assets from the installed system.
 2. User-facing defaults live in `/etc/skel`, shared assets in
    `/usr/share/jstack`, helper scripts in `/usr/lib/jstack/scripts`.
 3. Every migrated config records a decision in `docs/TRIAGE.md`

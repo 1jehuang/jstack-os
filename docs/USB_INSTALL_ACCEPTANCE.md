@@ -6,6 +6,8 @@ The target workflow is one USB that boots a live Niri desktop and installs
 Jstack OS onto an OS-less computer's blank internal disk, without Ubuntu or
 package downloads. The installer is `iso/jstack-install-live.py`, not the
 separate Ubuntu recovery controller. Read [the installation instructions](../iso/INSTALL.md).
+The [requirement-to-evidence map](USB_REQUIREMENTS_EVIDENCE.md) records the
+interpretation audit, observed public interfaces, and physical-delivery boundary.
 
 **Status: PASS, 2026-09-06 10:45:42 UTC.** The complete clean-image run took
 331.75 seconds and passed all six refusal checks, offline installation,
@@ -126,6 +128,38 @@ preserved under `verification/guided/` in the Downloads bundle. This strengthens
 the documented manual workflow but does not change the physical-USB status:
 the inspected VFENG stick still contains ordinary Arch until separately
 authorized reflashing and readback verification occur.
+
+## Graphical launcher acceptance
+
+A separate UI-only run passed on **2026-09-06 at 10:59:32 UTC**, using the same
+unchanged ISO, 2 GiB RAM, two virtual CPUs, no NIC, and a new disposable 40 GiB
+disk. Actual keyboard input opened **Alt+Space** and selected both tofi entries:
+
+- **Jstack USB installation instructions** opened Foot running `less` on the
+  packaged instructions. The native screenshot visibly shows the installation
+  heading, blank-disk warning, offline operation, and Dell F12/UEFI instructions.
+- **Install Jstack OS (blank disk)** opened Foot running `sudo jstack-install-live`
+  with no installer arguments. After source checks completed, the native image
+  visibly showed the disk inventory and `Explicit whole blank internal disk path
+  (empty cancels):` prompt. Focused-window and descendant-process observations
+  corroborated both actual applications, not substitute proof terminals.
+- Help was closed with `q`; the installer was cancelled with an empty disk
+  selection. No target path or confirmation was entered. The installer exited,
+  the entire target hash was unchanged, and `qemu-img check` found no errors.
+  Normal poweroff took 2.786 seconds with a poweroff broadcast and QEMU exit 0.
+
+Both application screenshots were visually inspected. A previous 10:55 attempt
+reported automated success but captured the installer before its prompt appeared.
+That attempt was rejected as visual acceptance and is retained separately. The
+retry waited for the actual process to read its terminal input before capture.
+A screenshot notification obscures part of the inventory in the accepted image,
+but not the source status or the disk-selection prompt.
+
+Original accepted artifacts are at
+`/home/jeremy/.jcode/scratch/jstack-menu-proof-20260906-1058`, with the driver,
+events, four native menu/application screenshots, process evidence, hashes, and
+logs preserved under `verification/menu/` in the Downloads bundle. This verifies
+the documented graphical entry points, not a third complete installation.
 
 ## Acceptance coverage
 
