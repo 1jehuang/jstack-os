@@ -9,13 +9,19 @@ separate Ubuntu recovery controller. Read [the installation instructions](../iso
 The [requirement-to-evidence map](USB_REQUIREMENTS_EVIDENCE.md) records the
 interpretation audit, observed public interfaces, and physical-delivery boundary.
 
-**Status: PASS, 2026-09-06 10:45:42 UTC.** The complete clean-image run took
+**VM software acceptance: PASS, 2026-09-06 10:45:42 UTC.** The complete clean-image run took
 331.75 seconds and passed all six refusal checks, offline installation,
 independent installed boot, desktop rendering, installed policy checks, and
 normal shutdown. Both final desktop screenshots were visually inspected.
 Earlier incomplete runs found test-harness issues, five orphan network sockets,
 and a stale kernel partition table. Those failures were fixed, not counted as
 acceptance passes. The final run used the image identified below.
+
+**Physical flash/readback verification: PASS, 2026-09-06.** After explicit user
+authorization, the intended VFENG USB was written and two cache-invalidated
+readbacks matched the accepted image. It was then safely powered off. This is
+physical-media verification, not a physical USB or Dell boot test. Details and
+the preserved initial post-write timeout are recorded below.
 
 A focused disposable-VM reproduction recorded `sgdisk` returning zero while
 warning that the kernel still used the old partition table in all six trials.
@@ -125,9 +131,9 @@ Original evidence is at
 `/home/jeremy/.jcode/scratch/jstack-guided-install-proof-20260906-1048`.
 Its scratch driver, results, prompt events, screenshots, and logs are also
 preserved under `verification/guided/` in the Downloads bundle. This strengthens
-the documented manual workflow but does not change the physical-USB status:
-the inspected VFENG stick still contains ordinary Arch until separately
-authorized reflashing and readback verification occur.
+the documented manual workflow. At the time of that VM run, the physical VFENG
+still contained ordinary Arch. Its later authorized flash and readback
+verification are separate evidence, described below.
 
 ## Graphical launcher acceptance
 
@@ -161,6 +167,45 @@ events, four native menu/application screenshots, process evidence, hashes, and
 logs preserved under `verification/menu/` in the Downloads bundle. This verifies
 the documented graphical entry points, not a third complete installation.
 
+## Physical USB flash and verification
+
+The user explicitly authorized flashing on **2026-09-06 at 11:01:29 UTC**. The
+selected device was the 58.6 GiB VFENG, serial `FC12093679273`, resolved through
+`/dev/disk/by-id/usb-346d_VFENG_FC12093679273-0:0`. Its original `ARCH_202609`
+contents were replaced with the exact accepted ISO. Post-write inventory showed
+`JSTACK_LIVE` on the disk and ISO partition, with the image's expected
+`ARCHISO_EFI` label on its EFI partition.
+
+- Exactly **2731687936 bytes** were written. The streamed SHA256 matched
+  `1b7d398a9624f911b9bb0d141ca638eba3deb986cc6a4ea5325e302a66d5a428`.
+- The first flushed/cache-invalidated readback and a second independent
+  cache-invalidated physical readback both matched that SHA256. Each covered
+  the **complete image extent**, not a sample and not the entire 58.6 GiB USB.
+- Read-only inspection of the actual USB found the `JSTACK_LIVE` volume and BIOS
+  plus UEFI El Torito boot entries. This verifies catalog contents, not that
+  either firmware boot path has been exercised on physical hardware.
+- `JSTACK-INSTALL.md` was extracted from the physical USB and its SHA256 matched
+  `f49ce59d3eef7d4b0d36281f22c5d2c9e9488f81ff426b513b0b3f8f97f557d9`.
+- Safe device poweroff completed with exit 0 and the stable device link absent
+  afterward. The USB was ready to unplug; actual unplugging or Dell boot is not
+  inferred from that check.
+
+The original writer did **not** exit successfully: it completed the write,
+flush/cache invalidation, and first matching readback, then timed out in
+`udevadm settle --timeout=15` while its exclusive claim remained held. The
+original `failure.json` is retained. Once the claim closed, settling succeeded.
+A separate **read-only** follow-up performed the second readback and content
+checks, with no rewrite. Earlier content-tool invocation/argument failures are
+also retained alongside the successful catalog inspection and help extraction.
+These diagnostic failures are not silently relabeled as successful runs.
+
+The final `result.json`, original `intent.json` and `failure.json`,
+`safe-removal.json`, extracted help, and content-inspection logs are retained
+under `verification/physical-usb/` in the Downloads bundle. Original JSON/help
+artifacts are at
+`/home/jeremy/.jcode/scratch/jstack-physical-usb-20260906-1102`, with content logs
+retained alongside that directory.
+
 ## Acceptance coverage
 
 - ISO boots from emulated USB into Niri, with a focused real terminal visible.
@@ -176,6 +221,8 @@ the documented graphical entry points, not a third complete installation.
 - Installed Niri runs and renders a focused real terminal. Both desktop PNGs are
   validated, transferred with matching guest/host SHA256, and visually inspected.
 - Both VM phases power off normally, and `qemu-img check` reports no errors.
+- The separately authorized physical USB flash has two matching complete
+  image-length readbacks, verified boot-catalog/help contents, and safe poweroff.
 
 `egl-headless` can return QMP `screendump: no surface` while the guest renders
 normally. The harness retains that diagnostic and requires a fresh native Niri
@@ -185,7 +232,8 @@ pixel decompression, and non-flat content. Capture failures are not skipped.
 
 ## Explicit limits
 
-This is VM acceptance, not a physical Dell or flashed-USB boot test. It does not
+This combines VM software acceptance and physical-media write/readback
+verification, not a physical Dell or flashed-USB boot test. It does not
 prove Wi-Fi, audio, suspend, every GPU, firmware boot enumeration, BIOS
 installation, or enabled Secure Boot. The no-NIC test proves installation needs
 no network, not that DNS or connectivity works. Earlier private-overlay live
@@ -197,5 +245,7 @@ upgrade, disk encryption, rollback, or resumable power-loss recovery. Installed
 policy intentionally enables tty1 autologin and passwordless sudo. These limits
 are also in the on-USB instructions.
 
-No physical USB or internal disk was written during this verification. Flashing
-the selected USB is a separate destructive step requiring explicit confirmation.
+Only the explicitly authorized VFENG USB was physically flashed. No physical
+internal disk was written, and the intended Dell has not been booted or installed
+by this verification. Authorization for this USB write does not authorize erasing
+another device or bypassing the installer's target confirmation.

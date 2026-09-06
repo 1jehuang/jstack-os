@@ -9,11 +9,36 @@
 | Older Jstack image, or image built with a private overlay | Niri live desktop | Not an installation source. Rebuild a clean current image |
 | Persistent Ubuntu recovery system on its own disk | The recovery host's desktop or console | Separate transactional installer deploys Jstack to another unused whole disk |
 
-The USB inspected on 2026-09-06 contained the Arch 2026.09.01 install medium,
+The USB initially inspected on 2026-09-06 contained the Arch 2026.09.01 install medium,
 label `ARCH_202609`, with BIOS and UEFI boot entries. Its package manifest and
 live filesystem contained Archinstall, but no Niri or Jstack installer. This was
 a read-only content inspection, not a physical boot test or proof about other
-USB drives. Updating this repository does not change that USB.
+USB drives. It describes the historical state before the separately authorized
+flash below. Updating the repository alone did not change the USB.
+
+## Verified physical USB, 2026-09-06
+
+After explicit user approval at 11:01:29 UTC, the intended 58.6 GiB VFENG USB,
+serial `FC12093679273`, was flashed with the accepted clean Jstack image. It now
+contains `JSTACK_LIVE`. Exactly `2731687936` image bytes were written, and the
+write-stream hash plus **two cache-invalidated physical readbacks of the full
+image extent** matched SHA256
+`1b7d398a9624f911b9bb0d141ca638eba3deb986cc6a4ea5325e302a66d5a428`.
+These are image-length checks, not hashes of the USB's entire capacity.
+
+The actual USB's boot catalog contains BIOS and UEFI entries, and its extracted
+`JSTACK-INSTALL.md` matches the accepted instructions. Safe device poweroff
+completed successfully, leaving it ready to unplug. The initial writer's
+post-readback udev-settle timeout is retained, and the successful follow-up was
+read-only, not a second flash. Evidence is under `verification/physical-usb/` in
+`/home/jeremy/Downloads/JstackOS-2026-09-06/`; see the
+[physical verification details](USB_INSTALL_ACCEPTANCE.md#physical-usb-flash-and-verification).
+
+The same image passed live and installed Niri acceptance in VMs. The physical
+stick has **not** yet been booted on the intended Dell. Boot-catalog presence and
+matching readbacks do not prove that Dell's firmware, graphics, Wi-Fi, audio, or
+suspend behavior. Permanent installation still requires reviewing and explicitly
+confirming the Dell's own blank internal disk.
 
 ## OS-less Dell: boot and install from one USB
 

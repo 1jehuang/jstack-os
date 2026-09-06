@@ -6,13 +6,14 @@ The requested end state is a **physical USB** that boots the user's OS-less Dell
 into Jstack OS and can install Jstack permanently on that Dell, with instructions.
 The repository is `/home/jeremy/jstack-os`, confirmed by `git rev-parse`.
 
-The new image satisfies the software workflow in booted virtual machines. The
-physical USB does **not yet** satisfy the requested end state: read-only device
-inspection still reports `ARCH_202609`, not the new Jstack image. It is the
-58.6 GiB VFENG, serial `FC12093679273`. Erase permission was requested but has not
-been explicitly granted. No physical write, physical USB boot, or target-Dell
-boot has been performed. Generic automatic continuation messages are not treated
-as authorization to destroy the USB's existing contents.
+The new image satisfies the software workflow in booted virtual machines. After
+explicit user approval on 2026-09-06 at 11:01:29 UTC, the 58.6 GiB VFENG USB,
+serial `FC12093679273`, was flashed and now reports `JSTACK_LIVE`. The write hash
+and two cache-invalidated physical readbacks of all `2731687936` image bytes
+match the accepted ISO. Physical deployment is verified, but booting this stick
+on the intended Dell and installing onto that Dell remain untested. The initial
+`ARCH_202609` inspection is historical, not the stick's current state. Generic
+automatic continuation messages were not treated as erase authorization.
 
 ## Interpretation audit
 
@@ -20,9 +21,10 @@ as authorization to destroy the USB's existing contents.
   installed Jstack desktop. The later clarification establishes a single-USB,
   no-existing-OS workflow. Current README, USB guide, image guide, and on-image
   instructions now describe that workflow directly, without requiring Ubuntu.
-- The inspected original USB lacks Jstack/Niri. The *new image* includes both live
-  and installed Niri. These are different media states, not interchangeable
-  claims. Updating the repository or building an image does not update the stick.
+- The USB initially lacked Jstack/Niri. The new image includes both live and
+  installed Niri, and the separately authorized flash/readbacks now establish
+  that this image is on the physical stick. Repository or image-build changes
+  alone were not treated as evidence of a changed USB.
 - A blank-disk installation was the working interpretation of the OS-less Dell,
   not an observed fact about its disk. No OS does not establish blankness. The
   installer therefore refuses old partitions/signatures. Cleanup is a separate
@@ -59,18 +61,19 @@ These are not mock installers or substituted source programs. The main and
 guided runs boot the actual ISO, execute its installed public commands, write a
 new virtual disk with real partition/filesystem tools, and boot that disk without
 the ISO. The harness transports input and records observations. Virtual hardware
-is nevertheless a substitute for the user's *physical* USB and Dell. Therefore
-software acceptance and physical delivery are reported separately.
+is nevertheless a substitute for booting the user's physical USB on the Dell.
+Software acceptance, physical flash/readback verification, and actual Dell boot
+acceptance are therefore reported separately.
 
 ## Explicit requirements
 
 | Requirement | Concrete check | Observed result and limit |
 |---|---|---|
 | Find the Jstack OS repository | `git rev-parse --show-toplevel` on the working checkout | `/home/jeremy/jstack-os`, current changes committed. |
-| Determine whether live Jstack includes Niri | Actual ISO USB-emulated UEFI boot, Niri process/IPC, native screenshot | `verification/result.json` live fields and `verification/live/desktop.png` show the real live Niri desktop. The original physical Arch USB still does not contain it. |
+| Determine whether live Jstack includes Niri | Actual ISO USB-emulated UEFI boot, Niri process/IPC, native screenshot | `verification/result.json` live fields and `verification/live/desktop.png` show the real live Niri desktop. Physical readbacks now match that same image, but physical Niri boot is not yet tested. |
 | Determine whether installation includes Niri | Boot installed target without ISO or fixture and with fresh firmware variables | `installed_boot`, `installed_desktop`, and `verification/installed/desktop.png` pass and visibly show installed Niri. Guided independent run repeats this. |
-| Inspect the currently plugged USB | Read-only `lsblk`, stable by-id resolution, original filesystem/package inspection | VFENG 58.6 GiB, serial `FC12093679273`, label `ARCH_202609`, Archinstall present, no Jstack installer. No physical write or boot test. |
-| Boot from that USB | New image booted as read-only USB mass storage in QEMU/OVMF, source mount asserted `/dev/sda1` | Actual image boot passes. Physical stick still contains the old image. Its replacement/readback and physical boot are blocked/unavailable, not passed. |
+| Inspect the currently plugged USB | Initial read-only content inspection, followed by authorized flash and read-only post-write inventory | VFENG 58.6 GiB, serial `FC12093679273`, originally contained `ARCH_202609` without Jstack/Niri. `verification/physical-usb/result.json` now records `JSTACK_LIVE` and matching physical readbacks. |
+| Boot from that USB | Same image booted as read-only USB mass storage in QEMU/OVMF; physical image bytes, boot catalog, and bundled instructions verified after flashing | Image boot and physical-media content verification pass. The actual stick has not yet been booted on the Dell, so physical firmware/desktop acceptance is not claimed. |
 | Use the same USB to install Jstack permanently with no existing OS | Actual on-image installer on a new blank 40 GiB virtual disk, no NIC, then independent disk boot | Main1040 run passes all six refusal tests and installation. Guided1048 run answers actual TTY disk/token/account/password prompts and also boots successfully. No Ubuntu host inside either workflow. |
 | Include usable instructions | `cmp` USB-root `JSTACK-INSTALL.md` against live doc, then public `jstack-install-help` output against that doc | `live_prerequisites` records `ON_USB_HELP_OK`. Instructions include F12/UEFI, terminal/menu paths, target checks, installation, shutdown/removal, and limits. Graphical help entry is separately checked below. |
 
@@ -91,12 +94,35 @@ software acceptance and physical delivery are reported separately.
 | Builder changes and ISO staging | Initial clean profile build plus explicit incremental regeneration after reviewed fixes, actual package build/parser check, generated manifests, exact final ISO boot | Real built image is tested. Cached package archives were reused. No claim of a fresh final-version rebuild of every upstream package or bit-for-bit reproducibility. |
 | README, USB guide, image guide, on-image INSTALL.md | Re-read against clarified request, verify relative links/paths, runtime-check documented installer/help commands and compare bundled help bytes | Distinguish original Arch USB/new clean image/private image, remove Ubuntu prerequisite, document unsupported cases. Broken repo-relative links in the Downloads verification copy were repaired with local guide copies and link checks. Physical Dell-specific boot/menu behavior remains unverified. |
 | Delivered image and evidence bundle | Recompute and verify every entry in `SHA256SUMS` | Durable image and artifacts match hashes. This proves file integrity, not physical USB readback. |
+| Authorized physical USB deployment | Write-stream SHA256 and two separate cache-invalidated readbacks over the complete image extent; post-write inventory and extracted help | `verification/physical-usb/result.json` passes for the intended VFENG. Both readbacks cover all `2731687936` image bytes, not the USB's entire 58.6 GiB capacity. Initial post-write udev timeout is retained in `failure.json`; the subsequent check was read-only. |
+
+## Physical verification evidence
+
+Evidence is retained under `verification/physical-usb/` in the Downloads bundle,
+with original artifacts at
+`/home/jeremy/.jcode/scratch/jstack-physical-usb-20260906-1102`.
+`intent.json` records authorization and the selected by-id device. `result.json`
+records the matching write/readback hashes, final `JSTACK_LIVE` inventory, and
+extracted `JSTACK-INSTALL.md` SHA256
+`f49ce59d3eef7d4b0d36281f22c5d2c9e9488f81ff426b513b0b3f8f97f557d9`.
+Inspection of the physical medium's boot catalog found BIOS and UEFI entries.
+Catalog presence and file extraction are content checks, not physical boot tests.
+
+The original writer completed the exact write, flush/cache invalidation, and
+first successful readback, then exited 1 when udev settling timed out while its
+exclusive claim remained held. That original `failure.json` is preserved.
+After the claim closed, settling succeeded and a separate read-only follow-up
+performed the second complete image-length readback. It did not rewrite the USB.
+`safe-removal.json` records subsequent device poweroff exit 0 and disappearance
+of the stable device link. The USB was ready to unplug; physical unplugging and
+Dell boot are not inferred from successful poweroff.
 
 ## Remaining acceptance boundary
 
 The safe software checks are substantially better than the initial state: a
 previously missing offline installer now completes two real installations, and
 repeatable partition, package-config, and service-policy defects were fixed and
-retested. This does not turn the unchanged physical Arch USB into a Jstack USB.
-Physical deployment and Dell acceptance remain incomplete. They require explicit
-USB erase authorization and access to the intended Dell respectively.
+retested. The separately authorized physical flash and readbacks now establish
+that the accepted Jstack image is on the intended USB. Actual Dell boot and
+installation, including that machine's graphics, networking, and firmware
+behavior, remain unverified and require access to the intended hardware.
