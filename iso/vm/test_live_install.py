@@ -25,10 +25,12 @@ import shutil
 import signal
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import time
 import uuid
+import zlib
 
 GIB = 1024 ** 3
 PACKAGES = ('linux', 'linux-firmware', 'niri', 'jstack-base', 'jstack-agent',
@@ -39,10 +41,15 @@ PASSWORD = 'Jstack-VM-only-4937'
 TARGET = '/dev/vda'
 FIXTURE = '/dev/vdb'
 SOURCE = '/dev/sda'
+FISH_PROMPT_READY = r'\x1b\]133;B(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)'
 
 
 class ProofError(RuntimeError):
     pass
+
+
+def progress(message: str, **fields):
+    print('JCODE_PROGRESS ' + json.dumps({'message': message, **fields}), flush=True)
 
 
 def regular_file(path: Path) -> Path:
@@ -58,6 +65,72 @@ def digest(path: Path) -> str:
         for block in iter(lambda: f.read(8 * 1024 * 1024), b''):
             h.update(block)
     return h.hexdigest()
+
+
+def validate_png(data: bytes) -> dict:
+    """Decode CRC-checked, non-interlaced 8-bit RGB(A), not just PNG magic."""
+    if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ProofError('Native screenshot is not PNG')
+    pos, compressed, header, ended = 8, bytearray(), None, False
+    while pos + 12 <= len(data):
+        size = struct.unpack('>I', data[pos:pos + 4])[0]
+        kind, payload = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + size]
+        if pos + size + 12 > len(data):
+            raise ProofError('Truncated PNG chunk')
+        crc = struct.unpack('>I', data[pos + 8 + size:pos + 12 + size])[0]
+        if zlib.crc32(kind + payload) & 0xffffffff != crc:
+            raise ProofError('PNG CRC mismatch')
+        if kind == b'IHDR':
+            header = struct.unpack('>IIBBBBB', payload)
+        elif kind == b'IDAT':
+            compressed.extend(payload)
+        elif kind == b'IEND':
+            ended = True
+            pos += size + 12
+            break
+        pos += size + 12
+    if not ended or pos != len(data) or header is None:
+        raise ProofError('Incomplete PNG structure')
+    width, height, depth, color, compression, filtering, interlace = header
+    if not (320 <= width <= 8192 and 200 <= height <= 8192 and depth == 8
+            and color in (2, 6) and (compression, filtering, interlace) == (0, 0, 0)):
+        raise ProofError(f'Unsupported or empty screenshot PNG: {header}')
+    channels = 3 if color == 2 else 4
+    stride = width * channels
+    expected = (stride + 1) * height
+    if expected > 64 * 1024 * 1024:
+        raise ProofError('Screenshot exceeds bounded decode size')
+    decoder = zlib.decompressobj()
+    raw = decoder.decompress(bytes(compressed), expected + 1)
+    if len(raw) != expected or not decoder.eof or decoder.unused_data:
+        raise ProofError('PNG pixel data size mismatch')
+    previous = bytearray(stride)
+    pixels = bytearray()
+    for y in range(height):
+        start = y * (stride + 1)
+        filter_type, row = raw[start], bytearray(raw[start + 1:start + 1 + stride])
+        if filter_type not in range(5):
+            raise ProofError('Invalid PNG scanline filter')
+        for x in range(stride):
+            a, b, c = (row[x - channels] if x >= channels else 0), previous[x], (previous[x - channels] if x >= channels else 0)
+            if filter_type == 1:
+                row[x] = (row[x] + a) & 255
+            elif filter_type == 2:
+                row[x] = (row[x] + b) & 255
+            elif filter_type == 3:
+                row[x] = (row[x] + (a + b) // 2) & 255
+            elif filter_type == 4:
+                p = a + b - c
+                distances = (abs(p - a), abs(p - b), abs(p - c))
+                predictor = (a, b, c)[distances.index(min(distances))]
+                row[x] = (row[x] + predictor) & 255
+        pixels.extend(row)
+        previous = row
+    first = pixels[:channels]
+    if not any(pixels[x:x + channels] != first for x in range(0, len(pixels), channels)):
+        raise ProofError('Screenshot contains only one flat color')
+    return {'width': width, 'height': height, 'decoded_pixel_bytes': len(pixels),
+            'pixel_sha256': hashlib.sha256(pixels).hexdigest()}
 
 
 def checked_run(args: list[str], timeout: int = 60) -> str:
@@ -87,7 +160,9 @@ def qemu_command(*, code: Path, variables: Path, target: Path, fixture: Path | N
     for p in (code, variables, target):
         regular_file(p)
     cmd = ['qemu-system-x86_64', '-name', 'jstack-offline-proof',
-           '-machine', f'q35,accel={acceleration}', '-cpu', 'host' if acceleration == 'kvm' else 'max',
+           '-machine', f'q35,smm=on,accel={acceleration}',
+           '-global', 'driver=cfi.pflash01,property=secure,value=on',
+           '-cpu', 'host' if acceleration == 'kvm' else 'max',
            '-m', str(memory), '-smp', '2', '-nic', 'none', '-no-reboot',
            '-device', 'virtio-vga-gl', '-display', 'egl-headless',
            '-chardev', f'socket,id=serial0,path={serial},server=on,wait=off',
@@ -149,10 +224,16 @@ class Serial:
             self.send(PASSWORD + '\n')
         else:
             self.expect(r'automatic login', timeout)
+        # login's banner is not shell readiness. Fish probes terminal features
+        # during startup and consumes queued input as probe replies. OSC 133 B
+        # is emitted only after the prompt is complete and command input is safe.
+        # This applies equally to live autologin and installed password login.
+        self.expect(FISH_PROMPT_READY, 60)
         # A unique, split marker cannot be mistaken for an echoed command.
         # Confirm both privilege and shell, not just that serial input echoed.
         token = uuid.uuid4().hex
-        self.send("sudo -n /bin/bash --noprofile --norc\n")
+        self.send("sudo -n /usr/bin/env PS1='JSTACK-BASH-''READY> ' /bin/bash --noprofile --norc\n")
+        self.expect(re.escape('JSTACK-BASH-READY> '), 30)
         self.send("if [ \"$(id -u)\" = 0 ] && [ -n \"$BASH_VERSION\" ]; then "
                   "stty -echo -onlcr; export TERM=dumb PS1=''; "
                   "printf '\\n%s%s\\n' 'READY-' '" + token + "'; fi\n")
@@ -249,14 +330,73 @@ class VM:
             if required:
                 raise ProofError(f'Required QMP screenshot failed: {exc}') from exc
 
+    def capture_desktop(self, user: str) -> dict:
+        # egl-headless/virgl can expose a real compositor output without a QMP
+        # readback surface. Retain that diagnostic, then require a native render
+        # capture, actual application IPC witness, and verified PNG pixels.
+        self.qmp('send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}]})
+        token = uuid.uuid4().hex
+        _, output = self.serial.script('native desktop application screenshot',
+                                        screenshot_script(user, token, self.phase), 120)
+        witness = re.search(r'APP_PROOF_BEGIN\n(.*?)\nAPP_PROOF_END', output, re.S)
+        encoded = re.search(r'CAPTURE_PNG_BEGIN\n(.*?)\nCAPTURE_PNG_END', output, re.S)
+        checksum = re.search(r'(?m)^CAPTURE_SHA256=([a-f0-9]{64})$', output)
+        if not witness or not encoded or not checksum:
+            raise ProofError('Missing native capture data, application witness or checksum')
+        image = base64.b64decode(''.join(encoded[1].split()), validate=True)
+        actual = hashlib.sha256(image).hexdigest()
+        if actual != checksum[1]:
+            raise ProofError('Native screenshot guest/host SHA256 mismatch')
+        info = validate_png(image)
+        (self.dir / 'desktop.png').write_bytes(image)
+        info.update({'backend': 'niri-ipc-screenshot-screen', 'sha256': actual,
+                     'guest_sha256': checksum[1], 'application': json.loads(witness[1]),
+                     'file': str(self.dir / 'desktop.png')})
+        self.screenshot()
+        error = self.dir / 'screenshot-error.txt'
+        info['qmp'] = {'captured': not error.exists(),
+                       'error': error.read_text().strip() if error.exists() else None}
+        (self.dir / 'screenshot.json').write_text(json.dumps(info, indent=2) + '\n')
+        return info
+
     def shutdown(self):
+        started = time.monotonic()
+        deadline = started + 60
+        progress(f'Powering off {self.phase} VM', phase='shutdown', vm_phase=self.phase)
         self.serial.send('systemctl poweroff\n')
         try:
-            self.process.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            raise ProofError('Guest did not power off cleanly within 60 seconds')
-        if self.process.returncode:
-            raise ProofError(f'QEMU exited with status {self.process.returncode}')
+            while self.process.poll() is None:
+                if time.monotonic() >= deadline:
+                    raise ProofError('Guest did not power off cleanly within 60 seconds. See drained serial shutdown log.')
+                try:
+                    data = self.serial.sock.recv(65536)
+                except socket.timeout:
+                    continue
+                if data:
+                    self.serial.log.write(data)
+                    self.serial.log.flush()
+                else:
+                    try:
+                        self.process.wait(timeout=min(1, max(0.01, deadline - time.monotonic())))
+                    except subprocess.TimeoutExpired:
+                        pass
+            # Process exit may race the last UART bytes already in the socket.
+            while True:
+                try:
+                    data = self.serial.sock.recv(65536)
+                except socket.timeout:
+                    break
+                if not data:
+                    break
+                self.serial.log.write(data)
+                self.serial.log.flush()
+            if self.process.returncode:
+                raise ProofError(f'QEMU exited with status {self.process.returncode}')
+        finally:
+            (self.dir / 'shutdown.json').write_text(json.dumps({
+                'elapsed_seconds': time.monotonic() - started,
+                'qemu_exit_status': self.process.poll(), 'deadline_seconds': 60,
+                'serial_drained': True}, indent=2) + '\n')
 
     def __exit__(self, *_):
         if self.process and self.process.poll() is None:
@@ -297,6 +437,52 @@ exit 1
 '''
 
 
+def screenshot_script(user: str, token: str, phase: str) -> str:
+    app = 'jstack-vm-proof-' + token
+    return f'''set -euo pipefail
+uid=$(id -u {shlex.quote(user)})
+sock=$(find /run/user/"$uid" -maxdepth 1 -type s -name 'niri*.sock' -print -quit 2>/dev/null || true)
+test -S "$sock"
+niri_user() {{ runuser -u {shlex.quote(user)} -- env XDG_RUNTIME_DIR=/run/user/"$uid" NIRI_SOCKET="$sock" niri "$@"; }}
+path=/run/user/"$uid"/jstack-vm-{token}.png
+test ! -e "$path"
+niri_user msg action spawn -- foot --app-id={app} --title='Jstack VM render proof' /bin/sh -c 'printf "JSTACK VM {phase.upper()} NIRI RENDER PROOF\\nOffline guest. Actual terminal window.\\n"; sleep 180'
+for attempt in $(seq 1 100); do
+  niri_user msg --json windows > /run/jstack-vm-{token}-windows.json
+  niri_user msg --json workspaces > /run/jstack-vm-{token}-workspaces.json
+  if python3 - <<'PY' > /run/jstack-vm-{token}-witness.json
+import json
+windows=json.load(open('/run/jstack-vm-{token}-windows.json'))
+workspaces=json.load(open('/run/jstack-vm-{token}-workspaces.json'))
+matches=[w for w in windows if w.get('app_id') == '{app}']
+assert len(matches) == 1
+w=matches[0]
+assert w.get('is_focused') is True
+active=[x for x in workspaces if x['id'] == w.get('workspace_id') and x.get('is_active') and x.get('output')]
+assert len(active) == 1
+print(json.dumps({{'window':w, 'workspace':active[0]}}))
+PY
+  then break; fi
+  sleep .1
+done
+test -s /run/jstack-vm-{token}-witness.json
+niri_user msg action screenshot-screen --show-pointer false --path "$path"
+for attempt in $(seq 1 100); do
+  if test -s "$path" && [ "$(tail -c 12 "$path" | base64 -w 0)" = AAAAAElFTkSuQmCC ]; then break; fi
+  sleep .1
+done
+test -s "$path"
+echo APP_PROOF_BEGIN
+cat /run/jstack-vm-{token}-witness.json
+echo APP_PROOF_END
+printf 'CAPTURE_SHA256=%s\\n' "$(sha256sum "$path" | cut -d ' ' -f 1)"
+echo CAPTURE_PNG_BEGIN
+base64 -w 76 "$path"
+echo CAPTURE_PNG_END
+rm -f "$path" /run/jstack-vm-{token}-windows.json /run/jstack-vm-{token}-workspaces.json /run/jstack-vm-{token}-witness.json
+'''
+
+
 def guest_disk_hash(serial: Serial, device: str, timeout: int) -> str:
     _, output = serial.script('full disk SHA256 ' + device,
                               f'set -euo pipefail\nsync\nsha256sum {shlex.quote(device)}\n', timeout)
@@ -315,7 +501,7 @@ def installer_command(args, disk: str, confirmation: str) -> str:
 
 def refusal(serial: Serial, args, label: str, disk: str, hash_device: str,
             expected_error: str, results: list, token: str | None = None):
-    print('JCODE_PROGRESS ' + json.dumps({'phase': 'refusal', 'case': label}), flush=True)
+    progress(f'Checking refusal: {label}', phase='refusal', case=label)
     before = guest_disk_hash(serial, hash_device, args.hash_timeout)
     rc, output = serial.script(label, installer_command(args, disk,
                                 'INVALID-UNAUTHORIZED-TEST-TOKEN' if token is None else token),
@@ -337,10 +523,106 @@ def refusal(serial: Serial, args, label: str, disk: str, hash_device: str,
     record['passed'] = True
 
 
-def installed_script() -> str:
+def firmware_script() -> str:
     return '''set -euo pipefail
+python3 - <<'PY'
+from pathlib import Path
+base = Path('/sys/firmware/efi/efivars')
+guid = '8be4df61-93ca-11d2-aa0d-00e098032b8c'
+for name, expected in (('SecureBoot', 0), ('SetupMode', 1)):
+    data = (base / f'{name}-{guid}').read_bytes()
+    assert len(data) == 5, f'{name}: malformed EFI variable'
+    assert data[4] == expected, f'{name}: expected {expected}, got {data[4]}'
+    print(f'UEFI_{name}={data[4]}')
+PY
+'''
+
+
+def installed_policy_script() -> str:
+    return '''set -euo pipefail
+python3 - <<'PY'
+import json, re, subprocess
+from pathlib import Path
+errors, facts = [], {}
+def check(ok, message):
+    if not ok: errors.append(message)
+def command(*args):
+    return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+def mount(path, exact=True):
+    result = command('findmnt', '--json', '--mountpoint' if exact else '--target', path,
+                     '--output', 'TARGET,FSTYPE,FSROOT,UUID,OPTIONS')
+    check(result.returncode == 0, 'missing exact mount: ' + path)
+    rows = json.loads(result.stdout).get('filesystems', []) if result.returncode == 0 else []
+    check(len(rows) == 1, 'ambiguous mount: ' + path)
+    return rows[0] if len(rows) == 1 else {}
+mounts = {path: mount(path) for path in ('/', '/home', '/var/log', '/var/cache/pacman/pkg')}
+root_uuid = mounts['/'].get('uuid')
+check(bool(root_uuid), 'root filesystem UUID missing')
+for path, subvol in (('/', '/@'), ('/home', '/@home'), ('/var/log', '/@log'), ('/var/cache/pacman/pkg', '/@pkg')):
+    row = mounts[path]
+    check(row.get('target') == path and row.get('fsroot') == subvol, 'wrong mount/subvolume: ' + path)
+    check(row.get('fstype') == 'btrfs' and row.get('uuid') == root_uuid, 'wrong filesystem/UUID: ' + path)
+    check(any(x == 'compress=zstd' or x.startswith('compress=zstd:') for x in row.get('options', '').split(',')),
+          'missing zstd compression: ' + path)
+entries = [line.split() for line in Path('/etc/fstab').read_text().splitlines() if line.strip() and not line.lstrip().startswith('#')]
+for path in mounts:
+    rows = [row for row in entries if row[1] == path]
+    check(len(rows) == 1 and rows[0][0] == 'UUID=' + str(root_uuid), 'fstab/root UUID disagreement: ' + path)
+facts['mounts'] = mounts
+machine_id = Path('/etc/machine-id').read_text().strip()
+check(bool(re.fullmatch('[0-9a-f]{32}', machine_id)) and machine_id != '0' * 32, 'invalid machine-id')
+facts['machine_id_valid'] = bool(re.fullmatch('[0-9a-f]{32}', machine_id))
+root_rows = [line.split(':') for line in Path('/etc/shadow').read_text().splitlines() if line.startswith('root:')]
+locked = len(root_rows) == 1 and root_rows[0][1].startswith(('!', '*'))
+check(locked, 'root account must remain locked')
+facts['root_locked'] = locked
+keyring_mount = mount('/etc/pacman.d/gnupg', exact=False)
+check(keyring_mount.get('fstype') == 'btrfs' and keyring_mount.get('uuid') == root_uuid, 'keyring is not persistent on root filesystem')
+keys = command('gpg', '--batch', '--no-auto-check-trustdb', '--no-autostart', '--homedir',
+               '/etc/pacman.d/gnupg', '--with-colons', '--list-keys')
+key_count = sum(line.startswith('pub:') for line in keys.stdout.splitlines())
+check(keys.returncode == 0 and key_count > 1, 'persistent public keyring is not populated')
+facts['public_key_count'] = key_count
+facts['keyring_mount'] = keyring_mount
+active = command('systemctl', 'is-active', 'NetworkManager.service')
+check(active.returncode == 0 and active.stdout.strip() == 'active', 'NetworkManager is not active')
+facts['NetworkManager'] = active.stdout.strip()
+masks = {}
+for unit in ('systemd-networkd.service', 'systemd-networkd.socket', 'systemd-resolved.service',
+             'systemd-networkd-varlink-metrics.socket', 'systemd-networkd-varlink.socket',
+             'systemd-networkd-resolve-hook.socket', 'systemd-resolved-monitor.socket',
+             'systemd-resolved-varlink.socket'):
+    state = command('systemctl', 'is-enabled', unit).stdout.strip()
+    masks[unit] = state
+    check(state == 'masked', 'backend/socket not masked: ' + unit + ' (' + state + ')')
+facts['masks'] = masks
+failed = command('systemctl', '--failed', '--no-legend', '--plain', '--no-pager')
+check(failed.returncode == 0, 'failed-unit inventory unavailable')
+units = [line.split()[0] for line in failed.stdout.splitlines() if line.strip()]
+facts['failed_units'] = units
+check(not units, 'unexpected failed units: ' + ', '.join(units))
+print('INSTALLED_POLICY_FACTS=' + json.dumps(facts, sort_keys=True))
+if units:
+    print('FAILED_UNIT_JOURNAL_BEGIN')
+    journal = command('journalctl', '-b', '--no-pager', '-n', '100', *[part for unit in units for part in ('-u', unit)])
+    print(journal.stdout)
+    print('FAILED_UNIT_JOURNAL_END')
+assert not errors, '; '.join(errors)
+PY
+'''
+
+
+def installed_script() -> str:
+    # hostname belongs to inetutils, which is not part of the installed image.
+    # Check all external probe tools up front, including those inside negative
+    # assertions where an unavailable command could otherwise look like absence.
+    return '''set -euo pipefail
+for tool in python3 findmnt cat grep pacman jcode bootctl getent readlink find lsblk id systemctl pgrep head seq runuser niri sleep journalctl foot tail base64 sha256sum cut gpg; do
+    command -v "$tool" >/dev/null || { printf 'Required installed probe tool missing: %s\\n' "$tool" >&2; exit 1; }
+done
+''' + firmware_script() + '''set -euo pipefail
 test -d /sys/firmware/efi
-test "$(hostname)" = jstack-vm
+test "$(cat /proc/sys/kernel/hostname)" = jstack-vm
 if grep -qw archisobasedir /proc/cmdline; then echo NEGATIVE_ASSERTION_FAILED >&2; exit 1; fi
 if findmnt -rn -t overlay,squashfs | grep .; then echo NEGATIVE_ASSERTION_FAILED >&2; exit 1; fi
 test "$(findmnt -n -o FSTYPE /)" = btrfs
@@ -394,8 +676,7 @@ getent passwd vmtest | grep -E '/usr/bin/fish$'
 if findmnt -rn -t tmpfs -o TARGET | grep -Fx /etc/pacman.d/gnupg; then echo LIVE_KEYRING_TMPFS >&2; exit 1; fi
 for unit in NetworkManager.service fstrim.timer; do systemctl is-enabled "$unit"; done
 test "$(readlink /etc/resolv.conf)" = /run/NetworkManager/resolv.conf
-echo INSTALLED_SYSTEM_OK
-'''
+''' + installed_policy_script() + '\necho INSTALLED_SYSTEM_OK\n'
 
 
 def run(args, artifacts: Path, result: dict):
@@ -410,12 +691,13 @@ def run(args, artifacts: Path, result: dict):
     for disk in (target, fixture):
         checked_run(['qemu-img', 'create', '-f', 'qcow2', str(disk), '40G'])
     result['refusals'] = []
-    print('JCODE_PROGRESS ' + json.dumps({'phase': 'live-boot', 'artifacts': str(artifacts)}), flush=True)
+    progress('Booting live ISO under UEFI', phase='live-boot', artifacts=str(artifacts))
     with VM(args, artifacts, 'live', target, fixture, iso) as vm:
         s = vm.serial
         s.bootstrap(False, args.boot_timeout)
         _, output = s.script('live prerequisites', f'''set -euo pipefail
 test -d /sys/firmware/efi
+{firmware_script()}
 test -b {SOURCE}; test -b {TARGET}; test -b {FIXTURE}
 test "$(lsblk -dn -o SERIAL {TARGET})" = JSTACKTARGET
 test "$(lsblk -dn -o SERIAL {FIXTURE})" = JSTACKFIXTURE
@@ -437,7 +719,7 @@ echo LIVE_PREREQUISITES_OK
 ''')
         result['live_prerequisites'] = output
         _, result['live_desktop'] = s.script('live Niri process and IPC', desktop_script('jstack'), 210)
-        vm.screenshot(required=True)
+        result['live_screenshot'] = vm.capture_desktop('jstack')
         for label, disk, hashed, regex, token in [
             ('source-boot-disk', SOURCE, SOURCE, r'^(read-only or removable disk refused|USB/external transport refused|target backs a mounted filesystem, live source, or swap|target or descendant is mounted)$', None),
             ('wrong-confirmation', TARGET, TARGET, r'confirmation does not exactly match target identity', 'WRONG-CONFIRMATION'),
@@ -467,7 +749,7 @@ test -b {FIXTURE}1
                 r'whole|partition|disk type', result['refusals'])
         refusal(s, args, 'nonblank-partitioned-disk', FIXTURE, FIXTURE,
                 r'blank|partition|signature|filesystem|existing', result['refusals'])
-        print('JCODE_PROGRESS ' + json.dumps({'phase': 'offline-install'}), flush=True)
+        progress('Installing offline to disposable blank disk', phase='offline-install')
         _, preflight = s.script('blank target preflight', shlex.join([args.installer, '--check', '--disk', TARGET]), args.refusal_timeout)
         target_info = json.loads(preflight.strip().splitlines()[-1])
         token = target_info['confirmation']
@@ -481,12 +763,12 @@ test -b {FIXTURE}1
         s.script('remove VM-only password', 'rm -f /run/jstack-vm-password\nsync\n')
         vm.shutdown()
     result['disk_check'] = checked_run(['qemu-img', 'check', '-f', 'qcow2', str(target)], 120)
-    print('JCODE_PROGRESS ' + json.dumps({'phase': 'installed-boot-no-iso'}), flush=True)
+    progress('Booting installed system without ISO', phase='installed-boot-no-iso')
     with VM(args, artifacts, 'installed', target) as vm:
         vm.serial.bootstrap(True, args.boot_timeout)
         _, result['installed_checks'] = vm.serial.script('installed system checks', installed_script(), 180)
         _, result['installed_desktop'] = vm.serial.script('installed Niri process and IPC', desktop_script(USER), 210)
-        vm.screenshot(required=True)
+        result['installed_screenshot'] = vm.capture_desktop(USER)
         vm.shutdown()
     result['iso']['sha256_after'] = digest(iso)
     if result['iso']['sha256_after'] != result['iso']['sha256']:
@@ -500,7 +782,7 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--iso', type=Path, required=True)
     p.add_argument('--artifacts', type=Path, required=True, help='NEW directory, never reused')
-    p.add_argument('--ovmf-code', type=Path, default=Path('/usr/share/edk2/x64/OVMF_CODE.4m.fd'))
+    p.add_argument('--ovmf-code', type=Path, default=Path('/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd'))
     p.add_argument('--ovmf-vars', type=Path, default=Path('/usr/share/edk2/x64/OVMF_VARS.4m.fd'))
     p.add_argument('--memory', type=int, choices=(2048, 3072, 4096), default=3072)
     p.add_argument('--accel', choices=('kvm', 'tcg'), default='kvm')
