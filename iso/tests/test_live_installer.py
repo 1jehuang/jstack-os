@@ -424,6 +424,18 @@ class TargetPolicyTests(SafeTest):
         self.assertIn(('arch-chroot', str(self.root), 'bootctl', '--esp-path=/boot', '--no-variables', 'install'), calls)
         self.assertTrue(any('enable' in call and 'fstrim.timer' in call for call in calls))
         self.assertTrue(any('mask' in call and 'systemd-resolved.service' in call for call in calls))
+        # New systemd 261 sockets otherwise fail at boot when their backend
+        # services are masked. Mask them AFTER preset-all can enable them.
+        preset_index = next(i for i, call in enumerate(calls) if 'preset-all' in call)
+        sockets = ('systemd-networkd-varlink-metrics.socket',
+                   'systemd-networkd-varlink.socket',
+                   'systemd-networkd-resolve-hook.socket',
+                   'systemd-resolved-monitor.socket',
+                   'systemd-resolved-varlink.socket')
+        for socket in sockets:
+            with self.subTest(socket=socket):
+                self.assertTrue(any(i > preset_index and 'mask' in call and socket in call
+                                    for i, call in enumerate(calls)))
         self.assertTrue(any('useradd' in call and 'alice' in call for call in calls))
         self.assertFalse(any('pacman' in call or 'curl' in call or 'wget' in call for call in calls))
         password_call = next(call for call in self.run.call_args_list if 'chpasswd' in call.args)

@@ -36,6 +36,9 @@ ENABLE = ('NetworkManager.service', 'iwd.service', 'bluetooth.service',
           'jstack-wifi-boot-recovery.timer')
 DISABLE = ('systemd-networkd.service', 'systemd-networkd.socket',
            'systemd-networkd-wait-online.service', 'systemd-resolved.service',
+           'systemd-networkd-varlink-metrics.socket', 'systemd-networkd-varlink.socket',
+           'systemd-networkd-resolve-hook.socket', 'systemd-resolved-monitor.socket',
+           'systemd-resolved-varlink.socket',
            'sshd.service', 'sshd.socket')
 # Excludes apply to the immutable SquashFS, NEVER the running overlay root.
 EXCLUDES = ('/dev/*', '/proc/*', '/sys/*', '/run/*', '/tmp/*', '/mnt/*', '/media/*',

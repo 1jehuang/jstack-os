@@ -65,6 +65,19 @@ class ProfileTests(unittest.TestCase):
             self.assertIn('jstack.console=1 nomodeset', (p / menu).read_text())
         subprocess.run(['bash', '-n', str(p / 'profiledef.sh')], check=True)
 
+    def test_mask_sockets_for_disabled_network_backends(self):
+        root = profile.prepare(self.work, RELENG) / 'airootfs'
+        system = root / 'etc/systemd/system'
+        sockets = ('systemd-networkd-varlink-metrics.socket',
+                   'systemd-networkd-varlink.socket',
+                   'systemd-networkd-resolve-hook.socket',
+                   'systemd-resolved-monitor.socket',
+                   'systemd-resolved-varlink.socket')
+        for unit in sockets:
+            with self.subTest(unit=unit):
+                self.assertEqual(os.readlink(system / unit), '/dev/null')
+                self.assertFalse(any(p.name == unit for p in system.glob('*.wants/*')))
+
     def test_clean_installer_and_offline_instructions(self):
         p = profile.prepare(self.work, RELENG)
         root = p / 'airootfs'
