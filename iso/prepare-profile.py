@@ -91,7 +91,9 @@ file_permissions["/usr/local/lib/jstack-live-setup"]="0:0:755"
     (profile / 'profiledef.sh').write_text(text)
     package_file = profile / 'packages.x86_64'
     packages = set(package_file.read_text().splitlines())
-    packages -= {'archinstall', 'cloud-init', 'clonezilla', 'systemd-resolvconf'}
+    # Some installed releng versions still list the removed broadcom-wl package.
+    # Keep in-kernel wireless drivers and firmware without this obsolete target.
+    packages -= {'archinstall', 'cloud-init', 'clonezilla', 'systemd-resolvconf', 'broadcom-wl'}
     packages.update(PACKAGES)
     package_file.write_text('\n'.join(sorted(packages)) + '\n')
     with (profile / 'pacman.conf').open('a') as f:

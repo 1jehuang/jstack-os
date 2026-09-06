@@ -26,6 +26,10 @@ class ProfileTests(unittest.TestCase):
         root = p / 'airootfs'
         self.assertIn('jstack-desktop-apps', (p / 'packages.x86_64').read_text())
         self.assertNotIn('\ncloud-init\n', (p / 'packages.x86_64').read_text())
+        packages = (p / 'packages.x86_64').read_text().splitlines()
+        self.assertNotIn('broadcom-wl', packages)
+        self.assertIn('linux-firmware', packages)
+        self.assertIn('b43-fwcutter', packages)
         self.assertEqual(os.readlink(root / 'etc/resolv.conf'), '/run/NetworkManager/resolv.conf')
         for unit in profile.DISABLED:
             self.assertEqual(os.readlink(root / f'etc/systemd/system/{unit}'), '/dev/null')
