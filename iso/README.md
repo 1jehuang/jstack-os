@@ -4,6 +4,11 @@ This builder creates a **live ISO**, not a disk installer. It uses the installed
 official Archiso `releng` profile for generic x86-64 BIOS and UEFI boot. No physical
 disk is selected, formatted, mounted, or written by the builder.
 
+For boot-menu steps and permanent-install options, see
+[USB boot and permanent installation](../docs/USB_BOOT.md). This image includes
+Niri but **does not include a supported disk installer**. The Ubuntu installer
+requires a persistent recovery host on a separate disk, not this live session.
+
 ## Build on Arch Linux
 
 Install build prerequisites separately, then run the builder **as your normal

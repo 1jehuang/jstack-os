@@ -13,15 +13,23 @@ preinstalled agent harnesses.
   - `jstack-terminals/` - kitty (remote-control socket) + foot defaults
   - `jstack-niri/` - niri desktop: config, keymap, helper scripts
   - `jstack-waybar/`, `jstack-network/`, `tofi-jstack/`
-- `install/` - `jstack-install.sh`: full install from an Ubuntu/Debian or Arch
-  host via pacstrap. See `docs/INSTALL_FROM_UBUNTU.md`
+- `install/` - `jstack-install.sh`: transactional installation from a persistent
+  Ubuntu recovery host to a separate disk. See `docs/INSTALL_FROM_UBUNTU.md`
   - `jstack-scheduler/` - scx_lavd CPU scheduler (sched_ext), enabled by default
   - `jstack-firefox/` - Firefox policies, OLED theme, curated extensions
 - `installer/` - executable no-USB Windows installer state model and tools
 - `docs/installer/` - installer architecture, safety model, and generated graph
-- `iso/` - archiso and RAM-installer profile (to come)
+- `iso/` - bootable Jstack live desktop builder, not a disk installer.
+  See [live image build instructions](iso/README.md).
 - `docs/TRIAGE.md` - the keep/drop decision log for everything migrated
   from the reference machine
+
+## Booting from USB
+
+See [USB boot and permanent installation](docs/USB_BOOT.md) before choosing an
+image. A standard Arch installer USB does not include Jstack or Niri. The custom
+Jstack live image includes Niri, but has no supported permanent-install workflow
+from its volatile live session. Booting either image does not install Jstack.
 
 ## Installing from Ubuntu
 
