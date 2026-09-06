@@ -102,12 +102,31 @@ bash -n iso/build-live.sh
 
 Tests use the installed releng profile and disposable scratch directories, not
 physical disks. They validate generation and refusal behavior, not a successful
-ISO boot. Before writing a USB, boot the produced ISO under both UEFI and BIOS
-QEMU, test desktop and console fallback, and verify networking and package policy.
-Writing an ISO to USB erases that selected USB and is a separate, explicitly
-authorized step. Never point an imaging command at the Dell's internal disk.
+ISO boot. The real offline installation harness is:
 
-### Measured VM proof (2026-09-06 UTC)
+```sh
+python -B -m unittest discover -s iso/vm -p 'test_harness.py' -v
+python3 -B iso/vm/test_live_install.py \
+  --iso /absolute/path/to/clean-jstack-live.iso \
+  --artifacts /absolute/path/to/new-proof-directory
+```
+
+It uses only new virtual disks, read-only USB-emulated ISO media, and no network.
+It checks disk refusals with full-device hashes, performs the offline install,
+and boots the installed disk without the ISO using fresh UEFI variables. Both
+live and installed phases require an actual rendered Niri desktop capture.
+See [clean USB installation acceptance](../docs/USB_INSTALL_ACCEPTANCE.md) for
+image identity, verification status, and limits.
+BIOS live boot, console fallback, networking, and physical hardware need separate
+checks. Writing an ISO to USB erases that selected USB and is a separate,
+explicitly authorized step. Never point an imaging command at the Dell's internal
+disk.
+
+### Earlier private-overlay live-only VM proof (2026-09-06 UTC)
+
+This earlier proof used a different, private-overlay image. It is **not** evidence
+for the clean offline installer, and that private image cannot be used as an
+installation source.
 
 The generated ISO was built successfully and booted under QEMU with UEFI firmware,
 `virtio-vga-gl`, and `egl-headless`. The acceptance run observed:
