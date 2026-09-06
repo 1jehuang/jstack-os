@@ -1,13 +1,17 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-terminals
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="jstack OS terminal defaults: kitty (remote control on /tmp/kitty.sock) and foot"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
 license=('MIT')
 depends=('kitty' 'foot' 'fzf' 'ttf-jetbrains-mono-nerd')
 source=()
+
+check() {
+  bash "$startdir/tests/check-foot-config.sh" "$startdir/files/foot/foot.ini"
+}
 
 package() {
   local files="$startdir/files"

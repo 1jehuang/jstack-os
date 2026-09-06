@@ -17,7 +17,7 @@ user**. It uses sudo only for `mkarchiso`, which builds a filesystem in scratch.
 
 ```sh
 sudo pacman -S --needed archiso base-devel git rsync python rust cargo \
-  meson ninja scdoc wayland-protocols wayland libxkbcommon cairo pango harfbuzz
+  meson ninja scdoc wayland-protocols wayland libxkbcommon cairo pango harfbuzz foot
 bash iso/build-live.sh --work "$HOME/.cache/jstack-live-$(date +%s)"
 ```
 

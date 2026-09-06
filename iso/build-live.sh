@@ -35,7 +35,7 @@ WORK=$(realpath -m -- "$WORK")
 [[ -z $VESKTOP || -f $VESKTOP ]] || die 'vesktop package does not exist'
 for tool in python3 rsync; do command -v "$tool" >/dev/null || die "missing tool: $tool"; done
 if (( ! PREPARE_ONLY )); then
-  for tool in makepkg repo-add mkarchiso sudo git cargo meson ninja scdoc arch-meson; do
+  for tool in makepkg repo-add mkarchiso sudo git cargo meson ninja scdoc arch-meson foot; do
     command -v "$tool" >/dev/null || die "missing build prerequisite: $tool"
   done
 fi

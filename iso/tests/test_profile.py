@@ -149,7 +149,7 @@ class ProfileTests(unittest.TestCase):
         tools = self.work / 'tools'
         tools.mkdir()
         for name in ('repo-add', 'mkarchiso', 'sudo', 'git', 'cargo', 'meson',
-                     'ninja', 'scdoc', 'arch-meson'):
+                     'ninja', 'scdoc', 'arch-meson', 'foot'):
             tool = tools / name
             tool.write_text('#!/bin/sh\necho UNEXPECTED_TOOL_EXECUTION >&2\nexit 99\n')
             tool.chmod(0o755)
