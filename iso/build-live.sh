@@ -82,6 +82,8 @@ mapfile -d '' packages < <(find "$WORK/packages" -maxdepth 1 -type f -name '*.pk
 repo-add "$WORK/packages/jstack-local.db.tar.gz" "${packages[@]}"
 sha256sum "${packages[@]}" > "$WORK/package-sha256.txt"
 printf 'Building live ISO. No physical disk is attached or selected.\n'
+# Also readable by mounting the USB on another computer without booting it.
+install -Dm644 "$ROOT/iso/INSTALL.md" "$WORK/archiso-work/iso/JSTACK-INSTALL.md"
 sudo mkarchiso -v -w "$WORK/archiso-work" -o "$WORK/out" "$WORK/profile"
 find "$WORK/out" -maxdepth 1 -name '*.iso' -type f -exec sha256sum {} \; > "$WORK/iso-sha256.txt"
 printf 'ISO output: %s/out\nChecksums: %s/iso-sha256.txt\n' "$WORK" "$WORK"

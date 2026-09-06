@@ -5,79 +5,70 @@
 | Medium | Live desktop | Permanent installation |
 |---|---|---|
 | Standard Arch Linux installer (`ARCH_YYYYMM`) | Console, not Jstack's Niri desktop | `archinstall` installs ordinary Arch, not Jstack OS |
-| Custom Jstack live image (`JSTACK_LIVE`) | Niri starts on tty1 by default | No supported Jstack disk installer included |
-| Persistent Ubuntu recovery system on its own disk | The recovery host's desktop or console | Repository installer deploys Jstack to a separate, unused whole disk |
+| Newly built clean Jstack image (`JSTACK_LIVE`) | Niri starts on tty1 by default | `sudo jstack-install-live` installs offline onto a blank internal disk |
+| Older Jstack image, or image built with a private overlay | Niri live desktop | Not an installation source. Rebuild a clean current image |
+| Persistent Ubuntu recovery system on its own disk | The recovery host's desktop or console | Separate transactional installer deploys Jstack to another unused whole disk |
 
 The USB inspected on 2026-09-06 contained the Arch 2026.09.01 install medium,
 label `ARCH_202609`, with BIOS and UEFI boot entries. Its package manifest and
 live filesystem contained Archinstall, but no Niri or Jstack installer. This was
 a read-only content inspection, not a physical boot test or proof about other
-USB drives.
+USB drives. Updating this repository does not change that USB.
 
-## Boot an existing USB
+## OS-less Dell: boot and install from one USB
 
-1. Save your work, leave the USB plugged in, and restart the target computer.
-2. Open its one-time boot menu. On a Dell XPS, press **F12** during startup.
-3. Select the USB's **UEFI** boot entry. Neither image is configured for Secure
-   Boot here. If changing firmware settings, first ensure you have any required
-   disk-encryption recovery keys. Do not clear TPM keys or reset passwords.
-4. On the standard Arch image, choose **Arch Linux install medium**. A root
-   console is expected. There is no Niri desktop to launch on that image.
-5. On the custom image, choose **Jstack OS live desktop**. Use **Jstack OS live
-   console (GPU fallback)** only when troubleshooting graphics. That entry
-   deliberately skips Niri autostart. Ctrl+Alt+F2 also opens a console.
+Use a **newly built, clean Jstack ISO**, not the standard Arch image and not a
+private-overlay image. No Ubuntu installation is required. Follow the complete
+[on-USB instructions](../iso/INSTALL.md), which cover:
 
-These steps only boot the live environment. Do not run partitioning, formatting,
-or installation commands just to test boot. Keep the USB inserted while using
-it. Jstack live-session changes are lost at reboot.
+1. Booting the USB through Dell's F12 one-time boot menu in UEFI mode.
+2. Trying Niri or opening the console fallback.
+3. Reading offline help with `jstack-install-help`.
+4. Listing disks without writing anything with `sudo jstack-install-live --list`.
+5. Running `sudo jstack-install-live`, reviewing the target, and explicitly
+   confirming installation to a blank internal disk of at least 32 GiB.
+6. Shutting down after success, removing the USB, and booting the internal disk.
 
-To identify the environment from its console, these commands are read-only:
+Installation needs no package downloads. Secure Boot must be disabled. Existing
+partitions or filesystem signatures are refused even when no operating system
+can boot. USB/removable and in-use disks are also refused. There is no upgrade,
+dual boot, encryption, automatic rollback, or power-loss resume guarantee.
+A partial installation may require separately reviewed disk cleanup before retry.
+
+The help file is included at `/usr/share/doc/jstack-live/INSTALL.md`, and the
+application launcher includes installation and instructions entries. A successful
+installation includes Niri and tty1 autostart. Test actual hardware with the live
+desktop first: VM acceptance does not prove every Dell GPU or Wi-Fi adapter.
+
+## Identify what is currently booted
+
+These commands are read-only:
 
 ```sh
 cat /etc/os-release
 lsblk -o NAME,TRAN,SIZE,FSTYPE,LABEL,MOUNTPOINTS
 command -v niri
+command -v jstack-install-live
 command -v archinstall
 pacman -Q niri jstack-base jstack-niri
 ```
 
 Missing commands/packages are expected on a standard Arch installer. Jstack is
 Arch-based, so `/etc/os-release` alone does not establish which image is running.
-Use the package checks and boot-media label together.
+Use the package checks and boot-media label together. An old Jstack ISO might
+have the same `JSTACK_LIVE` label but no installer. Check the command too.
 
-## Try the Jstack desktop without installing
+## Build and write the correct image
 
-Build the custom ISO using [the live image instructions](../iso/README.md).
-Writing that ISO onto a USB is a separate destructive operation that replaces
-the selected USB's contents. Confirm the exact device and back up its contents
-first. Do not use an internal disk as the imaging target.
+Follow [the live image build instructions](../iso/README.md), without `--overlay`.
+Writing the resulting ISO onto a USB is a separate destructive operation that
+replaces the selected USB's contents. Confirm its exact device, model, serial,
+and capacity, and back up its contents first. Never assume that `/dev/sda` is the
+USB or use the computer's internal disk as the imaging target.
 
-The custom image intentionally removes Archinstall and does not bundle the
-repository's Ubuntu installer. It is a desktop preview, not a click-to-install
-image. Replacing an Arch USB with it adds the live desktop, not a permanent
-installation workflow.
+## Existing Ubuntu recovery host
 
-## Install Jstack OS permanently
-
-The current supported route is [installation from Ubuntu](INSTALL_FROM_UBUNTU.md):
-
-1. Back up the intended target disk. Installation erases the entire target.
-2. Use a persistent, bootable Ubuntu recovery system on a disk separate from
-   the target. A standard Arch USB, Jstack live USB, or volatile Ubuntu live
-   session is not a substitute for that recovery host.
-3. Check the linked guide's prerequisites, including UEFI, Secure Boot disabled,
-   internet access, a persistent state directory, and 512-byte target sectors.
-4. On that Ubuntu host, clone this repository and build the pinned transaction
-   controller as described in the guide. Identify the target by its stable
-   `/dev/disk/by-id/` path, not an assumed `/dev/sda` name.
-5. Follow the guide's install command only after confirming that the target is
-   the separate disk you intend to erase. Preserve the Ubuntu recovery disk and
-   installer state so an interrupted deployment can be resumed.
-6. After successful deployment, boot the completed target using the firmware
-   boot menu. The installed Jstack system includes Niri and tty1 autostart.
-
-**There is currently no supported “boot this live USB, then install Jstack onto
-the computer's internal disk” workflow.** Do not bypass the installer recovery
-checks or use Archinstall expecting it to install Jstack. A dedicated live-USB
-installer needs implementation and end-to-end validation before instructions
-can promise that workflow.
+The separate [Ubuntu installation guide](INSTALL_FROM_UBUNTU.md) remains available
+for deploying a complete image to a separate disk from a persistent recovery
+host. Its transaction journal/recovery design does **not** apply to the offline
+live-USB installer. Do not bypass either installer's safety checks.

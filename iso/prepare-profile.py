@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate a scratch-only Archiso profile. No mounts, disks, or root required."""
 import argparse
+import json
 from pathlib import Path
 import shutil
 import shlex
@@ -9,7 +10,12 @@ PACKAGES = (
     'tofi-jstack', 'jstack-base', 'jstack-agent', 'jstack-terminals',
     'jstack-network', 'jstack-niri', 'jstack-waybar', 'jstack-scheduler',
     'jstack-firefox', 'jstack-desktop-apps', 'vesktop-bin',
+    'python', 'rsync', 'btrfs-progs', 'dosfstools', 'gptfdisk',
+    'util-linux', 'arch-install-scripts', 'linux', 'mkinitcpio', 'squashfs-tools',
 )
+SOURCE_DIR = Path(__file__).resolve().parent
+INSTALLER_MARKER = {'schema': 1, 'image': 'jstack-live', 'clean': True,
+                    'architecture': 'x86_64'}
 DISABLED = (
     'systemd-networkd.service', 'systemd-networkd.socket',
     'systemd-networkd-wait-online.service', 'systemd-resolved.service',
@@ -84,9 +90,11 @@ def prepare(work, releng, overlay=None):
 iso_name="jstack-live"
 iso_label="JSTACK_LIVE"
 iso_publisher="Jstack OS <https://github.com/1jehuang/jstack-os>"
-iso_application="Jstack OS live desktop (no automatic installation)"
+iso_application="Jstack OS live desktop and manual blank-disk installer"
 airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '9' '-b' '1M' '-processors' '2' '-mem' '512M')
 file_permissions["/usr/local/lib/jstack-live-setup"]="0:0:755"
+file_permissions["/usr/local/bin/jstack-install-live"]="0:0:755"
+file_permissions["/usr/local/bin/jstack-install-help"]="0:0:755"
 '''
     (profile / 'profiledef.sh').write_text(text)
     package_file = profile / 'packages.x86_64'
@@ -107,7 +115,30 @@ file_permissions["/usr/local/lib/jstack-live-setup"]="0:0:755"
     pacman.write_text(pacman.read_text().replace('[options]', f'[options]\nCacheDir = {work}/pacman-cache', 1))
     put(root, '/etc/pacman.d/mirrorlist', mirrors)
     put(root, '/etc/hostname', 'jstack-live\n')
-    put(root, '/etc/motd', 'Jstack OS live session. No installation runs automatically.\nChanges are volatile. Ctrl+Alt+F2 opens a console. sudo needs no password.\n')
+    put(root, '/etc/motd', 'Jstack OS live session. No installation runs automatically.\nChanges are volatile. Ctrl+Alt+F2 opens a console. sudo needs no password.\nRead instructions: jstack-install-help\nInstall to a blank internal disk: sudo jstack-install-live\n')
+    put(root, '/usr/local/bin/jstack-install-live',
+        (SOURCE_DIR / 'jstack-install-live.py').read_text(), 0o755)
+    put(root, '/usr/share/doc/jstack-live/INSTALL.md',
+        (SOURCE_DIR / 'INSTALL.md').read_text())
+    put(root, '/usr/local/bin/jstack-install-help', '''#!/bin/sh
+if [ -t 1 ]; then
+    exec less /usr/share/doc/jstack-live/INSTALL.md
+fi
+exec cat /usr/share/doc/jstack-live/INSTALL.md
+''', 0o755)
+    # Never claim a private overlay is a clean installation source, even if the
+    # overlay itself supplied a marker. Its arbitrary files can contain secrets.
+    marker = root / 'etc/jstack-live-installer.json'
+    marker.unlink(missing_ok=True)
+    if overlay is None:
+        put(root, '/etc/jstack-live-installer.json', json.dumps(INSTALLER_MARKER) + '\n')
+    for name, title, command in (
+        ('jstack-install', 'Install Jstack OS (blank disk)', 'sudo jstack-install-live'),
+        ('jstack-install-help', 'Jstack USB installation instructions', 'jstack-install-help'),
+    ):
+        put(root, f'/usr/share/applications/{name}.desktop',
+            f'[Desktop Entry]\nType=Application\nName={title}\n'
+            f'Exec=foot -e {command}\nIcon=drive-harddisk\nTerminal=false\nCategories=System;\n')
     put(root, '/etc/shadow', 'root:!:14871::::::\n', 0o400)
     put(root, '/etc/cloud/cloud-init.disabled', '')
     put(root, '/etc/NetworkManager/conf.d/20-jstack-live.conf', '[main]\ndns=default\nrc-manager=symlink\n')

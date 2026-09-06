@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -63,6 +64,39 @@ class ProfileTests(unittest.TestCase):
         for menu in ('efiboot/loader/entries/02-jstack-console.conf', 'syslinux/archiso_sys-linux.cfg'):
             self.assertIn('jstack.console=1 nomodeset', (p / menu).read_text())
         subprocess.run(['bash', '-n', str(p / 'profiledef.sh')], check=True)
+
+    def test_clean_installer_and_offline_instructions(self):
+        p = profile.prepare(self.work, RELENG)
+        root = p / 'airootfs'
+        marker = root / 'etc/jstack-live-installer.json'
+        self.assertEqual(json.loads(marker.read_text()), profile.INSTALLER_MARKER)
+        installer = root / 'usr/local/bin/jstack-install-live'
+        self.assertEqual(installer.read_bytes(), (ROOT / 'iso/jstack-install-live.py').read_bytes())
+        self.assertEqual(installer.stat().st_mode & 0o777, 0o755)
+        help_script = root / 'usr/local/bin/jstack-install-help'
+        subprocess.run(['sh', '-n', str(help_script)], check=True)
+        self.assertEqual((root / 'usr/share/doc/jstack-live/INSTALL.md').read_bytes(),
+                         (ROOT / 'iso/INSTALL.md').read_bytes())
+        self.assertIn('sudo jstack-install-live', (root / 'etc/motd').read_text())
+        self.assertIn('Exec=foot -e sudo jstack-install-live',
+                      (root / 'usr/share/applications/jstack-install.desktop').read_text())
+        packages = set((p / 'packages.x86_64').read_text().splitlines())
+        self.assertTrue({'python', 'rsync', 'btrfs-progs', 'dosfstools', 'gptfdisk',
+                         'util-linux', 'arch-install-scripts', 'linux', 'mkinitcpio'} <= packages)
+
+    def test_private_overlay_cannot_claim_clean_installer_source(self):
+        overlay = self.work / 'overlay'
+        marker = overlay / 'etc/jstack-live-installer.json'
+        marker.parent.mkdir(parents=True)
+        marker.write_text(json.dumps(profile.INSTALLER_MARKER))
+        p = profile.prepare(self.work, RELENG, overlay)
+        self.assertFalse((p / 'airootfs/etc/jstack-live-installer.json').exists())
+
+    def test_empty_overlay_also_disables_installer_source(self):
+        overlay = self.work / 'overlay'
+        overlay.mkdir()
+        p = profile.prepare(self.work, RELENG, overlay)
+        self.assertFalse((p / 'airootfs/etc/jstack-live-installer.json').exists())
 
     def test_overlay_modes_and_no_host_credential_discovery(self):
         overlay = self.work / 'overlay'

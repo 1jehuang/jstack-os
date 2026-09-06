@@ -19,7 +19,7 @@ preinstalled agent harnesses.
   - `jstack-firefox/` - Firefox policies, OLED theme, curated extensions
 - `installer/` - executable no-USB Windows installer state model and tools
 - `docs/installer/` - installer architecture, safety model, and generated graph
-- `iso/` - bootable Jstack live desktop builder, not a disk installer.
+- `iso/` - bootable Jstack live desktop with an offline blank-disk installer.
   See [live image build instructions](iso/README.md).
 - `docs/TRIAGE.md` - the keep/drop decision log for everything migrated
   from the reference machine
@@ -27,9 +27,11 @@ preinstalled agent harnesses.
 ## Booting from USB
 
 See [USB boot and permanent installation](docs/USB_BOOT.md) before choosing an
-image. A standard Arch installer USB does not include Jstack or Niri. The custom
-Jstack live image includes Niri, but has no supported permanent-install workflow
-from its volatile live session. Booting either image does not install Jstack.
+image. A standard Arch installer USB does not include Jstack or Niri. A newly
+built clean Jstack live image includes Niri and `jstack-install-live`, an offline
+installer for a blank internal disk. No existing OS is required. Installation
+is manual and requires explicit target confirmation. See the
+[on-USB instructions](iso/INSTALL.md). Older Jstack images may lack the installer.
 
 ## Installing from Ubuntu
 

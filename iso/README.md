@@ -1,13 +1,14 @@
 # Jstack live USB image
 
-This builder creates a **live ISO**, not a disk installer. It uses the installed
+This builder creates a **live ISO with a manual offline installer**. It uses the installed
 official Archiso `releng` profile for generic x86-64 BIOS and UEFI boot. No physical
 disk is selected, formatted, mounted, or written by the builder.
 
 For boot-menu steps and permanent-install options, see
-[USB boot and permanent installation](../docs/USB_BOOT.md). This image includes
-Niri but **does not include a supported disk installer**. The Ubuntu installer
-requires a persistent recovery host on a separate disk, not this live session.
+[USB boot and permanent installation](../docs/USB_BOOT.md). A clean image includes
+Niri and `jstack-install-live`, which installs onto a blank internal disk without
+Ubuntu or package downloads. Read [the on-USB instructions](INSTALL.md).
+The separate Ubuntu installer still requires its persistent recovery host.
 
 ## Build on Arch Linux
 
@@ -50,12 +51,27 @@ itself is version-pinned and checksum-verified by its PKGBUILD.
   networkd/resolved units are masked. SSH and cloud-init are disabled.
 - `copytoram=n` avoids copying the whole desktop image into RAM. Writes use the
   volatile live overlay and are lost on reboot. Persistence is not implemented.
-- The systemd GPT auto-generator is masked. No automatic installer is included
-  or launched. Manual disk tools are still available to the passwordless-sudo
+- The systemd GPT auto-generator is masked. No installer runs automatically.
+  Run `jstack-install-help` for offline instructions, then explicitly launch
+  `sudo jstack-install-live` to install on a blank internal disk. Manual disk
+  tools are still available to the passwordless-sudo
   user, so this is not a security boundary against deliberate disk changes.
 - Secure Boot signing is not configured. Disable Secure Boot for this unsigned
   image. The generic initramfs and firmware packages improve portability, but
   real Dell GPU, Wi-Fi, audio, suspend, and USB behavior still need hardware tests.
+
+## Offline installation
+
+The installer copies the clean, read-only live filesystem, not the running
+session's writable overlay. It configures a new Btrfs system, account, initramfs,
+and UEFI bootloader. Target selection refuses USB/removable drives, the boot
+source, partitions, in-use disks, and nonblank disks. It requires UEFI with
+Secure Boot off and an internal disk of at least 32 GiB. BIOS live boot does not
+imply support for BIOS installation. There is no dual boot, upgrade, encryption,
+automatic rollback, or resumable installation. See [INSTALL.md](INSTALL.md).
+
+The installer and instructions are copied into newly built images. Existing
+ISOs and USB drives do not gain this capability merely by updating the repo.
 
 ## Optional private overlay
 
@@ -71,6 +87,11 @@ encryption. Treat both scratch and the resulting USB as sensitive, never publish
 an image containing secrets, and do not commit overlays. The builder does not
 discover or read credentials from the host. An overlay is a trusted input and
 can contain executable programs, so only supply content you authorize.
+
+**Overlay builds are live-only.** The profile deliberately removes the clean
+installation marker when `--overlay` is supplied, even if that overlay provides
+its own marker. The installer refuses these images to avoid copying private
+credentials or arbitrary customizations into a permanent installation.
 
 ## Checks
 
