@@ -101,6 +101,32 @@ The frozen harness is commit `6e5098e`, SHA256
 `b7b8907da30c9be6c65f4f209cf1efd3a9be69061d1b77d72556bf09cc72a4da`.
 The final partition repair is commit `6a65fc7`.
 
+## Guided interactive acceptance
+
+A second independent VM run passed on **2026-09-06 at 10:52:05 UTC** in 196.21
+seconds, using the unchanged verified ISO from Downloads. It exercised the
+actual guided TTY interface rather than supplying installation settings as
+command-line flags. The only flag was `--serial-console`, to allow checking the
+installed system through the VM's serial connection.
+
+- Cancelling with an empty disk selection returned exit 1 and the expected
+  `cancelled` diagnostic. Full 40 GiB target hashes before and after were equal.
+- The disk, displayed identity token, username, hostname, password, and repeated
+  password prompts were answered through a real TTY. Prompt/input events were
+  retained, with dummy password events redacted. No host credentials were used.
+- The guided installation returned success. A fresh-firmware boot without the
+  ISO passed the same installed-system checks and actual Niri rendering proof.
+  The installed PNG was visually inspected. Both VM phases shut down normally
+  in about three seconds, and both qcow2 integrity checks passed.
+
+Original evidence is at
+`/home/jeremy/.jcode/scratch/jstack-guided-install-proof-20260906-1048`.
+Its scratch driver, results, prompt events, screenshots, and logs are also
+preserved under `verification/guided/` in the Downloads bundle. This strengthens
+the documented manual workflow but does not change the physical-USB status:
+the inspected VFENG stick still contains ordinary Arch until separately
+authorized reflashing and readback verification occur.
+
 ## Acceptance coverage
 
 - ISO boots from emulated USB into Niri, with a focused real terminal visible.
