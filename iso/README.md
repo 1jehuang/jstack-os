@@ -80,3 +80,37 @@ ISO boot. Before writing a USB, boot the produced ISO under both UEFI and BIOS
 QEMU, test desktop and console fallback, and verify networking and package policy.
 Writing an ISO to USB erases that selected USB and is a separate, explicitly
 authorized step. Never point an imaging command at the Dell's internal disk.
+
+### Measured VM proof (2026-09-06 UTC)
+
+The generated ISO was built successfully and booted under QEMU with UEFI firmware,
+`virtio-vga-gl`, and `egl-headless`. The acceptance run observed:
+
+- niri running, a terminal launched, and the guest desktop visually verified
+  through a screenshot.
+- No failed systemd units, with NetworkManager active.
+- Working DNS and ping over the VM's Ethernet connection.
+- Correct ownership and private permissions for the explicitly supplied overlay.
+- Packaged Jcode **0.81.4** completed an authenticated model-backed workflow with
+  actual bash-tool execution. A malformed tool argument was retried successfully.
+
+The VM was stopped after verification. This is evidence for the UEFI live desktop
+workflow, not a physical Dell or USB boot guarantee. BIOS boot, the explicit
+console fallback entry, physical Wi-Fi, GPU variants, audio, and suspend still
+need their own acceptance checks. No physical disk was flashed in this proof.
+
+On Arch, QEMU graphics support is split into optional packages. A basic
+`qemu-system-x86_64` installation may lack the accelerated device and headless EGL
+display backend even though the emulator itself runs. Install them before testing:
+
+```sh
+sudo pacman -S --needed qemu-system-x86 edk2-ovmf \
+  qemu-hw-display-virtio-vga-gl qemu-ui-opengl qemu-ui-egl-headless
+```
+
+The tested graphics combination is `-device virtio-vga-gl -display egl-headless`.
+It requires a working host EGL/render device. Check that the QEMU device and
+display backends are available before attributing a VM startup failure to the
+ISO. Headless EGL does not open a desktop window, so use a guest screenshot or
+remote display plus serial checks to verify the actual desktop rather than only
+asserting that the niri executable exists.
