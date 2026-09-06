@@ -21,6 +21,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 
 MARKER = 'etc/jstack-live-installer.json'
 TRUST = {'schema': 1, 'image': 'jstack-live', 'clean': True, 'architecture': 'x86_64'}
@@ -142,7 +144,7 @@ def walk(nodes):
 
 def inventory():
     return jsrun('lsblk', '--json', '--bytes', '--paths', '--output',
-                 'NAME,TYPE,SIZE,RO,RM,TRAN,SERIAL,WWN,MODEL,MAJ:MIN,LOG-SEC,MOUNTPOINTS,START,PARTUUID')['blockdevices']
+                 'NAME,TYPE,SIZE,RO,RM,TRAN,SERIAL,WWN,MODEL,MAJ:MIN,LOG-SEC,MOUNTPOINTS,START,PARTUUID,PARTTYPE')['blockdevices']
 
 
 def node_for(device, nodes):
@@ -188,17 +190,26 @@ def swap_devices():
     return result
 
 
-def busy_check(node):
+def busy_check(node, allow_missing_children=False):
     mounted = mounted_devices()
     swaps = swap_devices()
     protected = backing_devices(mounted | swaps)
+    complete = True
     for child in walk([node]):
         require(not any(child.get('mountpoints') or []), 'target or descendant is mounted')
         require(child['maj:min'] not in mounted, 'target or descendant is mounted')
         require(child['maj:min'] not in swaps, 'target or descendant is active swap')
         require(child['maj:min'] not in protected, 'target backs a mounted filesystem, live source, or swap')
         sys = Path('/sys/dev/block') / child['maj:min']
-        require(not any((sys / 'holders').iterdir()), 'target or descendant has holders')
+        try:
+            holders = list((sys / 'holders').iterdir())
+        except FileNotFoundError:
+            if allow_missing_children and child is not node:
+                complete = False
+                continue
+            raise
+        require(not holders, 'target or descendant has holders')
+    return complete
 
 
 def backing_devices(numbers):
@@ -295,12 +306,144 @@ def check_partition(identity, expected, number):
     matches = [p for p in parts if p['maj:min'] == expected['maj:min']]
     require(len(matches) == 1, 'partition identity changed')
     part = matches[0]
-    require(all(part.get(k) == expected.get(k) for k in ('name', 'type', 'size', 'start', 'partuuid')),
+    require(all(part.get(k) == expected.get(k) for k in ('name', 'type', 'size', 'start', 'partuuid', 'parttype')),
             'partition identity or geometry changed')
     sys = (Path('/sys/dev/block') / part['maj:min']).resolve(strict=True)
     require(str(sys.parent) == identity['sysfs'] and (sys / 'partition').read_text().strip() == str(number),
             'partition ancestry changed')
     return part
+
+
+def partition_plan(identity):
+    """Exact GPT geometry in logical sectors, independent of observed nodes."""
+    sector = identity['sector']
+    require(identity['size'] % sector == 0, 'disk size is not a whole number of sectors')
+    first = 1024**2 // sector
+    esp_sectors = 1024**3 // sector
+    # Standard 128-entry GPT: backup header plus ceil(16 KiB / sector) array.
+    last = identity['size'] // sector - 2 - (16384 + sector - 1) // sector
+    return [
+        {'number': 1, 'first': first, 'last': first + esp_sectors - 1,
+         'partuuid': str(uuid.uuid4()), 'parttype': 'c12a7328-f81f-11d2-ba4b-00a0c93ec93b'},
+        {'number': 2, 'first': first + esp_sectors, 'last': last,
+         'partuuid': str(uuid.uuid4()), 'parttype': '0fc63daf-8483-4772-8e79-3d69d8477de4'},
+    ]
+
+
+class PartitionPending(Exception):
+    """Only incomplete udev discovery may be retried, never unsafe geometry."""
+
+
+def partition_snapshot(identity, disk, plan):
+    parts = disk.get('children', [])
+    require(len(parts) <= 2 and all(p['type'] == 'part' and not p.get('children') for p in parts),
+            'unexpected partition layout: extra or non-partition descendants')
+    found = {}
+    for part in parts:
+        try:
+            sysfs = (Path('/sys/dev/block') / part['maj:min']).resolve(strict=True)
+            require(str(sysfs.parent) == identity['sysfs'], 'partition ancestry mismatch')
+            number = int((sysfs / 'partition').read_text().strip())
+            require(number in (1, 2) and number not in found, 'unexpected or duplicate partition number')
+            wanted = plan[number - 1]
+            start_bytes = int((sysfs / 'start').read_text().strip()) * 512
+            size_bytes = int((sysfs / 'size').read_text().strip()) * 512
+            require(start_bytes == wanted['first'] * identity['sector'] and
+                    size_bytes == (wanted['last'] - wanted['first'] + 1) * identity['sector'] and
+                    int(part['size']) == size_bytes, 'partition geometry does not match planned GPT')
+            st = Path(part['name']).stat()
+            major, minor = map(int, part['maj:min'].split(':'))
+            require(stat.S_ISBLK(st.st_mode) and st.st_rdev == os.makedev(major, minor),
+                    'partition device identity mismatch')
+        except FileNotFoundError as exc:
+            raise PartitionPending('partition sysfs/device node not ready') from exc
+        # udev attributes may arrive after kernel nodes. Nonempty wrong values
+        # are unsafe, not a reason to wait for a more convenient observation.
+        for key in ('partuuid', 'parttype'):
+            if part.get(key):
+                require(part[key].lower() == wanted[key], f'partition {key} does not match planned GPT')
+        if not part.get('partuuid') or not part.get('parttype') or part.get('start') is None:
+            raise PartitionPending('partition udev properties not ready')
+        found[number] = part
+    if len(found) != 2:
+        raise PartitionPending(f'only {len(found)} of 2 planned partitions visible')
+    return [found[1], found[2]]
+
+
+def wait_for_partitions(identity, plan, timeout=30):
+    started = time.monotonic()
+    deadline = started + timeout
+    previous = None
+    consecutive = False
+    observed = []
+    detail = 'no partition inventory available'
+    # The iteration cap is independent of monotonic time for a strict retry bound.
+    for _ in range(150):
+        if time.monotonic() >= deadline:
+            break
+        # No writing tools in this loop. A changed/busy parent fails immediately.
+        _, disk = inspect_disk(identity['device'], blank=False, expected=identity)
+        busy_complete = busy_check(disk, allow_missing_children=True)
+        observed = disk.get('children', [])
+        try:
+            if not busy_complete:
+                raise PartitionPending('partition holders directory not ready')
+            parts = partition_snapshot(identity, disk, plan)
+            fingerprint = [{k: p.get(k) for k in ('name', 'maj:min', 'type', 'size', 'start', 'partuuid', 'parttype')}
+                           for p in parts]
+            require(previous is None or fingerprint == previous,
+                    'complete partition identity or geometry changed during discovery')
+            if consecutive:
+                return disk, parts
+            previous = fingerprint
+            consecutive = True
+            detail = 'waiting for a second identical complete partition inventory'
+        except PartitionPending as exc:
+            consecutive = False
+            detail = str(exc)
+        print(f'Partition discovery: {detail}. Observed: ' + json.dumps(disk.get('children', []), sort_keys=True))
+        # settle alone only drains queued events. Re-enumerate after a bounded
+        # delay as device nodes and their udev properties can arrive separately.
+        settled = run('udevadm', 'settle', '--timeout=1', ok=(0, 1))
+        if settled.returncode:
+            diagnostics = (settled.stdout + settled.stderr).lower()
+            require('timed out' in diagnostics or 'timeout' in diagnostics,
+                    f'udevadm settle failed: {diagnostics.strip()}')
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(0.2, remaining))
+    elapsed = time.monotonic() - started
+    raise Refusal(f'partition discovery timed out after {elapsed:.1f}s (limit {timeout}s) '
+                  f'without exact stable planned layout: {detail}. Observed: {json.dumps(observed, sort_keys=True)}')
+
+
+def reread_partitions(identity):
+    """Refresh kernel metadata after sgdisk closes, without rewriting the GPT."""
+    _, disk = inspect_disk(identity['device'], blank=False, expected=identity)
+    # Missing child sysfs is permissible only for this metadata reread. Mounted
+    # and swap entries and all visible holders are still checked; the kernel
+    # itself refuses BLKRRPART on busy partitions. Formatting never uses this.
+    busy_check(disk, allow_missing_children=True)
+    # Let probes triggered by sgdisk close partition descriptors before the ONE
+    # kernel reread. A timeout/failure is fatal here, not an ignored ioctl retry.
+    run('udevadm', 'settle', '--timeout=5')
+    fd = os.open(identity['device'], os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        st = os.fstat(fd)
+        major, minor = map(int, identity['devnum'].split(':'))
+        require(stat.S_ISBLK(st.st_mode) and st.st_rdev == os.makedev(major, minor), 'reread device identity mismatch')
+        _, disk = inspect_disk(identity['device'], blank=False, expected=identity)
+        busy_check(disk, allow_missing_children=True)
+        # BLKRRPART operates on this very descriptor, not a reopened procfd path.
+        # It refreshes kernel partition metadata only, never writes the disk.
+        try:
+            fcntl.ioctl(fd, 0x125f)
+        except OSError as exc:
+            raise Refusal(f'kernel partition reread failed: {exc}') from exc
+        print('Kernel partition reread completed (BLKRRPART on pinned descriptor).')
+        inspect_disk(identity['device'], blank=False, expected=identity)
+    finally:
+        os.close(fd)
 
 
 def mount_partition(identity, part, number, dest, mounts, options=None):
@@ -452,6 +595,33 @@ def configure_target(root, username, hostname, password, root_uuid, esp_uuid, se
         'rollback': False}, sort_keys=True) + '\n')
 
 
+def create_partitions(identity, on_mutation=None):
+    """Internal destructive phase, shared by install and disposable-VM proof.
+
+    The public CLI still requires clean-live verification and explicit consent.
+    This phase independently rechecks blankness and identity before writing.
+    """
+    plan = partition_plan(identity)
+    inspect_disk(identity['device'], expected=identity)
+    major, minor = map(int, identity['devnum'].split(':'))
+    with exclusive_device(identity['device'], os.makedev(major, minor)) as (fd, pinned):
+        inspect_disk(identity['device'], expected=identity)
+        args = ['sgdisk', '--clear', '--resize-table=128', f'--set-alignment={1024**2 // identity["sector"]}']
+        for part in plan:
+            number = part['number']
+            args.extend((f'--new={number}:{part["first"]}:{part["last"]}',
+                         f'--typecode={number}:{part["parttype"]}',
+                         f'--partition-guid={number}:{part["partuuid"]}',
+                         f'--change-name={number}:JSTACK-' + ('ESP' if number == 1 else 'ROOT')))
+        if on_mutation is not None:
+            on_mutation()
+        result = run(*args, pinned, pass_fds=(fd,))
+        print('Partitioner stdout:\n' + result.stdout)
+        print('Partitioner stderr:\n' + result.stderr)
+    reread_partitions(identity)
+    return wait_for_partitions(identity, plan)
+
+
 def install(identity, source, username, hostname, password, serial=False):
     modified = False
     mounts = []
@@ -471,19 +641,10 @@ def install(identity, source, username, hostname, password, serial=False):
         # the first mutation, after potentially long prompts/source preparation.
         live_environment()
         require(source_info() == source, 'live source changed')
-        inspect_disk(identity['device'], expected=identity)
-        major, minor = map(int, identity['devnum'].split(':'))
-        with exclusive_device(identity['device'], os.makedev(major, minor)) as (fd, pinned):
-            inspect_disk(identity['device'], expected=identity)
+        def mark_modified():
+            nonlocal modified
             modified = True
-            run('sgdisk', '--clear', '--new=1:0:+1G', '--typecode=1:ef00',
-                '--change-name=1:JSTACK-ESP', '--new=2:0:0', '--typecode=2:8300',
-                '--change-name=2:JSTACK-ROOT', pinned, pass_fds=(fd,))
-        run('udevadm', 'settle', '--timeout=30')
-        _, disk = inspect_disk(identity['device'], blank=False, expected=identity)
-        children = disk.get('children', [])
-        require(len(children) == 2 and all(p['type'] == 'part' for p in children), 'unexpected partition layout')
-        children.sort(key=lambda p: int((Path('/sys/dev/block') / p['maj:min'] / 'partition').read_text()))
+        disk, children = create_partitions(identity, on_mutation=mark_modified)
         for index, part in enumerate(children, 1):
             partition_sysfs = (Path('/sys/dev/block') / part['maj:min']).resolve(strict=True)
             require(str(partition_sysfs.parent) == identity['sysfs'] and (partition_sysfs / 'partition').read_text().strip() == str(index),

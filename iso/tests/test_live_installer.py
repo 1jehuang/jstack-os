@@ -10,6 +10,7 @@ import importlib.util
 import io
 import hashlib
 import json
+import errno
 import os
 from pathlib import Path
 import stat
@@ -168,6 +169,244 @@ class DiskSafetyTests(SafeTest):
         for field, value in [('name', '/dev/vdc1'), ('partuuid', 'b'), ('start', 4096), ('size', 1)]:
             with self.subTest(field=field), patch.object(installer, 'inspect_disk', return_value=(IDENTITY, {'children': [{**part, field: value}, {'maj:min': '252:18'}]})), self.assertRaisesRegex(installer.Refusal, 'geometry'):
                 installer.check_partition(IDENTITY, part, 1)
+
+
+class PartitionReadinessTests(SafeTest):
+    def fixture(self, sector=512):
+        parent = self.root / 'devices/block/vdb'
+        parent.mkdir(parents=True)
+        devdir = self.root / 'sys/dev/block'
+        devdir.mkdir(parents=True)
+        identity = {**IDENTITY, 'sector': sector, 'sysfs': str(parent)}
+        plan = installer.partition_plan(identity)
+        parts = []
+        for wanted in plan:
+            number = wanted['number']
+            path = parent / f'vdb{number}'
+            path.mkdir()
+            (path / 'partition').write_text(str(number))
+            (path / 'start').write_text(str(wanted['first'] * sector // 512))
+            size = (wanted['last'] - wanted['first'] + 1) * sector
+            (path / 'size').write_text(str(size // 512))
+            (devdir / f'252:{16+number}').symlink_to(path)
+            parts.append({**DISK, 'name': f'/dev/vdb{number}', 'type': 'part',
+                          'maj:min': f'252:{16+number}', 'size': size,
+                          'start': wanted['first'] * sector // 512,
+                          'partuuid': wanted['partuuid'], 'parttype': wanted['parttype']})
+        return identity, plan, {**DISK, 'children': parts}, devdir
+
+    @contextlib.contextmanager
+    def paths(self, devdir):
+        realpath, realstat = Path, Path.stat
+        def path(value):
+            return devdir if str(value) == '/sys/dev/block' else realpath(value)
+        def stat_path(path, *args, **kwargs):
+            if str(path) in ('/dev/vdb1', '/dev/vdb2'):
+                number = int(str(path)[-1])
+                return SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=os.makedev(252, 16 + number))
+            return realstat(path, *args, **kwargs)
+        with patch.object(installer, 'Path', side_effect=path), patch.object(Path, 'stat', new=stat_path):
+            yield
+
+    def test_plan_exact_512_and_4kn_geometry(self):
+        for sector in (512, 4096):
+            plan = installer.partition_plan({**IDENTITY, 'sector': sector})
+            esp, root = plan
+            self.assertEqual(esp['first'] * sector, 1024**2)
+            self.assertEqual((esp['last'] - esp['first'] + 1) * sector, 1024**3)
+            self.assertEqual(root['first'], esp['last'] + 1)
+            self.assertEqual(root['last'], IDENTITY['size'] // sector - 2 - (16384 + sector - 1) // sector)
+            self.assertNotEqual(esp['partuuid'], root['partuuid'])
+
+    def test_complete_snapshot_matches_intended_geometry(self):
+        identity, plan, disk, devdir = self.fixture(4096)
+        with self.paths(devdir):
+            self.assertEqual(installer.partition_snapshot(identity, disk, plan), disk['children'])
+
+    def test_pending_only_for_incomplete_nodes_or_attributes(self):
+        identity, plan, disk, devdir = self.fixture()
+        with self.paths(devdir):
+            for children in ([], disk['children'][:1], [{**disk['children'][0], 'partuuid': None}, disk['children'][1]]):
+                with self.subTest(children=len(children)), self.assertRaises(installer.PartitionPending):
+                    installer.partition_snapshot(identity, {**disk, 'children': children}, plan)
+            (devdir / '252:17').unlink()
+            with self.assertRaises(installer.PartitionPending):
+                installer.partition_snapshot(identity, disk, plan)
+
+    def test_wrong_geometry_uuid_type_and_extra_children_never_pending(self):
+        identity, plan, disk, devdir = self.fixture()
+        with self.paths(devdir):
+            for key, value in [('size', 1234), ('partuuid', 'wrong'), ('parttype', 'wrong'), ('type', 'crypt')]:
+                bad = {**disk, 'children': [{**disk['children'][0], key: value}, disk['children'][1]]}
+                with self.subTest(key=key), self.assertRaises(installer.Refusal):
+                    installer.partition_snapshot(identity, bad, plan)
+            with self.assertRaises(installer.Refusal):
+                installer.partition_snapshot(identity, {**disk, 'children': disk['children'] * 2}, plan)
+
+    @contextlib.contextmanager
+    def waiting(self, snapshots):
+        parts = [{**DISK, 'name': '/dev/vdb1', 'maj:min': '252:17'},
+                 {**DISK, 'name': '/dev/vdb2', 'maj:min': '252:18'}]
+        self.run.side_effect = None
+        self.run.return_value = SimpleNamespace(returncode=0, stdout='', stderr='')
+        with patch.object(installer, 'inspect_disk', return_value=(IDENTITY, {**DISK, 'children': parts})) as inspect, \
+             patch.object(installer, 'busy_check', return_value=True) as busy, \
+             patch.object(installer, 'partition_snapshot', side_effect=snapshots) as snapshot, \
+             patch.object(installer.time, 'sleep'), patch.object(installer.time, 'monotonic', return_value=0), \
+             contextlib.redirect_stdout(io.StringIO()):
+            yield parts, inspect, busy, snapshot
+
+    def test_waits_for_two_complete_snapshots_after_incomplete_discovery(self):
+        with self.waiting(None) as (parts, inspect, _, snapshot):
+            snapshot.side_effect = [installer.PartitionPending('no nodes'), parts, parts]
+            self.assertEqual(installer.wait_for_partitions(IDENTITY, [] )[1], parts)
+            self.assertEqual(inspect.call_count, 3)
+            self.assertEqual(self.run.call_count, 2)
+            self.assertTrue(all(call.args[0] == 'udevadm' for call in self.run.call_args_list))
+
+    def test_changed_complete_snapshot_is_fatal_even_after_incomplete_view(self):
+        with self.waiting(None) as (parts, _, _, snapshot):
+            changed = [{**parts[0], 'maj:min': '252:99'}, parts[1]]
+            snapshot.side_effect = [parts, installer.PartitionPending('node temporarily absent'), changed]
+            with self.assertRaisesRegex(installer.Refusal, 'changed during discovery'):
+                installer.wait_for_partitions(IDENTITY, [])
+
+    def test_parent_identity_and_busy_failure_are_not_retried(self):
+        for location in ('identity', 'busy'):
+            with self.waiting(None) as (_, inspect, busy, snapshot):
+                (inspect if location == 'identity' else busy).side_effect = installer.Refusal('unsafe parent')
+                with self.assertRaisesRegex(installer.Refusal, 'unsafe parent'):
+                    installer.wait_for_partitions(IDENTITY, [])
+                self.assertEqual(inspect.call_count, 1)
+                snapshot.assert_not_called()
+                self.run.assert_not_called()
+
+    def test_missing_child_holders_waits_but_parent_missing_is_fatal(self):
+        with self.waiting(None) as (parts, inspect, busy, snapshot):
+            busy.side_effect = [False, True, True]
+            snapshot.side_effect = [parts, parts]
+            installer.wait_for_partitions(IDENTITY, [])
+            self.assertEqual(inspect.call_count, 3)
+            self.assertEqual(snapshot.call_count, 2)
+
+    def test_retry_limit_retains_last_inventory(self):
+        with self.waiting(installer.PartitionPending('not ready')) as (_, inspect, _, _):
+            with self.assertRaisesRegex(installer.Refusal, 'timed out.*Observed:'):
+                installer.wait_for_partitions(IDENTITY, [])
+            self.assertEqual(inspect.call_count, 150)
+
+    def test_deadline_stops_before_retry_limit(self):
+        with self.waiting(installer.PartitionPending('not ready')) as (_, inspect, _, _), \
+             patch.object(installer.time, 'monotonic', side_effect=[0, 0, 31, 32, 32]):
+            with self.assertRaisesRegex(installer.Refusal, 'limit 30s'):
+                installer.wait_for_partitions(IDENTITY, [])
+            self.assertEqual(inspect.call_count, 1)
+
+    def test_udev_timeout_may_retry_but_other_failures_do_not(self):
+        with self.waiting(None) as (parts, _, _, snapshot):
+            snapshot.side_effect = [installer.PartitionPending('pending'), parts, parts]
+            self.run.return_value = SimpleNamespace(returncode=1, stdout='', stderr='Timed out waiting for queue')
+            installer.wait_for_partitions(IDENTITY, [])
+        with self.waiting(installer.PartitionPending('pending')):
+            self.run.return_value = SimpleNamespace(returncode=1, stdout='', stderr='Cannot connect to udev')
+            with self.assertRaisesRegex(installer.Refusal, 'settle failed'):
+                installer.wait_for_partitions(IDENTITY, [])
+
+    def test_reread_uses_actual_pinned_fd_and_revalidates(self):
+        self.run.side_effect = None
+        st = SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=os.makedev(252, 16))
+        with patch.object(installer, 'inspect_disk', return_value=(IDENTITY, DISK)) as inspect, \
+             patch.object(installer, 'busy_check'), patch.object(installer.os, 'open', return_value=77), \
+             patch.object(installer.os, 'close') as close, patch.object(installer.os, 'fstat', return_value=st), \
+             patch.object(installer.fcntl, 'ioctl') as ioctl, contextlib.redirect_stdout(io.StringIO()):
+            installer.reread_partitions(IDENTITY)
+            ioctl.assert_called_once_with(77, 0x125f)
+            self.assertEqual(inspect.call_count, 3)
+            close.assert_called_once_with(77)
+        self.run.assert_called_once_with('udevadm', 'settle', '--timeout=5')
+
+    def test_reread_errno_fails_without_retry(self):
+        self.run.side_effect = None
+        st = SimpleNamespace(st_mode=stat.S_IFBLK | 0o600, st_rdev=os.makedev(252, 16))
+        with patch.object(installer, 'inspect_disk', return_value=(IDENTITY, DISK)), \
+             patch.object(installer, 'busy_check'), patch.object(installer.os, 'open', return_value=77), \
+             patch.object(installer.os, 'close'), patch.object(installer.os, 'fstat', return_value=st), \
+             patch.object(installer.fcntl, 'ioctl', side_effect=OSError(errno.EBUSY, 'busy')) as ioctl, \
+             self.assertRaisesRegex(installer.Refusal, 'reread failed'):
+            installer.reread_partitions(IDENTITY)
+        ioctl.assert_called_once()
+        self.run.assert_called_once_with('udevadm', 'settle', '--timeout=5')
+
+    def test_reread_rejects_changed_parent_or_descriptor_before_ioctl(self):
+        self.run.side_effect = None
+        for failure in ('parent', 'descriptor'):
+            st = SimpleNamespace(st_mode=stat.S_IFBLK | 0o600,
+                                 st_rdev=os.makedev(252, 99 if failure == 'descriptor' else 16))
+            with patch.object(installer, 'inspect_disk', return_value=(IDENTITY, DISK)) as inspect, \
+                 patch.object(installer, 'busy_check'), patch.object(installer.os, 'open', return_value=77), \
+                 patch.object(installer.os, 'close'), patch.object(installer.os, 'fstat', return_value=st), \
+                 patch.object(installer.fcntl, 'ioctl') as ioctl, self.assertRaises(installer.Refusal):
+                if failure == 'parent':
+                    inspect.side_effect = [(IDENTITY, DISK), installer.Refusal('identity changed')]
+                installer.reread_partitions(IDENTITY)
+            ioctl.assert_not_called()
+
+    def test_pre_reread_settle_failure_is_fatal_without_ioctl(self):
+        self.run.side_effect = installer.Refusal('udev settle timeout')
+        with patch.object(installer, 'inspect_disk', return_value=(IDENTITY, DISK)), \
+             patch.object(installer, 'busy_check'), patch.object(installer.os, 'open') as opening, \
+             patch.object(installer.fcntl, 'ioctl') as ioctl, \
+             self.assertRaisesRegex(installer.Refusal, 'settle timeout'):
+            installer.reread_partitions(IDENTITY)
+        self.run.assert_called_once_with('udevadm', 'settle', '--timeout=5')
+        opening.assert_not_called()
+        ioctl.assert_not_called()
+
+    def test_creation_uses_plan_and_closes_claim_before_reread(self):
+        workspace = self.root / 'workspace'
+        workspace.mkdir()
+        identity = {**IDENTITY, 'sector': 4096}
+        plan = installer.partition_plan(identity)
+        events = []
+        @contextlib.contextmanager
+        def exclusive(*args, **kwargs):
+            events.append('claim-open')
+            try:
+                yield 77, '/proc/self/fd/77'
+            finally:
+                events.append('claim-closed')
+        def command(*args, **kwargs):
+            if args[0] == 'sgdisk':
+                events.append('sgdisk')
+                return SimpleNamespace(returncode=0, stdout='GPT written', stderr='kernel reread warning')
+            return SimpleNamespace(returncode=0, stdout='1000\t/source\n', stderr='')
+        def reread(*args):
+            self.assertEqual(events, ['claim-open', 'sgdisk', 'claim-closed'])
+            raise installer.Refusal('stop before formatting')
+        self.run.side_effect = command
+        with patch.object(installer.tempfile, 'mkdtemp', return_value=str(workspace)), \
+             patch.object(installer, 'validate_source'), patch.object(installer, 'live_environment'), \
+             patch.object(installer, 'source_info', return_value=(self.root, False)), \
+             patch.object(installer, 'inspect_disk', return_value=(identity, DISK)), \
+             patch.object(installer, 'partition_plan', return_value=plan), \
+             patch.object(installer, 'exclusive_device', side_effect=exclusive), \
+             patch.object(installer, 'reread_partitions', side_effect=reread), \
+             contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()), \
+             self.assertRaisesRegex(installer.Refusal, 'stop before formatting'):
+            installer.install(identity, (self.root, False), 'alice', 'dell', 'password123')
+        call = next(call for call in self.run.call_args_list if call.args[0] == 'sgdisk')
+        self.assertIn('--resize-table=128', call.args)
+        self.assertIn('--set-alignment=256', call.args)
+        self.assertEqual(call.args[-1], '/proc/self/fd/77')
+        self.assertEqual(call.kwargs['pass_fds'], (77,))
+        for wanted in plan:
+            number = wanted['number']
+            self.assertIn(f'--new={number}:{wanted["first"]}:{wanted["last"]}', call.args)
+            self.assertIn(f'--partition-guid={number}:{wanted["partuuid"]}', call.args)
+            self.assertIn(f'--typecode={number}:{wanted["parttype"]}', call.args)
+        self.assertIn('GPT written', output.getvalue())
+        self.assertIn('kernel reread warning', output.getvalue())
+        self.assertEqual(self.run.call_count, 2)
 
 
 class SourceSafetyTests(SafeTest):
