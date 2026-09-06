@@ -103,6 +103,36 @@ class ProfileTests(unittest.TestCase):
         self.assertIn('outside the repository', result.stderr)
         self.assertFalse((ROOT / 'iso/not-created').exists())
 
+    def test_package_staging_keeps_nested_rust_sources(self):
+        # Run the real staging loop with an inert package builder. Stop before
+        # the AUR clone, repo generation, or sudo. No network/build/root effects.
+        tools = self.work / 'tools'
+        tools.mkdir()
+        for name in ('repo-add', 'mkarchiso', 'sudo', 'git', 'cargo', 'meson',
+                     'ninja', 'scdoc', 'arch-meson'):
+            tool = tools / name
+            tool.write_text('#!/bin/sh\necho UNEXPECTED_TOOL_EXECUTION >&2\nexit 99\n')
+            tool.chmod(0o755)
+        makepkg = tools / 'makepkg'
+        makepkg.write_text('''#!/bin/sh
+if [ "${PWD##*/}" = jstack-waybar ]; then
+  for crate in niri-workspaces-rs battery-rs window-uptime-rs; do
+    test -f "files/rs/$crate/src/main.rs" || { echo MISSING_RUST_SOURCE >&2; exit 94; }
+  done
+  echo RUST_SOURCES_PRESERVED >&2
+  exit 93
+fi
+exit 0
+''')
+        makepkg.chmod(0o755)
+        env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}')
+        result = subprocess.run(['bash', str(ROOT / 'iso/build-live.sh'), '--work',
+                                 str(self.work / 'build')], env=env,
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 93, result.stdout + result.stderr)
+        self.assertIn('RUST_SOURCES_PRESERVED', result.stderr)
+        self.assertNotIn('UNEXPECTED_TOOL_EXECUTION', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
