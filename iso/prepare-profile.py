@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import shutil
+import shlex
 
 PACKAGES = (
     'tofi-jstack', 'jstack-base', 'jstack-agent', 'jstack-terminals',
@@ -24,9 +25,20 @@ ENABLED = (
 )
 
 
+def parent_dirs(p):
+    missing = []
+    parent = p.parent
+    while not parent.exists():
+        missing.append(parent)
+        parent = parent.parent
+    p.parent.mkdir(parents=True, exist_ok=True)
+    for parent in missing:
+        parent.chmod(0o755)
+
+
 def put(root, path, text, mode=0o644):
     p = root / path.lstrip('/')
-    p.parent.mkdir(parents=True, exist_ok=True)
+    parent_dirs(p)
     if p.is_symlink():
         p.unlink()
     p.write_text(text)
@@ -35,7 +47,7 @@ def put(root, path, text, mode=0o644):
 
 def link(root, path, target):
     p = root / path.lstrip('/')
-    p.parent.mkdir(parents=True, exist_ok=True)
+    parent_dirs(p)
     if p.exists() or p.is_symlink():
         p.unlink()
     p.symlink_to(target)
@@ -89,6 +101,8 @@ file_permissions["/usr/local/lib/jstack-live-setup"]="0:0:755"
     (profile / 'mirrorlist').write_text(mirrors)
     pacman = profile / 'pacman.conf'
     pacman.write_text(pacman.read_text().replace('Include = /etc/pacman.d/mirrorlist', f'Include = {profile}/mirrorlist'))
+    (work / 'pacman-cache').mkdir(exist_ok=True)
+    pacman.write_text(pacman.read_text().replace('[options]', f'[options]\nCacheDir = {work}/pacman-cache', 1))
     put(root, '/etc/pacman.d/mirrorlist', mirrors)
     put(root, '/etc/hostname', 'jstack-live\n')
     put(root, '/etc/motd', 'Jstack OS live session. No installation runs automatically.\nChanges are volatile. Ctrl+Alt+F2 opens a console. sudo needs no password.\n')
@@ -187,6 +201,23 @@ INITRD /%INSTALL_DIR%/boot/%ARCH%/initramfs-linux.img
 APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram=n jstack.console=1 nomodeset
 '''
     syslinux.write_text(text)
+    # mkarchiso deliberately copies airootfs with --no-preserve=ownership,mode.
+    # Bind every overlay path explicitly so private files are private in the
+    # SquashFS too, not just after first-boot initialization.
+    with (profile / 'profiledef.sh').open('a') as permissions:
+        if overlay:
+            for source in sorted(overlay.rglob('*')):
+                relative = source.relative_to(overlay)
+                dest = root / relative
+                if not dest.exists() or dest.is_symlink():
+                    continue
+                name = '/' + relative.as_posix()
+                owner = '1000:1000' if name == '/home/jstack' or name.startswith('/home/jstack/') else '0:0'
+                mode = dest.stat().st_mode & 0o777
+                if name == '/home/jstack' or name.startswith('/home/jstack/.config/jcode') or name.startswith('/etc/NetworkManager/system-connections') or name.startswith('/var/lib/iwd'):
+                    mode = 0o700 if dest.is_dir() else 0o600
+                permissions.write(f'file_permissions[{shlex.quote(name)}]={shlex.quote(f"{owner}:{mode:o}")}\n')
+        permissions.write('file_permissions["/etc/sudoers.d/15-jstack-live"]="0:0:440"\n')
     return profile
 
 

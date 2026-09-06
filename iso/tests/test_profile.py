@@ -48,6 +48,7 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("'bios.syslinux'", conf)
         self.assertIn("'uefi.systemd-boot'", conf)
         self.assertIn("'-processors' '2' '-mem' '512M'", conf)
+        self.assertIn(f'CacheDir = {self.work}/pacman-cache', (p / 'pacman.conf').read_text())
         hooks = (p / 'airootfs/etc/mkinitcpio.conf.d/archiso.conf').read_text()
         self.assertIn('archiso', hooks)
         self.assertNotIn('autodetect', hooks)
@@ -69,6 +70,10 @@ class ProfileTests(unittest.TestCase):
         copied = p / 'airootfs/home/jstack/.config/jcode/example.env'
         self.assertEqual(copied.read_text(), fixture.read_text())
         self.assertEqual(copied.stat().st_mode & 0o777, 0o600)
+        conf = (p / 'profiledef.sh').read_text()
+        self.assertIn('file_permissions[/home/jstack/.config/jcode/example.env]=1000:1000:600', conf)
+        self.assertIn('file_permissions[/home/jstack/.config/jcode]=1000:1000:700', conf)
+        subprocess.run(['bash', '-n', str(p / 'profiledef.sh')], check=True)
 
     def test_overlay_symlink_refused(self):
         overlay = self.work / 'overlay'
