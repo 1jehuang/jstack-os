@@ -634,6 +634,34 @@ class TargetPolicyTests(SafeTest):
                       'etc/systemd/journald.conf.d/volatile-storage.conf',
                       'etc/mkinitcpio.conf.d/archiso.conf', 'etc/mkinitcpio.d/linux.preset',
                       installer.MARKER, 'etc/sudoers.d/15-jstack-live', 'usr/local/lib/jstack-live-setup')
+        # These public helpers, launchers and policy paths were previously
+        # absent from the fixture, so their removal had no component assertion.
+        removed_files = (
+            'etc/systemd/system-generators/live-generator',
+            'etc/systemd/system-preset/10-live.preset',
+            'etc/initcpio/install/archiso',
+            'etc/udev/rules.d/81-dhcpcd.rules',
+            'etc/NetworkManager/conf.d/20-jstack-live.conf',
+            'usr/local/bin/jstack-install-live',
+            'usr/local/bin/jstack-install-help',
+            'usr/share/applications/jstack-install.desktop',
+            'usr/share/applications/jstack-install-help.desktop',
+            'usr/share/doc/jstack-live/INSTALL.md',
+            'root/.automated_script.sh',
+            'root/.zlogin',
+            'etc/pacman.d/hooks/live.hook',
+        )
+        removed_directories = (
+            'etc/systemd/system', 'etc/systemd/system-generators',
+            'etc/systemd/system-preset', 'etc/systemd/journald.conf.d',
+            'etc/systemd/logind.conf.d', 'etc/mkinitcpio.conf.d',
+            'etc/mkinitcpio.d', 'etc/initcpio',
+            'usr/share/doc/jstack-live', 'etc/pacman.d/hooks',
+        )
+        # An unrelated sentinel must disappear even when known policy files
+        # below the same directory are subsequently recreated or overwritten.
+        removed_files += tuple(path + '/live-removal-sentinel' for path in removed_directories)
+        live_files += removed_files
         for path in live_files:
             self.put(path, 'LIVE SECRET CONFIG')
         self.put('boot/EFI/BOOT/BOOTX64.EFI', 'efi')
@@ -643,6 +671,10 @@ class TargetPolicyTests(SafeTest):
         installer.configure_target(self.root, 'alice', 'dell', 'new-password', 'abcd-1234', 'ABCD-1234', True)
         for path in live_files:
             self.assertNotIn('LIVE SECRET CONFIG', (self.root / path).read_text() if (self.root / path).is_file() else '')
+        for path in removed_files:
+            with self.subTest(removed=path):
+                self.assertFalse((self.root / path).exists())
+                self.assertFalse((self.root / path).is_symlink())
         config = (self.root / 'etc/mkinitcpio.conf').read_text()
         self.assertNotIn('archiso', config)
         self.assertNotIn('autodetect', config)

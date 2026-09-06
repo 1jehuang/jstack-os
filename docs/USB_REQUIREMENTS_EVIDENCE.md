@@ -89,12 +89,34 @@ acceptance are therefore reported separately.
 | Installed Btrfs/ESP/account/boot policy | Public `findmnt`, `bootctl`, login/sudo, systemctl, keyring and artifact checks in both installed boots | Exact subvolume mounts/shared UUID/zstd:3, VFAT ESP, fallback EFI boot, locked root, valid machine ID, populated persistent keyring, active NM, masked backends/sockets, and zero failed units observed. |
 | Foot packaged configuration | Real package-build parser check and actual terminals in live/main-installed/guided-installed screenshots | `[colors-dark]` parses without errors/warnings and the previous visible error is absent. Package archive was built, installed into the image, and exercised. |
 | Installer and help `.desktop` entries | Actual Alt+Space/tofi keyboard selection of both entries, focused Foot descendants, native menu/application screenshots, empty disk cancellation | `verification/menu/` records readable help and the actual disk prompt, visually inspected. Full target hashes unchanged. The earlier 1055 screenshot was too early and was rejected, not counted as visual acceptance. |
-| Installer/help/marker removal after installation | Actual installed check asserts installer command/menu and clean marker absent; conversion tests cover selected removal and policy paths | These main removals are observed in booted installed systems. The conversion fixture is not exhaustive: every helper, launcher, and help-document deletion is not independently asserted at runtime or in unit tests. |
+| Installer/help/marker removal after installation | Actual installed check asserts installer command/menu and clean marker absent; `TargetPolicyTests.test_conversion_rebuilds_installed_policy_offline` now seeds every declared removal root | Main removals are observed in booted installed systems. The later component audit covers all 21 declared removal roots, including both binaries, both launchers and help documents. External chroot commands are mocked in that component test, so it is not an additional runtime assertion on the installed VM. |
 | Clean versus private-overlay source policy | Profile tests generate clean, empty-overlay and forged-marker overlay cases; source checks reject invalid marker fixtures | Actual accepted images are clean. Overlay refusal branches are component-tested, not a complete private-overlay-image boot acceptance claim. |
 | Builder changes and ISO staging | Initial clean profile build plus explicit incremental regeneration after reviewed fixes, actual package build/parser check, generated manifests, exact final ISO boot | Real built image is tested. Cached package archives were reused. No claim of a fresh final-version rebuild of every upstream package or bit-for-bit reproducibility. |
 | README, USB guide, image guide, on-image INSTALL.md | Re-read against clarified request, verify relative links/paths, runtime-check documented installer/help commands and compare bundled help bytes | Distinguish original Arch USB/new clean image/private image, remove Ubuntu prerequisite, document unsupported cases. Broken repo-relative links in the Downloads verification copy were repaired with local guide copies and link checks. Physical Dell-specific boot/menu behavior remains unverified. |
 | Delivered image and evidence bundle | Recompute and verify every entry in `SHA256SUMS` | Durable image and artifacts match hashes. This proves file integrity, not physical USB readback. |
 | Authorized physical USB deployment | Write-stream SHA256 and two separate cache-invalidated readbacks over the complete image extent; post-write inventory and extracted help | `verification/physical-usb/result.json` passes for the intended VFENG. Both readbacks cover all `2731687936` image bytes, not the USB's entire 58.6 GiB capacity. Initial post-write udev timeout is retained in `failure.json`; the subsequent check was read-only. |
+| USB ready for removal | Actual `udisksctl power-off` after confirming the identified device and both unmounted partitions | `verification/physical-usb/safe-removal.json` records exit 0 and the stable device link absent. No physical unplug or Dell boot is inferred. |
+
+## Named component checks and observed results
+
+The final traceability audit reran the existing ISO suite against the unchanged
+shipped installer. Its log is `verification/component-traceability/tests.log`.
+The following named cases each reported `ok`, rather than being inferred solely
+from the aggregate test count:
+
+| Output/branch | Named check | Observed result and evidence level |
+|---|---|---|
+| Standalone listing and read-only preflight dispatch | `CliTests.test_list_and_check_never_install` | Both branches returned without invoking the mocked install function. Component evidence; actual guided inventory and `--check` are separately exercised in the VM runs. |
+| Marker ownership and private/unknown marker rejection | `SourceSafetyTests.test_owned_marker_contract`, `test_private_or_unknown_marker_refused` | Expected valid fixture accepted and invalid fixtures refused. Component evidence complements the actual on-image source validation before both installs. |
+| Installer mode, marker JSON and offline help staging | `ProfileTests.test_clean_installer_and_offline_instructions` | Generated executable mode, marker JSON and staged help assertions passed. Exact marker mode/ownership is not claimed to be exhaustively asserted by this profile test. |
+| Private and empty overlay cannot claim clean source | `ProfileTests.test_private_overlay_cannot_claim_clean_installer_source`, `test_empty_overlay_also_disables_installer_source` | Both generated profiles lacked the clean marker. These are generated-profile tests, not booted private-overlay acceptance. |
+| Every declared live-artifact removal root | `TargetPolicyTests.test_conversion_rebuilds_installed_policy_offline` | Expanded temporary-filesystem fixture passed. `removal-coverage.json` maps all 21 production removal roots to seeded fixture paths. Added helper/launcher/document paths were asserted absent, while rebuilt policy paths were checked for removal of their live contents. Chroot commands remain mocked. |
+
+The test and profile-test snapshots, named-case log and path map are preserved
+under `verification/component-traceability/`. This addition changes tests and
+documentation only. The installed command, ISO and already ejected physical USB
+were not changed or rewritten. The component checks supplement, not replace,
+the recorded real-ISO installations, graphical launches and physical readbacks.
 
 ## Physical verification evidence
 
