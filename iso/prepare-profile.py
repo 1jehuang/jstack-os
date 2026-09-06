@@ -214,6 +214,11 @@ APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram=n
                 name = '/' + relative.as_posix()
                 owner = '1000:1000' if name == '/home/jstack' or name.startswith('/home/jstack/') else '0:0'
                 mode = dest.stat().st_mode & 0o777
+                # A private staging tree often has umask 077. Do not preserve
+                # that on shared ancestors or the live user cannot traverse
+                # /home or read /etc/passwd even though its own home is owned.
+                if dest.is_dir() and name in ('/home', '/etc', '/etc/NetworkManager', '/var', '/var/lib'):
+                    mode = 0o755
                 if name == '/home/jstack' or name.startswith('/home/jstack/.config/jcode') or name.startswith('/etc/NetworkManager/system-connections') or name.startswith('/var/lib/iwd'):
                     mode = 0o700 if dest.is_dir() else 0o600
                 permissions.write(f'file_permissions[{shlex.quote(name)}]={shlex.quote(f"{owner}:{mode:o}")}\n')

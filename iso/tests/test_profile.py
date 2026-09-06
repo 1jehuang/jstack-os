@@ -64,6 +64,7 @@ class ProfileTests(unittest.TestCase):
         overlay = self.work / 'overlay'
         fixture = overlay / 'home/jstack/.config/jcode/example.env'
         fixture.parent.mkdir(parents=True)
+        (overlay / 'home').chmod(0o700)
         fixture.write_text('NON_SECRET_TEST_FIXTURE=1\n')
         fixture.chmod(0o600)
         p = profile.prepare(self.work, RELENG, overlay)
@@ -73,6 +74,7 @@ class ProfileTests(unittest.TestCase):
         conf = (p / 'profiledef.sh').read_text()
         self.assertIn('file_permissions[/home/jstack/.config/jcode/example.env]=1000:1000:600', conf)
         self.assertIn('file_permissions[/home/jstack/.config/jcode]=1000:1000:700', conf)
+        self.assertIn('file_permissions[/home]=0:0:755', conf)
         subprocess.run(['bash', '-n', str(p / 'profiledef.sh')], check=True)
 
     def test_overlay_symlink_refused(self):
