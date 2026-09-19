@@ -1,0 +1,16 @@
+#!/bin/sh
+# Prefer the user's stable launcher, not the immutable binary it points to.
+# Desktop sessions need this explicit lookup because their PATH can omit ~/.local/bin.
+set -eu
+self_path=$(readlink -f -- "$0")
+self_dir=${self_path%/*}
+if [ -n "${HOME:-}" ]; then
+    candidate=$HOME/.local/bin/jcode
+    if [ -f "$candidate" ] && [ -x "$candidate" ] &&
+       ! [ "$candidate" -ef "$self_path" ] &&
+       ! [ "$candidate" -ef "$self_dir/jcode-bundled" ]; then
+        exec "$candidate" "$@"
+    fi
+fi
+# Keep the upstream wrapper so the bundled binary gets its library setup.
+exec "$self_dir/jcode-bundled" "$@"

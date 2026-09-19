@@ -7,6 +7,13 @@ Every item from the reference machine gets exactly one bucket:
 Rule of thumb: unsure → personal. Promoting later is easy, de-shipping is a
 breaking change.
 
+## Agent launcher (2026-09-18)
+
+| Item | Bucket | Notes |
+|---|---|---|
+| Prefer executable `~/.local/bin/jcode` over the pinned agent | distro | `/usr/bin/jcode` follows the user's stable launcher, including self-dev updates. Missing, broken, non-executable, or self-referential launchers fall back to the upstream bundled wrapper. |
+| Jcode project/home shortcut destinations | personal | Launch `/usr/bin/jcode` rather than `/usr/lib/jstack/agent/jcode-linux-*.bin`, so installed-client preference and bundled library setup are honored. |
+
 ## niri (audited 2026-07-18)
 
 ### config.kdl
