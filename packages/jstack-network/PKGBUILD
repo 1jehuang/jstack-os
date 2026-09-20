@@ -1,7 +1,7 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-network
 pkgver=0.2.0
-pkgrel=1
+pkgrel=2
 pkgdesc="jstack OS network stack: Wi-Fi reliability, picker, and captive portal handling"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
@@ -12,7 +12,7 @@ depends=(
   'python'
   'libnotify'
   'systemd'
-  'tofi-jstack'
+  'tofi-jstack>=r265.bb5617b-3'
   'util-linux'
   'xdg-utils'
 )

@@ -13,4 +13,5 @@ grep -Fq 'enable jstack-wifi-boot-recovery.timer' "$package_dir/PKGBUILD"
 grep -Fq '/usr/lib/jstack/network/wifi-boot-recovery' "$package_dir/PKGBUILD"
 
 "$package_dir/tests/test-wifi-boot-recovery.sh"
+python3 -B "$package_dir/tests/test_wifi_pick.py"
 printf 'jstack-network static package tests passed\n'

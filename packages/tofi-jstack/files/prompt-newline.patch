@@ -1,0 +1,111 @@
+diff --git a/doc/tofi.5.scd b/doc/tofi.5.scd
+index 74671d5..d2a1ec2 100644
+--- a/doc/tofi.5.scd
++++ b/doc/tofi.5.scd
+@@ -236,6 +236,10 @@ options.
+ 
+ 	Default: "run: "
+ 
++*prompt-newline*=_true|false_
++	Place the input below the prompt instead of beside it. When enabled,
++	*prompt-padding* controls the vertical gap. Default: false.
++
+ *prompt-padding*=_px_
+ 	Extra horizontal padding between prompt and input.
+ 
+diff --git a/src/config.c b/src/config.c
+index 68a6885..7de840a 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -404,6 +404,11 @@ bool parse_option(struct tofi *tofi, const char *filename, size_t lineno, const
+ 		}
+ 	} else if (strcasecmp(option, "prompt-text") == 0) {
+ 		snprintf(tofi->window.entry.prompt_text, N_ELEM(tofi->window.entry.prompt_text), "%s", value);
++	} else if (strcasecmp(option, "prompt-newline") == 0) {
++		bool val = parse_bool(filename, lineno, value, &err);
++		if (!err) {
++			tofi->window.entry.prompt_newline = val;
++		}
+ 	} else if (strcasecmp(option, "prompt-padding") == 0) {
+ 		uint32_t val = parse_uint32(filename, lineno, value, &err);
+ 		if (!err) {
+diff --git a/src/entry.h b/src/entry.h
+index e314a8a..75f1e71 100644
+--- a/src/entry.h
++++ b/src/entry.h
+@@ -112,6 +112,7 @@ struct entry {
+ 	char prompt_text[MAX_PROMPT_LENGTH];
+ 	char placeholder_text[MAX_PROMPT_LENGTH];
+ 	uint32_t prompt_padding;
++	bool prompt_newline;
+ 	uint32_t corner_radius;
+ 	uint32_t padding_top;
+ 	uint32_t padding_bottom;
+diff --git a/src/entry_backend/harfbuzz.c b/src/entry_backend/harfbuzz.c
+index 134204c..29133c7 100644
+--- a/src/entry_backend/harfbuzz.c
++++ b/src/entry_backend/harfbuzz.c
+@@ -679,8 +679,11 @@ void entry_backend_harfbuzz_update(struct entry *entry)
+ 		hb_shape(hb->hb_font, hb->hb_buffer, hb->hb_features, hb->num_features);
+ 	}
+ 
+-	cairo_translate(cr, extents.x_advance, 0);
+-	cairo_translate(cr, entry->prompt_padding, 0);
++	if (entry->prompt_newline) {
++		cairo_translate(cr, 0, entry->harfbuzz.line_spacing / 64.0 + entry->prompt_padding);
++	} else {
++		cairo_translate(cr, extents.x_advance + entry->prompt_padding, 0);
++	}
+ 
+ 	/* Render the entry text */
+ 	if (entry->input_utf32_length == 0) {
+diff --git a/src/entry_backend/pango.c b/src/entry_backend/pango.c
+index d0edcce..7bbb832 100644
+--- a/src/entry_backend/pango.c
++++ b/src/entry_backend/pango.c
+@@ -325,8 +325,11 @@ void entry_backend_pango_update(struct entry *entry)
+ 	PangoRectangle logical_rect;
+ 	render_text_themed(cr, entry, entry->prompt_text, &entry->prompt_theme, &ink_rect, &logical_rect);
+ 
+-	cairo_translate(cr, logical_rect.width + logical_rect.x, 0);
+-	cairo_translate(cr, entry->prompt_padding, 0);
++	if (entry->prompt_newline) {
++		cairo_translate(cr, 0, logical_rect.height + entry->prompt_padding);
++	} else {
++		cairo_translate(cr, logical_rect.width + logical_rect.x + entry->prompt_padding, 0);
++	}
+ 
+ 	/* Render the entry text */
+ 	if (entry->input_utf8_length == 0) {
+diff --git a/src/main.c b/src/main.c
+index e91838f..2894a64 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -869,6 +869,7 @@ const struct option long_options[] = {
+ 	{"text-cursor-thickness", required_argument, NULL, 0},
+ 	{"prompt-text", required_argument, NULL, 0},
+ 	{"prompt-padding", required_argument, NULL, 0},
++	{"prompt-newline", required_argument, NULL, 0},
+ 	{"prompt-color", required_argument, NULL, 0},
+ 	{"prompt-background", required_argument, NULL, 0},
+ 	{"prompt-background-padding", required_argument, NULL, 0},
+diff --git a/test/config.c b/test/config.c
+index c15d66d..8a700fc 100644
+--- a/test/config.c
++++ b/test/config.c
+@@ -56,6 +56,15 @@ int main(int argc, char *argv[])
+ 	is_valid("horizontal", "fAlSe", "Boolean false");
+ 	isnt_valid("horizontal", "truefalse", "Invalid boolean");
+ 
++	/* Password prompt layout */
++	struct tofi layout_tofi = {0};
++	tap_is(layout_tofi.window.entry.prompt_newline, false, "Inline prompt by default");
++	tap_is(config_apply(&layout_tofi, "prompt-newline", "true"), true, "Enable prompt newline");
++	tap_is(layout_tofi.window.entry.prompt_newline, true, "Newline option applied");
++	tap_is(config_apply(&layout_tofi, "prompt-newline", "false"), true, "Disable prompt newline");
++	tap_is(layout_tofi.window.entry.prompt_newline, false, "Inline option applied");
++	isnt_valid("prompt-newline", "invalid", "Reject invalid prompt newline");
++
+ 	/* Password characters */
+ 	is_valid("hidden-character", "O", "Single Latin character");
+ 	is_valid("hidden-character", "Д", "Single Cyrillic character");

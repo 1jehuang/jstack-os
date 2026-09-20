@@ -264,8 +264,10 @@ def prune_history_entry(entry):
 
 
 def prompt_password(ssid):
-    # tofi as dmenu-style arbitrary input. If require-match is unsupported, fallback still usually accepts typed input.
-    return tofi([""], prompt=f"Password for {ellipsize(ssid, 24)}: ", extra=[
+    # Keep the network label above the arbitrary-input password field.
+    return tofi([""], prompt=f"Password for {ellipsize(ssid, 24)}:", extra=[
+        "--prompt-newline", "true",
+        "--prompt-padding", "18",
         "--require-match", "false",
         "--hide-input", "false",
         "--history", "false",
@@ -370,23 +372,50 @@ def main():
         break
 
     notify("WiFi", f"Connecting to {n.ssid}…")
+    secured = n.security not in ("--", "", "open")
+    passwords = []
     if n.known and n.ssid in profiles:
-        p = nmcli(["con", "up", "id", profiles[n.ssid]], timeout=45)
-    elif n.security in ("--", "", "open"):
+        try:
+            p = nmcli(["con", "up", "id", profiles[n.ssid]], timeout=45)
+        except subprocess.TimeoutExpired:
+            p = subprocess.CompletedProcess([], 1, "", "Saved connection activation timed out")
+    elif not secured:
         p = nmcli(["dev", "wifi", "connect", n.ssid], timeout=45)
     else:
+        p = None
+
+    while p is None or p.returncode != 0:
+        if p is not None:
+            detail = p.stderr or p.stdout or "unknown error"
+            # nmcli can echo an invalid value. Redact before truncating so a
+            # partial password cannot leak into a notification.
+            for password in sorted(passwords, key=len, reverse=True):
+                detail = detail.replace(password, "[redacted]")
+            notify("WiFi failed", detail[:220])
+            if not secured:
+                return p.returncode
+
+        # Every secured retry requires explicit input. Escape/empty input ends
+        # the flow instead of activating the same bad saved credentials again.
         pw = prompt_password(n.ssid)
         if not pw:
             return 0
-        p = nmcli(["dev", "wifi", "connect", n.ssid, "password", pw], timeout=60)
+        passwords.append(pw)
+        args = ["dev", "wifi", "connect", n.ssid, "password", pw]
+        if n.known and n.ssid in profiles:
+            # Reuse renamed profiles too, preserving their other settings.
+            args.extend(["name", profiles[n.ssid]])
+        try:
+            p = nmcli(args, timeout=60)
+        except subprocess.TimeoutExpired:
+            # Do not print the exception: its command contains the password.
+            p = subprocess.CompletedProcess([], 1, "", "Connection attempt timed out")
 
     if p.returncode == 0:
         notify("WiFi connected", n.ssid)
         trigger_captive_portal_check()
         trigger_post_connect_verification(n.ssid)
         return 0
-    notify("WiFi failed", (p.stderr or p.stdout or "unknown error")[:220])
-    return p.returncode
 
 
 def shutil_which(name):
