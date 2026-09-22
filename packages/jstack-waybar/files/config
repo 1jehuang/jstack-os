@@ -14,12 +14,20 @@
         "custom/net",
         "cpu",
         "memory",
+        "custom/jcode-desktop-pss",
         "temperature",
         "disk",
         "pulseaudio",
         "custom/battery",
         "tray"
     ],
+    "custom/jcode-desktop-pss": {
+        "exec": "/usr/lib/jstack/waybar/jcode-desktop-pss",
+        "return-type": "json",
+        "interval": 5,
+        "format": "{}",
+        "tooltip": true
+    },
     "clock": {
         "format": "{:%A, %B %d %I:%M %p}",
         "interval": 60

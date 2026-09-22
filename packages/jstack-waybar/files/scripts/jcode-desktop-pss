@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Waybar: Jcode Desktop resident RAM (PSS), excluding builds and CLI/server."""
+import json
+from pathlib import Path
+
+ICON = "\U000f0379"  # nf-md-monitor
+
+
+def collect(proc_root=Path('/proc')):
+    processes = []
+    unreadable = 0
+    for path in proc_root.iterdir():
+        if not path.name.isdigit():
+            continue
+        try:
+            if (path / 'comm').read_text().strip() != 'jcode-desktop':
+                continue
+        except OSError:
+            continue
+        try:
+            for line in (path / 'smaps_rollup').read_text().splitlines():
+                if line.startswith('Pss:'):
+                    processes.append((int(line.split()[1]), int(path.name)))
+                    break
+            else:
+                unreadable += 1
+        except FileNotFoundError:
+            continue  # Process exited during sampling.
+        except (OSError, ValueError, IndexError):
+            unreadable += 1
+    return sorted(processes, reverse=True), unreadable
+
+
+def format_ram(kib, compact=False):
+    mib = kib / 1024
+    if compact:
+        return f'{mib / 1024:.1f}G' if mib >= 1024 else f'{mib:.0f}M'
+    return f'{mib / 1024:.2f} GiB' if mib >= 1024 else f'{mib:.0f} MiB'
+
+
+def render(processes, unreadable=0):
+    if not processes and not unreadable:
+        return {'text': '', 'tooltip': 'Jcode Desktop: not running', 'class': 'hidden'}
+    total = sum(pss for pss, _ in processes)
+    lines = [f'Jcode Desktop RAM (PSS, {len(processes)} processes)',
+             f'Total: {format_ram(total)}',
+             'Shared pages counted proportionally.',
+             'Excludes Rust builds, CLI/server, and harness bridges.', '']
+    lines.extend(f'{format_ram(pss):>10}  [PID {pid}]' for pss, pid in processes)
+    if unreadable:
+        lines.append(f'Partial reading: {unreadable} Desktop process(es) unreadable.')
+    value = format_ram(total, compact=True) if processes else '?'
+    if unreadable and processes:
+        value += '+'
+    level = 'high' if total >= 4 * 1024**2 else 'warning' if total >= 2 * 1024**2 else 'normal'
+    return {'text': f"<span size='10pt'>{ICON}</span> {value}",
+            'tooltip': '\n'.join(lines), 'class': level}
+
+
+if __name__ == '__main__':
+    print(json.dumps(render(*collect())), flush=True)

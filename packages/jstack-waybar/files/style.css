@@ -171,3 +171,15 @@ window#waybar {
     color: #555555;
     margin-right: 10px;
 }
+
+/* Separate Desktop RAM indicator, using proportional resident memory. */
+#custom-jcode-desktop-pss {
+    padding: 0 5px;
+    margin: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 0;
+    color: #888888;
+}
+#custom-jcode-desktop-pss.warning { color: #f9e2af; }
+#custom-jcode-desktop-pss.high { color: #f38ba8; }
+#custom-jcode-desktop-pss.hidden { padding: 0; margin: 0; color: transparent; }
