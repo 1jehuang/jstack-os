@@ -296,19 +296,39 @@ def display_line(n):
         "unknown": " ?",
     }.get(n.portal_status, "")
     # Compact legend: ▶ active, 󰆓 saved profile,  open network,
-    #  secured network. The menu uses tofi's print-index option to map back
-    # reliably, so decoration changes do not affect selection.
+    #  secured network. Selections map back to items
+    # by exact line text instead (see choose()), so lines are kept unique.
     return f"{active} {ssid}{profile}{security}{portal}"
 
 
 def choose(lines, *, use_history=True):
-    extra = [
-        "--require-match", "true",
-        "--print-index", "true",
-    ]
+    # Do not use tofi's --print-index: it reports the position after tofi's
+    # history re-sort, not the stdin order, so a frequently picked network
+    # floated to the top would map back to whatever was first on stdin (often
+    # the currently active network). Return the selected line text instead.
+    extra = ["--require-match", "true"]
     if use_history:
         extra.extend(["--history", "true", "--history-file", wifi_history_file()])
     return tofi(lines, extra=extra)
+
+
+def unique_lines(lines):
+    # Two SSIDs can render identically after ellipsizing. Disambiguate so a
+    # text match always resolves to exactly one item.
+    seen = {}
+    out = []
+    for line in lines:
+        n = seen.get(line, 0) + 1
+        seen[line] = n
+        out.append(line if n == 1 else f"{line} ({n})")
+    return out
+
+
+def selected_index(choice, lines):
+    try:
+        return lines.index(choice)
+    except ValueError:
+        return -1
 
 
 def menu_items_for(nets):
@@ -329,7 +349,7 @@ def main():
 
     if not wifi_enabled():
         choice = choose([TURN_WIFI_ON_ACTION], use_history=False)
-        if choice != "1":
+        if choice != TURN_WIFI_ON_ACTION:
             return 0
         notify("WiFi", "Turning WiFi on…")
         p = set_wifi_enabled(True)
@@ -349,17 +369,14 @@ def main():
     while True:
         nets, profiles = get_networks()
         items = menu_items_for(nets)
-        lines = [menu_line(item) for item in items]
+        lines = unique_lines([menu_line(item) for item in items])
         if os.environ.get("WIFI_PICK_DUMP"):
             print("\n".join(lines))
             return 0
         choice = choose(lines)
         if not choice:
             return 0
-        try:
-            selected = int(choice) - 1
-        except ValueError:
-            return 1
+        selected = selected_index(choice, lines)
         if selected < 0 or selected >= len(items):
             return 1
         item = items[selected]

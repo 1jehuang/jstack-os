@@ -21,7 +21,7 @@ def result(code=0, stdout="", stderr=""):
 
 
 class ConnectionTests(unittest.TestCase):
-    def exercise(self, answers, attempts, *, known=False, security="WPA2", menu="1"):
+    def exercise(self, answers, attempts, *, known=False, security="WPA2", menu=None):
         answers = iter(answers)
         attempts = iter(attempts)
         self.commands = []
@@ -31,6 +31,10 @@ class ConnectionTests(unittest.TestCase):
         def run(cmd, *, input=None, timeout=20):
             if cmd[0] == "tofi":
                 if "--prompt-text" not in cmd:
+                    self.assertNotIn("--print-index", cmd)
+                    if menu is None:
+                        # Pick the first line tofi was given, by text.
+                        return result(stdout=input.split("\n")[0])
                     return result(stdout=menu)
                 self.prompt_count += 1
                 self.events.append("prompt")
@@ -154,6 +158,46 @@ class ConnectionTests(unittest.TestCase):
         self.assertEqual(self.prompt_count, 2)
         self.assertIn("timed out", str(self.notifications))
         self.assertNotIn("private-secret", str(self.notifications))
+
+
+class SelectionMappingTests(unittest.TestCase):
+    def test_history_reordered_pick_connects_to_chosen_network(self):
+        # Regression: tofi's history sort reorders lines, and --print-index
+        # reported the sorted position, so picking a history-favored network
+        # connected to whatever was first on stdin (the active one).
+        active = wifi.Net("*", "xfinitywifi", "WPA2", 90, True, True)
+        target = wifi.Net("", "borgorai 1G", "WPA2", 60, True)
+        commands = []
+
+        def run(cmd, *, input=None, timeout=20):
+            if cmd[0] == "tofi":
+                lines = input.rstrip("\n").split("\n")
+                # Simulate tofi floating the history favorite to the top and
+                # the user choosing it.
+                return result(stdout=next(l for l in lines if "borgorai" in l))
+            commands.append(cmd[1:])
+            return result()
+
+        with (patch.object(wifi, "run", side_effect=run),
+              patch.object(wifi, "shutil_which", return_value=True),
+              patch.object(wifi, "wifi_enabled", return_value=True),
+              patch.object(wifi, "rescan_wifi"),
+              patch.object(wifi.time, "sleep"),
+              patch.object(wifi, "get_networks", return_value=(
+                  [active, target],
+                  {active.ssid: active.ssid, target.ssid: target.ssid})),
+              patch.object(wifi, "wifi_history_file", return_value="/unused/history"),
+              patch.dict(wifi.os.environ, {"WIFI_PICK_DUMP": ""}),
+              patch.object(wifi, "notify"),
+              patch.object(wifi, "trigger_captive_portal_check"),
+              patch.object(wifi, "trigger_post_connect_verification")):
+            self.assertEqual(wifi.main(), 0)
+        self.assertEqual(commands, [["con", "up", "id", "borgorai 1G"]])
+
+    def test_duplicate_display_lines_are_disambiguated(self):
+        lines = wifi.unique_lines(["a", "b", "a"])
+        self.assertEqual(len(set(lines)), 3)
+        self.assertEqual(wifi.selected_index(lines[2], lines), 2)
 
 
 if __name__ == "__main__":
