@@ -36,7 +36,10 @@ PROD_PROBE_URL = os.environ.get(
     "CAPTIVE_PROBE_URL", "http://connectivitycheck.gstatic.com/generate_204"
 )
 TIMEOUT = 8
-PROBE_TIMEOUT = (2, 2)
+# requests' connect/read timeouts are not an absolute deadline (including DNS).
+PROBE_MAX_TIME = 3
+PROBE_CONNECT_TIMEOUT = 2
+PROBE_PROCESS_TIMEOUT = 4
 NEGATIVE_PROBE_TTL = 1
 MAX_FORMS = 8
 MAX_LINKS = 12
@@ -281,19 +284,41 @@ def probe_online(sess: Optional[requests.Session] = None) -> bool:
     of the expected empty 204. Once we are actually online, the 204 endpoint
     returns status 204 with no body and is not redirected to a portal host.
     """
-    closer = False
-    if sess is None:
-        sess = requests.Session()
-        sess.headers.update({"User-Agent": DEFAULT_UA})
-        closer = True
+    # Keep the optional session argument for callers and benchmarks, but never
+    # share portal cookies or session state with this independent probe.
+    # The killable subprocess bounds DNS, connection attempts and response reads
+    # even if curl's deadline cannot interrupt the system resolver.
+    started = time.monotonic()
+    target = urlparse(PROD_PROBE_URL)
+    label = f"method=get host={target.hostname} path={target.path}"
+    diagnostic(f"probe start {label}")
     try:
-        resp = timed_request(sess, "get", PROD_PROBE_URL, connectivity_probe=True, timeout=PROBE_TIMEOUT, allow_redirects=False)
-    except Exception:
+        result = subprocess.run(
+            ["curl", "--disable", "--silent", "--output", os.devnull,
+             "--max-time", str(PROBE_MAX_TIME),
+             "--connect-timeout", str(PROBE_CONNECT_TIMEOUT),
+             "--max-redirs", "0", "--proto", "=http,https",
+             "--user-agent", DEFAULT_UA,
+             # Status metadata only, never the body. Reject even 204+Location.
+             "--write-out", "%{http_code}\\n%header{location}",
+             "--url", PROD_PROBE_URL],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, errors="replace", timeout=PROBE_PROCESS_TIMEOUT, check=False,
+        )
+        status = result.stdout.partition("\n")[0]
+        diagnostic(f"probe response {label} status={status if status.isdigit() else 'unknown'} returncode={result.returncode}")
+        return result.returncode == 0 and result.stdout == "204\n"
+    except subprocess.TimeoutExpired:
+        # run kills and waits for the child before raising. No background thread
+        # is left racing the portal requests.Session.
+        diagnostic(f"probe timeout {label} deadline={PROBE_PROCESS_TIMEOUT}s")
+        return False
+    except OSError:
+        # Fail closed if curl is unavailable, never use an unbounded fallback.
+        diagnostic(f"probe unavailable {label}")
         return False
     finally:
-        if closer:
-            sess.close()
-    return resp.status_code == 204 and not resp.headers.get("Location")
+        diagnostic(f"probe end {label} elapsed={time.monotonic() - started:.3f}s")
 
 
 def is_online(sess: Optional[requests.Session] = None) -> bool:

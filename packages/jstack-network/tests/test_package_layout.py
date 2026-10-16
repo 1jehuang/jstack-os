@@ -30,6 +30,7 @@ class PackageLayoutTests(unittest.TestCase):
             self.assertIn("WantedBy=default.target", (units / "captive-portal-monitor.service").read_text())
             self.assertIn("TimeoutStartSec=120", (units / "captive-portal-helper.service").read_text())
             self.assertIn("'python-requests'", (ROOT / "PKGBUILD").read_text())
+            self.assertIn("'curl>=7.84'", (ROOT / "PKGBUILD").read_text())
 
 
 if __name__ == "__main__":

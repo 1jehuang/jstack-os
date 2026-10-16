@@ -100,10 +100,69 @@ finished in under half a second but DHCP took about 33 seconds (2026-10-11 and
 2026-10-15). There were also missed beacons, AP loss, and AP-originated
 deauthentications, with no firmware-crash signature found. These cannot be
 attributed to the portal helper. Station logs alone cannot distinguish an RF/AP
-problem from every possible driver problem. No speculative power-save, protocol,
-IWD ownership, or DNS/VPN setting changes were applied.
+problem from every possible driver problem. At the initial deployment, no speculative power-save, protocol,
+IWD ownership, or DNS/VPN setting changes had been applied. The targeted
+follow-up below changes only the TLP Wi-Fi power policy.
 
 A future real captive-network connection is needed to measure actual end-user
 improvement without deliberately disconnecting a working session. New timestamped
 portal diagnostics now let the next slow attempt distinguish helper request time
 from DHCP, association, and upstream availability.
+
+## October 16 afternoon follow-up
+
+A subsequent real Stanford Visitor captive login succeeded at 14:13 PDT, taking
+about 27.7 seconds. Timestamped diagnostics exposed a single connectivity probe
+lasting **20.147 seconds**, despite requests connect/read timeouts of two seconds.
+This proves a missing absolute deadline, not specifically a DNS fault. The probe
+now uses curl with a three-second total timeout, two-second connect timeout, and
+an independent four-second subprocess timeout that kills and reaps the child.
+It ignores curlrc, does not follow redirects, never shares portal cookies, and
+rejects even HTTP 204 with a Location header. Portal form handling stays in its
+existing requests session. curl >=7.84 is now a declared dependency.
+
+The installed public acceptor subsequently verified the real external HTTP 204
+in **0.235 seconds** (whole process 0.371 seconds). The installed systemd helper
+returned success/status 0. The final regression suite passed **53 tests** in
+13.127 seconds, including public CLI tests using the installed script, real curl
+and local HTTP. A deliberately stalled HTTP response hit the real curl deadline
+in **3.007 seconds**, with the installed public process finishing in **3.160
+seconds** and rejecting the probe. This directly exercises the deadline through
+the installed interface, but is not a recreation of the original AP stall. Existing
+authorization prevents measuring another fresh real captive login without
+changing the current session. The previous real login demonstrates that the
+portal workflow works, but is not a before/after join-speed comparison.
+
+TLP was observed naturally changing wlan0 power saving from off to on when AC
+was unplugged, on the same BSSID. Its battery default, not the SSID, owned this
+policy. A live 30-packet gateway sample with power saving on averaged **36.295 ms**,
+maximum **101.781 ms**; switching it off gave **2.653 ms**, maximum **9.105 ms**.
+However, repeating on/off gave **3.085/5.783 ms** averages, so the initial latency
+improvement was not consistently reproduced and is not proof of past drop causes.
+All four samples had zero loss. The reversible mitigation sets only
+`WIFI_PWR_ON_AC=off` and `WIFI_PWR_ON_BAT=off` in the existing owning TLP policy.
+This trades some battery life for responsiveness. Live power saving is off and
+TLP reports both effective values off. No CPU or other TLP setting was changed.
+
+For unresolved Avalon DHCP stalls and radio losses, temporary NetworkManager
+logging was enabled at 14:43:56 PDT: DHCP4:TRACE, WIFI:DEBUG, SUPPLICANT:DEBUG,
+with other domains unchanged. A transient system timer restores the exact
+previous logging configuration on **October 17, 2026 at 14:43:56 PDT**. Runtime
+logging also resets on reboot. The internal DHCP library reads its log threshold
+at client creation, so protocol detail starts with the next natural activation.
+No activation was forced. To restore logging early:
+
+```sh
+sudo systemctl start jstack-wifi-diagnostics-reset-20261016.service
+```
+
+No causal DHCP/driver repair is proven yet. The current DHCP acquisition took
+about 1.2 seconds, and the historical 33-second Avalon faults are not reproducible
+on Stanford. DHCP4 trace on the next affected activation can distinguish discovery
+retries from offered-lease handling, rather than guessing client IDs or shortening
+timeouts. No protocol downgrade, DHCP backend migration, network restart, or
+firmware upgrade was performed. IP and BSSID remained unchanged during checks.
+Scoped installed-file backups are in
+`/var/lib/jstack-network/backups/20261016-1447/`. Restore the saved TLP file and
+run `sudo iw dev wlan0 set power_save on` to undo the battery-policy mitigation
+while currently on battery. Restore the saved acceptor to undo the deadline fix.
