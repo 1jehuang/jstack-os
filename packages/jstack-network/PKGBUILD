@@ -1,7 +1,7 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-network
 pkgver=0.2.0
-pkgrel=3
+pkgrel=4
 pkgdesc="jstack OS network stack: Wi-Fi reliability, picker, and captive portal handling"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
@@ -10,6 +10,7 @@ depends=(
   'kmod'
   'networkmanager'
   'python'
+  'python-requests'
   'libnotify'
   'systemd'
   'tofi-jstack>=r265.bb5617b-3'
@@ -22,7 +23,7 @@ package() {
   local files="$startdir/files"
 
   # CLI tools
-  for b in wifi-pick captive-portal-helper captive-portal-autoaccept captive-portal-watch; do
+  for b in wifi-pick captive-portal-helper captive-portal-autoaccept captive-portal-watch captive-portal-monitor; do
     install -Dm755 "$files/bin/$b" "$pkgdir/usr/bin/$b"
   done
 
@@ -48,8 +49,13 @@ EOF
   install -Dm644 "$files/systemd/captive-portal-watch.service" \
     "$pkgdir/usr/lib/systemd/user/captive-portal-watch.service"
 
+  install -Dm644 "$files/systemd/captive-portal-monitor.service" \
+    "$pkgdir/usr/lib/systemd/user/captive-portal-monitor.service"
+
   install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user-preset/90-jstack-network.preset" <<'EOF'
 enable captive-portal-helper.timer
-enable captive-portal-watch.service
+enable captive-portal-monitor.service
+# The legacy notification watcher opens competing browser checks.
+disable captive-portal-watch.service
 EOF
 }

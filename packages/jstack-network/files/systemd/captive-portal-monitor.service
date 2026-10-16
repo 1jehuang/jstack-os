@@ -1,0 +1,10 @@
+[Unit]
+Description=React to NetworkManager changes for captive portal recovery
+
+[Service]
+ExecStart=/usr/bin/captive-portal-monitor
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=default.target

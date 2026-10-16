@@ -36,71 +36,18 @@ def notify(summary, body=""):
         subprocess.Popen(["notify-send", summary, body])
 
 
-def trigger_captive_portal_check():
-    helper = Path("/usr/bin/captive-portal-helper")
-    if not helper.exists():
-        return
-    # Run the same helper as the 30s systemd timer immediately, then once more
-    # shortly after in case NetworkManager's connectivity state lags DHCP. The
-    # helper records full/portal/limited status and de-dupes portal opens.
-    subprocess.Popen(
-        ["bash", "-lc", f"{str(helper)!r} >/dev/null 2>&1; sleep 3; {str(helper)!r} >/dev/null 2>&1"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-
 def trigger_post_connect_verification(ssid):
+    # One worker owns portal detection, acceptance, and outcome notifications.
+    # Never interpolate an untrusted SSID into a shell program or launch
+    # competing verification loops. The helper serializes timer/event callers.
     helper = Path("/usr/bin/captive-portal-helper")
-    quoted_helper = str(helper)
-    script = f'''
-ssid={ssid!r}
-helper={quoted_helper!r}
-notify() {{ notify-send -a Wi-Fi -i network-wireless "$1" "${{2:-}}" 2>/dev/null || true; }}
-
-# Let DHCP, DNS, and NetworkManager's connectivity probe settle. Run the helper
-# first because it can auto-accept simple click-through portals or open the
-# browser for JS-heavy portals.
-sleep 2
-[ -x "$helper" ] && "$helper" >/dev/null 2>&1 || true
-
-for delay in 3 5 8; do
-  state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
-  case "$state" in
-    full)
-      notify "Wi-Fi internet works" "$ssid has full connectivity. No manual speedtest needed."
-      exit 0
-      ;;
-    portal|limited)
-      [ -x "$helper" ] && "$helper" >/dev/null 2>&1 || true
-      ;;
-  esac
-  sleep "$delay"
-done
-
-state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
-case "$state" in
-  full)
-    notify "Wi-Fi internet works" "$ssid has full connectivity. No manual speedtest needed."
-    ;;
-  portal|limited)
-    notify "Wi-Fi needs portal login" "$ssid connected, but internet is still $state. Browser login pages were opened if a portal was detected."
-    ;;
-  none|unknown|"")
-    notify "Wi-Fi internet not verified" "$ssid connected, but NetworkManager reports ${{state:-unknown}}. Try opening a browser or switching networks."
-    ;;
-  *)
-    notify "Wi-Fi check result" "$ssid connectivity state: $state"
-    ;;
-esac
-'''
-    subprocess.Popen(
-        ["bash", "-lc", script],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    if helper.exists():
+        subprocess.Popen(
+            [str(helper)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
 
 
 def nmcli(args, timeout=20):
@@ -212,7 +159,7 @@ def get_networks():
 
 
 def connectivity_state():
-    p = nmcli(["networking", "connectivity", "check"], timeout=8)
+    p = nmcli(["networking", "connectivity"], timeout=3)
     state = p.stdout.strip().lower()
     return state if p.returncode == 0 and state else ""
 
@@ -388,6 +335,13 @@ def main():
         n = item
         break
 
+    if n.active:
+        # Re-selecting the current network should finish its portal login,
+        # not tear down DHCP and working TCP sessions.
+        notify("WiFi", f"Already connected to {n.ssid}. Checking internet…")
+        trigger_post_connect_verification(n.ssid)
+        return 0
+
     notify("WiFi", f"Connecting to {n.ssid}…")
     secured = n.security not in ("--", "", "open")
     passwords = []
@@ -397,7 +351,10 @@ def main():
         except subprocess.TimeoutExpired:
             p = subprocess.CompletedProcess([], 1, "", "Saved connection activation timed out")
     elif not secured:
-        p = nmcli(["dev", "wifi", "connect", n.ssid], timeout=45)
+        try:
+            p = nmcli(["dev", "wifi", "connect", n.ssid], timeout=45)
+        except subprocess.TimeoutExpired:
+            p = subprocess.CompletedProcess([], 1, "", "Connection attempt timed out")
     else:
         p = None
 
@@ -430,7 +387,6 @@ def main():
 
     if p.returncode == 0:
         notify("WiFi connected", n.ssid)
-        trigger_captive_portal_check()
         trigger_post_connect_verification(n.ssid)
         return 0
 

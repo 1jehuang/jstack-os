@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Event-driven complement to captive-portal-helper.timer, not an active probe loop.
+set -uo pipefail
+captive-portal-helper &
+initial_pid=$!
+# Do not parse localized monitor messages. Any NM change may affect connectivity.
+# The helper's nonblocking per-user lock and retry cooldown coalesce event bursts.
+nmcli monitor | {
+  while IFS= read -r event; do
+    captive-portal-helper &
+  done
+  # Reap outstanding helpers at EOF, including the last asynchronous event.
+  # Each helper has bounded commands. systemd also owns this entire cgroup.
+  wait
+}
+wait "$initial_pid" || true
+# NM exits when its daemon disappears. Let systemd restart the subscription.
+exit 1

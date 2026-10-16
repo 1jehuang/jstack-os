@@ -21,7 +21,7 @@ def result(code=0, stdout="", stderr=""):
 
 
 class ConnectionTests(unittest.TestCase):
-    def exercise(self, answers, attempts, *, known=False, security="WPA2", menu=None):
+    def exercise(self, answers, attempts, *, known=False, security="WPA2", menu=None, active=False):
         answers = iter(answers)
         attempts = iter(attempts)
         self.commands = []
@@ -51,7 +51,7 @@ class ConnectionTests(unittest.TestCase):
                 raise outcome
             return outcome
 
-        net = wifi.Net("", "Test WiFi", security, 80, known)
+        net = wifi.Net("*" if active else "", "Test WiFi", security, 80, known, active)
         with (patch.object(wifi, "run", side_effect=run),
               patch.object(wifi, "shutil_which", return_value=True),
               patch.object(wifi, "wifi_enabled", return_value=True),
@@ -62,12 +62,10 @@ class ConnectionTests(unittest.TestCase):
               patch.object(wifi, "wifi_history_file", return_value="/unused/history"),
               patch.dict(wifi.os.environ, {"WIFI_PICK_DUMP": ""}),
               patch.object(wifi, "notify") as notifications,
-              patch.object(wifi, "trigger_captive_portal_check") as captive,
               patch.object(wifi, "trigger_post_connect_verification") as verify):
             code = wifi.main()
         self.notifications = notifications.call_args_list
-        self.success_count = captive.call_count
-        self.assertEqual(captive.call_count, verify.call_count)
+        self.success_count = verify.call_count
         self.assertFalse(any("delete" in cmd for cmd in self.commands))
         return code
 
@@ -139,6 +137,18 @@ class ConnectionTests(unittest.TestCase):
                     self.assertEqual(self.success_count, 0)
                     self.assertIn("No device", str(self.notifications))
 
+    def test_active_selection_verifies_without_reconnecting(self):
+        self.assertEqual(self.exercise([], [], known=True, active=True), 0)
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.prompt_count, 0)
+        self.assertEqual(self.success_count, 1)
+
+    def test_open_timeout_reports_failure_without_crashing(self):
+        self.assertEqual(self.exercise([], [
+            subprocess.TimeoutExpired(["nmcli"], 45)], security="open"), 1)
+        self.assertEqual(self.success_count, 0)
+        self.assertIn("timed out", str(self.notifications))
+
     def test_saved_success_does_not_prompt(self):
         self.assertEqual(self.exercise([], [result()], known=True), 0)
         self.assertEqual(self.prompt_count, 0)
@@ -158,6 +168,21 @@ class ConnectionTests(unittest.TestCase):
         self.assertEqual(self.prompt_count, 2)
         self.assertIn("timed out", str(self.notifications))
         self.assertNotIn("private-secret", str(self.notifications))
+
+
+class VerificationTests(unittest.TestCase):
+    def test_single_detached_helper_no_shell_or_ssid_interpolation(self):
+        with (patch.object(wifi.Path, "exists", return_value=True),
+              patch.object(wifi.subprocess, "Popen") as spawn):
+            wifi.trigger_post_connect_verification("Bob's WiFi $(touch /bad)")
+        spawn.assert_called_once_with(
+            ["/usr/bin/captive-portal-helper"], stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def test_connectivity_reads_cached_state_without_forcing_probe(self):
+        with patch.object(wifi, "nmcli", return_value=result(stdout="full\n")) as nm:
+            self.assertEqual(wifi.connectivity_state(), "full")
+        nm.assert_called_once_with(["networking", "connectivity"], timeout=3)
 
 
 class SelectionMappingTests(unittest.TestCase):
@@ -189,7 +214,6 @@ class SelectionMappingTests(unittest.TestCase):
               patch.object(wifi, "wifi_history_file", return_value="/unused/history"),
               patch.dict(wifi.os.environ, {"WIFI_PICK_DUMP": ""}),
               patch.object(wifi, "notify"),
-              patch.object(wifi, "trigger_captive_portal_check"),
               patch.object(wifi, "trigger_post_connect_verification")):
             self.assertEqual(wifi.main(), 0)
         self.assertEqual(commands, [["con", "up", "id", "borgorai 1G"]])

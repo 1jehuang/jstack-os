@@ -16,6 +16,9 @@ import os
 import re
 import subprocess
 import sys
+import time
+import weakref
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -33,6 +36,8 @@ PROD_PROBE_URL = os.environ.get(
     "CAPTIVE_PROBE_URL", "http://connectivitycheck.gstatic.com/generate_204"
 )
 TIMEOUT = 8
+PROBE_TIMEOUT = (2, 2)
+NEGATIVE_PROBE_TTL = 1
 MAX_FORMS = 8
 MAX_LINKS = 12
 MAX_CANDIDATES = 12
@@ -226,11 +231,47 @@ class Parser(html.parser.HTMLParser):
             self.current_link = None
 
 
-def nm_connectivity() -> str:
+_nm_status: Tuple[float, str] = (float("-inf"), "unknown")
+_negative_probes = weakref.WeakKeyDictionary()
+
+
+def diagnostic(message: str) -> None:
+    """Timestamp diagnostics on stderr without changing machine-readable stdout."""
+    print(f"{datetime.now(timezone.utc).isoformat(timespec='milliseconds')} {message}", file=sys.stderr)
+
+
+def timed_request(sess: requests.Session, method: str, url: str, *, connectivity_probe: bool = False, **kwargs) -> requests.Response:
+    """Attribute delays without logging form values or URL query tokens."""
+    started = time.monotonic()
+    target = urlparse(url)
+    label = f"method={method} host={target.hostname} path={target.path}"
+    diagnostic(f"request start {label}")
+    if not connectivity_probe:
+        # Every portal navigation/submission may grant access. Never reuse a
+        # negative result across it, even when the HTTP request later fails.
+        _negative_probes.pop(sess, None)
     try:
-        return subprocess.check_output(["nmcli", "-t", "networking", "connectivity", "check"], text=True, timeout=10).strip()
+        resp = getattr(sess, method)(url, **kwargs)
+        diagnostic(f"request response {label} status={resp.status_code}")
+        return resp
+    finally:
+        diagnostic(f"request end {label} elapsed={time.monotonic() - started:.3f}s")
+
+
+def nm_connectivity() -> str:
+    """Read NM's cached status, never request its blocking active check."""
+    global _nm_status
+    now = time.monotonic()
+    if now - _nm_status[0] < 5:
+        return _nm_status[1]
+    diagnostic("nm cached-status read start")
+    try:
+        status = subprocess.check_output(["nmcli", "-t", "networking", "connectivity"], text=True, timeout=1).strip()
     except Exception:
-        return "unknown"
+        status = "unknown"
+    _nm_status = (time.monotonic(), status)
+    diagnostic(f"nm cached-status read end status={status} elapsed={time.monotonic() - now:.3f}s")
+    return status
 
 
 def probe_online(sess: Optional[requests.Session] = None) -> bool:
@@ -246,7 +287,7 @@ def probe_online(sess: Optional[requests.Session] = None) -> bool:
         sess.headers.update({"User-Agent": DEFAULT_UA})
         closer = True
     try:
-        resp = sess.get(PROD_PROBE_URL, timeout=TIMEOUT, allow_redirects=False)
+        resp = timed_request(sess, "get", PROD_PROBE_URL, connectivity_probe=True, timeout=PROBE_TIMEOUT, allow_redirects=False)
     except Exception:
         return False
     finally:
@@ -256,7 +297,7 @@ def probe_online(sess: Optional[requests.Session] = None) -> bool:
 
 
 def is_online(sess: Optional[requests.Session] = None) -> bool:
-    """Online if either NetworkManager or a direct 204 probe says so.
+    """Confirm online with a direct 204 probe, not potentially stale NM state.
 
     Tests can force a deterministic answer with CAPTIVE_FORCE_ONLINE=1/0 so the
     benchmark never depends on the host's real connectivity.
@@ -264,13 +305,23 @@ def is_online(sess: Optional[requests.Session] = None) -> bool:
     forced = os.environ.get("CAPTIVE_FORCE_ONLINE")
     if forced is not None:
         return forced.strip().lower() in ("1", "true", "yes", "full")
-    # In benchmark mode we drive connectivity purely from the mock probe so the
-    # result does not depend on the host's real Wi-Fi state.
-    if os.environ.get("CAPTIVE_SKIP_NM", "").strip().lower() not in ("1", "true", "yes"):
-        if nm_connectivity() == "full":
-            return True
+    started = time.monotonic()
+    if sess is not None and started - _negative_probes.get(sess, float("-inf")) < NEGATIVE_PROBE_TTL:
+        diagnostic("connectivity online=false cached_negative=true")
+        return False
+    diagnostic("connectivity check start")
     if probe_online(sess):
+        if sess is not None:
+            _negative_probes.pop(sess, None)
+        diagnostic(f"connectivity online=true elapsed={time.monotonic() - started:.3f}s")
         return True
+    # Cached NM full can describe the previous network. It is useful for
+    # diagnostics but must not authorize success after a failed direct probe.
+    if os.environ.get("CAPTIVE_SKIP_NM", "").strip().lower() not in ("1", "true", "yes"):
+        diagnostic(f"nm_cached={nm_connectivity()}")
+    diagnostic(f"connectivity online=false elapsed={time.monotonic() - started:.3f}s")
+    if sess is not None:
+        _negative_probes[sess] = time.monotonic()
     return False
 
 
@@ -681,13 +732,12 @@ def submit_candidate(sess: requests.Session, cand: Candidate) -> Optional[reques
     print(f"try_{cand.source}: method={cand.method} score={cand.score} url={cand.action}")
     try:
         if cand.method == "post":
-            resp = sess.post(cand.action, data=cand.data, timeout=TIMEOUT, allow_redirects=True)
+            resp = timed_request(sess, "post", cand.action, data=cand.data, timeout=TIMEOUT, allow_redirects=True)
         else:
-            resp = sess.get(cand.action, params=cand.data, timeout=TIMEOUT, allow_redirects=True)
+            resp = timed_request(sess, "get", cand.action, params=cand.data, timeout=TIMEOUT, allow_redirects=True)
     except Exception as e:
         print(f"submit failed: {e}", file=sys.stderr)
         return None
-    print(f"after_submit_online={is_online(sess)}")
     return resp
 
 
@@ -698,27 +748,37 @@ def follow_redirects(sess: requests.Session, resp: requests.Response) -> request
     meta-refresh or a one-line window.location bounce on top of that, so we chase
     a small bounded number of those to reach the real splash/success page.
     """
+    seen = set()
     for _ in range(4):
+        # Fragments never change the HTTP resource. Include HTTP redirect
+        # history so a JS/meta bounce into a prior HTTP hop also stops.
+        for prior in [*getattr(resp, "history", []), resp]:
+            seen.add(prior.url.split("#", 1)[0].rstrip("/"))
         body = resp.text[:MAX_HTML_CHARS]
         nxt = meta_refresh_url(body, resp.url) or js_redirect_url(body, resp.url)
-        if not nxt or nxt.rstrip("/") == resp.url.rstrip("/"):
+        if not nxt:
+            break
+        if nxt.split("#", 1)[0].rstrip("/") in seen:
+            diagnostic("redirect cycle detected")
             break
         print(f"follow_redirect -> {nxt}")
         try:
-            resp = sess.get(nxt, timeout=TIMEOUT, allow_redirects=True)
+            resp = timed_request(sess, "get", nxt, timeout=TIMEOUT, allow_redirects=True)
         except Exception as e:
             print(f"redirect failed: {e}", file=sys.stderr)
+            break
+        if is_online(sess):
             break
     return resp
 
 
 def fetch_portal(sess: requests.Session, url: str) -> Optional[requests.Response]:
     try:
-        resp = sess.get(url, timeout=TIMEOUT, allow_redirects=True)
+        resp = timed_request(sess, "get", url, timeout=TIMEOUT, allow_redirects=True)
     except Exception as e:
         print(f"request failed: {e}", file=sys.stderr)
         return None
-    return follow_redirects(sess, resp)
+    return resp if is_online(sess) else follow_redirects(sess, resp)
 
 
 def looks_like_content_site(parser: Parser) -> bool:
@@ -861,6 +921,11 @@ def run_accept(sess: requests.Session, start_url: str = CANARY_URL) -> int:
             new_resp = submit_candidate(sess, cand)
             if new_resp is None:
                 continue
+            online = is_online(sess)
+            print(f"after_submit_online={online}")
+            if online:
+                print(f"online after submit at step {step}")
+                return 0
             new_resp = follow_redirects(sess, new_resp)
             if is_online(sess):
                 print(f"online after submit at step {step}")

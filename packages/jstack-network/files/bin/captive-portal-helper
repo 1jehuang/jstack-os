@@ -1,99 +1,170 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""Serialize portal recovery, using cached NM state before the acceptor.
 
-STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/captive-portal-helper"
-STATE_FILE="$STATE_DIR/state"
-STATUS_FILE="$STATE_DIR/ssid-status.tsv"
-mkdir -p "$STATE_DIR"
+All external commands are bounded. The acceptor owns internet verification,
+so neither the event monitor nor the fallback timer forces NM probes.
+"""
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import time
+from datetime import datetime
 
-notify() {
-  local summary="$1" body="${2:-}" urgency="${3:-normal}" icon="${4:-network-wireless}"
-  notify-send -a "Wi-Fi" -u "$urgency" -i "$icon" "$summary" "$body" 2>/dev/null || true
-}
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "captive-portal-helper"
+COOLDOWN = 60
 
-# Extract the engine's "NEED_INPUT: ..." marker (what the user must type, e.g.
-# "an email address; a password") from an autoaccept run log, if present.
-need_input_from_log() {
-  local log="$1"
-  grep -oE 'NEED_INPUT:.*' "$log" 2>/dev/null | tail -n 1 | sed 's/^NEED_INPUT:[[:space:]]*//'
-}
 
-open_portal_pages() {
-  # Open several plain-HTTP canaries because captive portals vary in what they
-  # intercept. neverssl is human-friendly; the 204 URLs are what OSes commonly
-  # use and often redirect straight to the portal.
-  nohup xdg-open 'http://neverssl.com/' >/dev/null 2>&1 &
-  nohup xdg-open 'http://nmcheck.gnome.org/' >/dev/null 2>&1 &
-  nohup xdg-open 'http://connectivitycheck.gstatic.com/generate_204' >/dev/null 2>&1 &
-}
+def log(message):
+    print(f"{datetime.now().astimezone().isoformat(timespec='seconds')} {message}", flush=True)
 
-current_ssid() {
-  nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1=="yes" {print $2; exit}'
-}
 
-ssid="$(current_ssid || true)"
-[ -n "$ssid" ] || exit 0
+def run(args, timeout=3):
+    try:
+        p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True, timeout=timeout, check=False)
+        return p.returncode, p.stdout
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log(f"command failed: {args[0]}: {exc}")
+        return 124, ""
 
-state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
-last="$(cat "$STATE_FILE" 2>/dev/null || true)"
-key="$ssid|$state"
 
-remember_status() {
-  local ssid="$1" state="$2" tmp
-  tmp="$STATUS_FILE.tmp"
-  touch "$STATUS_FILE"
-  awk -F '\t' -v ssid="$ssid" '$1 != ssid { print }' "$STATUS_FILE" > "$tmp" || true
-  printf '%s\t%s\t%s\n' "$ssid" "$state" "$(date +%s)" >> "$tmp"
-  mv "$tmp" "$STATUS_FILE"
-}
+def fields(line):
+    # nmcli terse escaping is not shell escaping. Preserve punctuation verbatim.
+    result, value, escaped = [], "", False
+    for char in line:
+        if escaped:
+            value += char
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            result.append(value)
+            value = ""
+        else:
+            value += char
+    result.append(value + ("\\" if escaped else ""))
+    return result
 
-remember_status "$ssid" "$state"
 
-case "$state" in
-  portal|limited)
-    if [ "$last" != "$key" ]; then
-      printf '%s' "$key" > "$STATE_FILE"
-      notify "Wi-Fi captive portal detected" "Trying automatic accept for $ssid… ($state)"
-      if command -v captive-portal-autoaccept >/dev/null 2>&1; then
-        auto_log="$STATE_DIR/autoaccept.last.log"
-        if captive-portal-autoaccept >"$auto_log" 2>&1; then
-          cat "$auto_log" >>"$STATE_DIR/autoaccept.log" 2>/dev/null || true
-          new_state="$(nmcli -t networking connectivity check 2>/dev/null | tr -d '\r' || true)"
-          remember_status "$ssid" "$new_state"
-          if [ "$new_state" = "full" ]; then
-            notify "Wi-Fi internet works" "Auto-accepted captive portal for $ssid. NetworkManager reports full connectivity."
-            exit 0
-          fi
-          notify "Wi-Fi portal auto-accept incomplete" "Tried automatic accept for $ssid, result: ${new_state:-unknown}. Opening browser login pages." "normal"
-        else
-          rc=$?
-          cat "$auto_log" >>"$STATE_DIR/autoaccept.log" 2>/dev/null || true
-          need_input="$(need_input_from_log "$auto_log")"
-          if [ -n "$need_input" ] && [ "$need_input" != "browser login" ]; then
-            # The portal genuinely needs the user to type something. Tell them
-            # exactly what, so they can act from the notification.
-            notify "Wi-Fi portal needs you to enter: $need_input" \
-              "$ssid requires $need_input. Opening the login page in your browser so you can fill it in." \
-              "critical" "dialog-password"
-          else
-            reason="$(tail -n 1 "$auto_log" 2>/dev/null || true)"
-            notify "Wi-Fi portal needs browser" "Auto-accept failed for $ssid (exit $rc). ${reason:-Opening browser login pages.}" "normal"
-          fi
-        fi
-      fi
-      notify "Opening Wi-Fi login pages" "Opened browser checks for $ssid. Complete the portal if it appears."
-      open_portal_pages
-    fi
-    ;;
-  full)
-    # Reset after successful internet so a future portal on same SSID opens again.
-    case "$last" in
-      "$ssid|portal"|"$ssid|limited"|"$ssid|none"|"$ssid|unknown")
-        notify "Wi-Fi internet works" "$ssid has full connectivity. No manual speedtest needed."
-        ;;
-    esac
-    printf '%s' "$key" > "$STATE_FILE"
-    ;;
-  *)
-    ;;
-esac
+def network():
+    rc, text = run(["nmcli", "-t", "-e", "yes", "-f", "ACTIVE,DEVICE,BSSID,SSID",
+                    "device", "wifi", "list", "--rescan", "no"])
+    if rc:
+        return None
+    for line in text.splitlines():
+        row = fields(line)
+        if len(row) == 4 and row[0] == "yes":
+            return row[1:]
+    return None
+
+
+def connectivity():
+    rc, text = run(["nmcli", "-t", "networking", "connectivity"], timeout=3)
+    return text.strip() if rc == 0 else "unknown"
+
+
+def notify(title, body):
+    run(["notify-send", "-a", "Wi-Fi", "-i", "network-wireless", title, body])
+
+
+def save(name, data):
+    tmp = CACHE / (name + ".tmp")
+    tmp.write_text(json.dumps(data) + "\n")
+    tmp.replace(CACHE / name)
+
+
+def remember_status(ssid, state):
+    # Keep the picker TSV contract, without letting unusual SSIDs inject rows.
+    if "\t" in ssid or "\n" in ssid:
+        return
+    path = CACHE / "ssid-status.tsv"
+    rows = path.read_text().splitlines() if path.exists() else []
+    rows = [row for row in rows if row.split("\t", 1)[0] != ssid]
+    rows.append(f"{ssid}\t{state}\t{int(time.time())}")
+    tmp = CACHE / "ssid-status.tsv.tmp"
+    tmp.write_text("\n".join(rows) + "\n")
+    tmp.replace(path)
+
+
+def main():
+    CACHE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Python descriptors are close-on-exec: browser children cannot hold this lock.
+    with (CACHE / "lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            log("another portal helper is running, skipping")
+            return
+        initial = network()
+        if not initial:
+            log("no active Wi-Fi network")
+            # A disconnect must not suppress a later reconnect to the same AP.
+            save("attempt.json", {})
+            return
+        ssid = initial[-1]
+        state = connectivity()
+        log(f"cached connectivity={state!r} network={initial!r}")
+        if network() != initial:
+            log("network changed during cached query, deferring")
+            return
+        remember_status(ssid, state)
+        if state == "full":
+            save("attempt.json", {})
+            return
+        if state not in {"portal", "limited"}:
+            return  # Unknown/none do not establish a portal. Do not open a browser.
+        try:
+            previous = json.loads((CACHE / "attempt.json").read_text())
+        except (OSError, ValueError):
+            previous = {}
+        if not isinstance(previous, dict):
+            previous = {}
+        finished = previous.get("finished", 0)
+        if not isinstance(finished, (int, float)):
+            finished = 0
+        elapsed = time.time() - finished
+        if previous.get("network") == initial and 0 <= elapsed < COOLDOWN:
+            log(f"retry cooldown, {COOLDOWN - elapsed:.0f}s remaining")
+            return
+        log("starting automatic portal accept")
+        rc, output = run(["captive-portal-autoaccept"], timeout=90)
+        (CACHE / "autoaccept.last.log").write_text(output)
+        with (CACHE / "autoaccept.log").open("a") as history:
+            history.write(f"{datetime.now().astimezone().isoformat()} exit={rc}\n{output}\n")
+        log(f"automatic accept finished exit={rc}")
+        if network() != initial:
+            log("network changed during accept, discarding result and browser fallback")
+            return
+        # The engine returns zero only after positively verifying internet access.
+        # NM's cached result may lag behind that observation. Never turn engine
+        # success into a false browser fallback or block on a redundant NM probe.
+        state = "full" if rc == 0 else connectivity()
+        if network() != initial:
+            log("network changed during verification, discarding result")
+            return
+        remember_status(ssid, state)
+        save("attempt.json", {"network": initial, "finished": time.time(), "state": state})
+        log(f"verified connectivity={state!r}")
+        if state == "full":
+            notify("Wi-Fi internet works", f"{ssid} has full connectivity.")
+            return
+        # Never persist a permanent success/dedup key for an unsuccessful attempt.
+        need = re.findall(r"NEED_INPUT:\s*(.*)", output)
+        detail = need[-1] if need else "browser login"
+        notify("Wi-Fi portal needs attention", f"{ssid}: {detail}. Opening one login page.")
+        if network() != initial:
+            log("network changed before browser fallback, skipping")
+            return
+        try:
+            subprocess.Popen(["xdg-open", "http://neverssl.com/"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError as exc:
+            log(f"browser fallback failed: {exc}")
+
+
+if __name__ == "__main__":
+    main()
