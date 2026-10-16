@@ -45,6 +45,37 @@ acceptor's Caltrain log confirmed internet, then followed four unnecessary websi
 redirects. Old per-request logs were not timestamped, so they do not prove how
 much of each historical interval was software delay versus portal/network delay.
 
+## Live deployment observations (2026-10-16)
+
+After installing the committed tools, these public interfaces were exercised
+against the real NetworkManager and existing train connection, without stubs:
+
+- Installed `WIFI_PICK_DUMP=1 /usr/bin/wifi-pick` returned the real active/saved
+  network with its full-connectivity indicator in **0.124 seconds**. This verifies
+  launcher data/startup, not interactive tofi selection.
+- `systemctl --user start captive-portal-helper.service` completed successfully
+  in **0.081 seconds**, with `ExecMainStatus=0` and cached connectivity `full`.
+- Restarting only `captive-portal-monitor.service` exercised its real NM
+  subscription/startup. The initial workers were serialized: one checked the
+  actual network, another skipped the held lock. The monitor remained active
+  with zero automatic restarts.
+- Three real old-style `nmcli networking connectivity check` calls took
+  **400.15, 404.65, and 377.06 ms**. Three new-style cached reads took
+  **10.44, 11.68, and 10.64 ms**. The measured medians were **400.15 vs 10.64 ms**.
+  This proves lower gate overhead on a working network, not a 38x improvement
+  in joining Wi-Fi.
+- The installed acceptor confirmed an actual external HTTP 204 and exited
+  `already online` in **0.244 seconds**. No portal form was submitted.
+- The IP address and active connection remained unchanged, with no NM activation
+  or disconnect entries during these live checks. The retry timer was active.
+
+The complete unauthenticated captive-login acceptance path remains blocked by
+existing AP authorization: recreating it would require a fresh captive network
+or altering the current authorization/connectivity. No logout, MAC change, or
+disconnect was performed just to obtain a timing result. Local HTTP acceptance
+and injected-delay regressions complement, but do not replace, that next real
+connection measurement.
+
 ## Diagnostics and operational limits
 
 ```sh
