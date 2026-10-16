@@ -13,7 +13,8 @@ Decisions baked into every jstack OS install, taken from the reference machine.
 - **Passwordless sudo** for the primary user (`/etc/sudoers.d/15-jstack-nopasswd`).
   Remove that file to require a password.
 - **fish** is the login shell. tty1 login autostarts `niri-session`.
-- **TLP** enabled with powersave governor, performance EPP on AC.
+- **TLP** enabled with powersave governor, performance EPP on AC. Wi-Fi power
+  saving stays off on AC and battery for responsiveness, at some battery cost.
 - **earlyoom**, **bluetooth**, **fstrim.timer** enabled.
 - **jcode** preinstalled from a pinned release (jstack-agent);
   `JCODE_NO_AUTO_UPDATE=1` so pacman owns the binary.
