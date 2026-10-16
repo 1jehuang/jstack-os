@@ -166,3 +166,27 @@ Scoped installed-file backups are in
 `/var/lib/jstack-network/backups/20261016-1447/`. Restore the saved TLP file and
 run `sudo iw dev wlan0 set power_save on` to undo the battery-policy mitigation
 while currently on battery. Restore the saved acceptor to undo the deadline fix.
+
+### Requirement-to-observation acceptance map
+
+| Requirement or changed behavior | Concrete check and observed result | Limit |
+| --- | --- | --- |
+| Identify why real joins stall | Actual 14:13 login diagnostics isolated a 20.147-second probe within a successful 27.7-second login; older NM timelines isolated two 33-second DHCP waits | Does not establish the HTTP stall phase or DHCP packet cause |
+| Bound the newly identified probe wait | Installed CLI with real curl and stalled local HTTP response: probe 3.007 seconds, process 3.160 seconds, rejected response | Controlled server, not a replay of the AP fault |
+| Preserve real online detection | Installed CLI contacted actual external endpoint, received 204 in 0.235 seconds, printed `already online`, exited successfully | Already authorized, not a fresh portal login |
+| Preserve successful form acceptance | `test_real_http_accept_skips_success_redirect_cycle` executes installed CLI, real requests and curl against local HTTP; one accept POST, exit 0, no unnecessary redirect | Local controlled portal, not train AP |
+| Reject redirects and misleading success | `test_public_script_real_curl_rejects_redirect_and_204_location` executes installed CLI for 302, 204+Location and 200; each exits 1, never follows target or exposes query token in diagnostic stderr | Controlled responses |
+| Enforce subprocess cleanup and conservative errors | `test_stalled_resolver_child_is_killed_and_reaped` observes actual child termination; `test_probe_fails_closed_for_errors_redirects_and_missing_curl` covers return codes and absent executable | Resolver stand-in and unit injection, not evidence DNS caused original wait |
+| Preserve credential/payment/personal-data refusal | `test_credential_payment_and_personal_fields_stay_refused` rejects those form fixtures | Fixture coverage, no real sensitive form submitted |
+| Keep user launcher functional | At 14:50 PDT installed `WIFI_PICK_DUMP=1 /usr/bin/wifi-pick` showed Stanford Visitor active/full, Stanford saved, eduroam secured and Scan again | Real NM interface, not interactive menu selection or fresh join |
+| Keep automatic recovery functional | Installed helper Result=success, ExecMainStatus=0; monitor and retry timer active at 14:50 | No fresh unauthenticated network transition induced |
+| Prevent TLP from silently reversing mitigation | Natural AC-to-battery transition established owner; deployed config matches source, TLP effective AC/BAT values off, live iw off at 14:50, CPU policy unchanged | Future physical power transition not forced; drop cure unproven |
+| Improve radio latency or eliminate losses | Four actual 30-packet gateway samples, all zero loss; initial 36.295-to-2.653 ms reduction did not repeat (3.085-to-5.783 ms) | No consistent latency improvement or long-term loss cure demonstrated |
+| Resolve historical DHCP delays | Current real acquisition about 1.2 seconds; next-activation DHCP4 trace and automatic rollback timer verified active | Historical Avalon fault absent on Stanford, causal fix remains blocked |
+| Avoid disruption and preserve rollback | Same Stanford Visitor BSSID/IP throughout, no activation/disconnect entries during checks; pre-change files backed up, commits 1c09091 and 6b1812a | Does not guarantee future AP availability |
+
+Overall acceptance is **partial**, not an all-Wi-Fi-fixed result. The probe-deadline
+requirement is verified at the installed interface. End-to-end join-speed, DHCP
+and dropout requirements need the next naturally affected network activation.
+Disconnecting, changing the MAC or revoking the working authorization solely to
+manufacture that event was intentionally avoided.
