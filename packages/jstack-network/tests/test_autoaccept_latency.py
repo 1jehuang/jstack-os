@@ -260,6 +260,28 @@ class AutoacceptTests(unittest.TestCase):
                 parser.close()
                 self.assertIsNone(portal.build_submission(parser.forms[0], "http://portal/"))
 
+    def test_cisco_wlc_stanford_visitor_accepts_despite_terms_prose(self):
+        body = (Path(__file__).parent / "fixtures/cisco_wlc_stanford_visitor.html").read_text(encoding="latin-1")
+        url = ("http://10.1.2.3/fs/customwebauth/login.html?switch_url=http://10.1.2.3/login.html"
+               "&ap_mac=70:70:8b:8a:56:a0&wlan=Stanford%20Visitor&redirect=neverssl.com/")
+        with contextlib.redirect_stderr(io.StringIO()):
+            cands = portal.candidates_for(response(url=url, body=body))
+        self.assertTrue(cands)
+        cand = cands[0]
+        self.assertEqual((cand.method, cand.action, cand.source), ("post", "http://10.1.2.3/login.html", "cisco_wlc"))
+        self.assertEqual(cand.data["buttonClicked"], "4")
+        self.assertEqual(cand.data["redirect_url"], "neverssl.com/")
+
+    def test_cisco_wlc_shape_with_editable_fields_is_not_special_cased(self):
+        for field in ('<input type="password" name="password">', '<input type="text" name="username">'):
+            with self.subTest(field=field):
+                parser = portal.Parser()
+                parser.feed('<form method="post"><input type="hidden" name="buttonClicked" value="0">'
+                            '<input type="hidden" name="redirect_url" value="">' + field +
+                            '<input type="button" name="Submit" value="ACCEPT"></form>')
+                parser.close()
+                self.assertIsNone(portal.cisco_wlc_candidate(parser.forms[0], "http://10.1.2.3/x?switch_url=http://10.1.2.3/login.html"))
+
     def test_timestamp_diagnostic_does_not_change_stdout(self):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):

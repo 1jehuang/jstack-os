@@ -21,7 +21,7 @@ import weakref
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 
@@ -565,7 +565,44 @@ def choose_radio(radios: List[Input]) -> Optional[Input]:
     return best if best_score > 0 else None
 
 
+def cisco_wlc_candidate(form: Form, base_url: str) -> Optional[Candidate]:
+    """Cisco WLC web-passthrough (e.g. Stanford Visitor) ACCEPT page.
+
+    The page is a hidden-field-only form whose ACCEPT button is a JS
+    type=button that sets buttonClicked=4 and posts to the switch_url query
+    parameter. Its terms prose can mention passwords, so the generic text
+    filter would refuse it. We only match when there are no user-editable
+    fields at all, so nothing but the hidden accept flags can be submitted.
+    """
+    hidden = {i.attrs.get("name", ""): i.attrs.get("value", "")
+              for i in form.inputs if input_type(i) == "hidden"}
+    if "buttonClicked" not in hidden or "redirect_url" not in hidden:
+        return None
+    editable = [i for i in form.inputs
+                if input_type(i) not in ("hidden", "button", "submit", "reset", "image")]
+    if editable:
+        return None
+    buttons = form.inputs + form.buttons
+    if not any(input_type(b) in ("button", "submit")
+               and has_any(field_blob(b), ("accept", "agree")) for b in buttons):
+        return None
+    query = parse_qs(urlparse(base_url).query)
+    switch = (query.get("switch_url") or [""])[0]
+    action = safe_url(switch or form.attrs.get("action", "") or base_url, base_url)
+    if not action:
+        return None
+    redirect = (query.get("redirect") or [""])[0][:255]
+    data = dict(hidden)
+    data["buttonClicked"] = "4"
+    data["redirect_url"] = redirect
+    data.setdefault("err_flag", "0")
+    return Candidate(method="post", action=action, data=data, score=1000, source="cisco_wlc")
+
+
 def build_candidate_from_form(form: Form, base_url: str) -> Optional[Candidate]:
+    wlc = cisco_wlc_candidate(form, base_url)
+    if wlc:
+        return wlc
     visible = visible_form_blob(form)
     if has_any(visible, HARD_DANGER_WORDS):
         print("refuse: login/payment/captcha/voucher-looking visible form", file=sys.stderr)
