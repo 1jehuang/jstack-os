@@ -949,6 +949,78 @@ def analyze_required_inputs(resp: requests.Response) -> List[str]:
     return ordered
 
 
+NILE_HOST_SUFFIX = ".nilesecure.com"
+NILE_COA_POLLS = 8
+NILE_COA_INTERVAL = 1.5
+
+
+def nile_tnc_accept(sess: requests.Session, resp: requests.Response) -> Optional[bool]:
+    """Nile guest portal (e.g. Stanford Visitor.CS), terms-only flavor.
+
+    The splash is a React SPA with no HTML forms. Its Accept button posts JSON
+    to /api/v1/userlogin/sessionId/<id> and then polls the CoA status until the
+    controller ACKs. We only act when the portal's own metadata says the type is
+    TNC (terms and conditions) and no name/email/phone input is required.
+
+    Returns None if this is not a Nile portal, True if access was granted, and
+    False if it is Nile but could not be accepted automatically.
+    """
+    page = urlparse(resp.url)
+    host = (page.hostname or "").lower()
+    if page.scheme != "https" or not host.endswith(NILE_HOST_SUFFIX):
+        return None
+    query = parse_qs(page.query)
+    session_id = (query.get("sessionId") or [""])[0]
+    if not re.fullmatch(r"[A-Za-z0-9-]{8,64}", session_id):
+        return None
+    forward = (query.get("forward") or [CANARY_URL])[0]
+    essid = (query.get("essid") or [""])[0]
+    base = f"https://{host}"
+    headers = {"X-Requested-With": "XMLHttpRequest", "x-nile-client": "guest",
+               "Accept": "application/json"}
+    print(f"nile portal detected host={host}")
+    try:
+        meta = timed_request(sess, "get", f"{base}/api/v1/portaldata/sessionId/{session_id}",
+                             headers=headers, timeout=TIMEOUT).json()
+    except Exception as e:
+        print(f"nile portal metadata failed: {e}", file=sys.stderr)
+        return False
+    if not isinstance(meta, dict):
+        return False
+    portal_type = meta.get("portalType")
+    required = meta.get("requiredInput") or {}
+    if portal_type != "TNC" or meta.get("allowSSO") or meta.get("sponsorListEnabled") \
+            or (isinstance(required, dict) and any(required.values())):
+        print(f"refuse: nile portal type={portal_type!r} needs input", file=sys.stderr)
+        return False
+    body = {"authenticated": True, "portalType": "TNC", "forward": forward, "essid": essid}
+    print("try_nile_tnc: method=post")
+    try:
+        login = timed_request(sess, "post", f"{base}/api/v1/userlogin/sessionId/{session_id}",
+                              params={"forward": forward, "essid": essid}, json=body,
+                              headers=headers, timeout=TIMEOUT, allow_redirects=False)
+    except Exception as e:
+        print(f"nile accept failed: {e}", file=sys.stderr)
+        return False
+    if login.status_code > 204:
+        print(f"nile accept rejected status={login.status_code}", file=sys.stderr)
+        return False
+    for _ in range(NILE_COA_POLLS):
+        if is_online(sess):
+            return True
+        time.sleep(NILE_COA_INTERVAL)
+        try:
+            status = timed_request(sess, "get", f"{base}/api/v2/portaldata/sessionStatus/{session_id}",
+                                   headers=headers, timeout=TIMEOUT).json()
+        except Exception:
+            continue
+        coa = status.get("coaStatus") if isinstance(status, dict) else None
+        print(f"nile coa_status={coa}")
+        if coa == "ERROR":
+            return False
+    return is_online(sess)
+
+
 def run_accept(sess: requests.Session, start_url: str = CANARY_URL) -> int:
     """Walk a (possibly multi-step) click-through portal.
 
@@ -968,6 +1040,13 @@ def run_accept(sess: requests.Session, start_url: str = CANARY_URL) -> int:
         if is_online(sess):
             print(f"online after step {step}")
             return 0
+
+        nile = nile_tnc_accept(sess, resp)
+        if nile is not None:
+            if nile:
+                print(f"online after nile accept at step {step}")
+                return 0
+            break
 
         candidates = candidates_for(resp)
         if not candidates:

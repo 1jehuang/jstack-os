@@ -282,6 +282,54 @@ class AutoacceptTests(unittest.TestCase):
                 parser.close()
                 self.assertIsNone(portal.cisco_wlc_candidate(parser.forms[0], "http://10.1.2.3/x?switch_url=http://10.1.2.3/login.html"))
 
+    NILE_URL = ("https://u1.nilesecure.com/terms?cmd=login&essid=Stanford%20Visitor.CS"
+                "&forward=http://neverssl.com/&ip=10.5.160.148&mac=e0:c9:32:f8:1e:2f"
+                "&sessionId=d29742e2-99c1-43ad-a550-319f376e8545")
+
+    def nile_session(self, meta, coa="ACK", login_status=200):
+        sess = Mock()
+
+        def get(url, **kwargs):
+            r = response(url=url)
+            r.json = lambda: meta if "/portaldata/sessionId/" in url else {"coaStatus": coa}
+            return r
+
+        sess.get.side_effect = get
+        sess.post.return_value = response(url="https://u1.nilesecure.com/api", status=login_status)
+        return sess
+
+    def test_nile_tnc_portal_posts_terms_acceptance(self):
+        meta = {"portalType": "TNC", "allowSSO": False, "sponsorListEnabled": False,
+                "requiredInput": {"name": False, "email": False, "phoneNum": False}}
+        sess = self.nile_session(meta)
+        with patch.object(portal, "is_online", side_effect=[False, True]), \
+                patch.object(portal.time, "sleep"), contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(portal.nile_tnc_accept(sess, response(url=self.NILE_URL)))
+        url = sess.post.call_args.args[0]
+        kwargs = sess.post.call_args.kwargs
+        self.assertEqual(url, "https://u1.nilesecure.com/api/v1/userlogin/sessionId/d29742e2-99c1-43ad-a550-319f376e8545")
+        self.assertEqual(kwargs["json"], {"authenticated": True, "portalType": "TNC",
+                                          "forward": "http://neverssl.com/", "essid": "Stanford Visitor.CS"})
+        self.assertEqual(kwargs["headers"]["x-nile-client"], "guest")
+
+    def test_nile_portal_needing_input_is_refused(self):
+        for meta in ({"portalType": "ACCESS_CODE"},
+                     {"portalType": "TNC", "requiredInput": {"email": True}},
+                     {"portalType": "SPONSOR_EMAIL"}):
+            with self.subTest(meta=meta):
+                sess = self.nile_session(meta)
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertFalse(portal.nile_tnc_accept(sess, response(url=self.NILE_URL)))
+                sess.post.assert_not_called()
+
+    def test_non_nile_page_is_ignored(self):
+        sess = Mock()
+        for url in ("http://portal/a?sessionId=abcdefgh1234", "http://u1.nilesecure.com/terms?sessionId=abcdefgh1234",
+                    "https://nilesecure.com.evil.example/terms?sessionId=abcdefgh1234"):
+            self.assertIsNone(portal.nile_tnc_accept(sess, response(url=url)))
+        sess.get.assert_not_called()
+
     def test_timestamp_diagnostic_does_not_change_stdout(self):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
