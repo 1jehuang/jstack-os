@@ -1209,6 +1209,7 @@ def prepare_launch(
             ]
         )
         iso_fd_path = _add_pin(qemu_argv, iso_pin, next_fdset)
+        next_fdset += 1
         qemu_argv.extend(
             [
                 "-blockdev",

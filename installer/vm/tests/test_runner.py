@@ -1146,6 +1146,11 @@ class ControlMediaAttachmentTests(RunnerSafetyTests):
                 self.assertIs(nodes[name].get("read-only"), True)
         for node in ("control-media-file", "control-media"):
             self.assertIn(node, plan.block_nodes)
+        # The ISO and the control medium once shared an fdset, so the paused
+        # QMP audit refused every live launch with a control medium.
+        fdsets = [pin.fdset for pin in plan.pins]
+        self.assertNotIn(None, fdsets)
+        self.assertEqual(len(fdsets), len(set(fdsets)), fdsets)
 
     def test_the_medium_can_never_be_a_boot_source(self) -> None:
         """A bootable medium could change what the machine runs, not just what
