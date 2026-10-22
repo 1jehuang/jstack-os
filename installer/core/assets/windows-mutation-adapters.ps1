@@ -221,7 +221,7 @@ function Invoke-JStackCreatePartition {
     # New-Partition rejects a bare GUID with "The specified partition type is
     # not valid" (observed live); it accepts only the {...} registry form.
     $gptType = '{' + (ConvertTo-JStackGuid ([string]$Request.type_guid)) + '}'
-    Storage\New-Partition -DiskNumber $disk.Number -Offset $offset -Size $size -GptType $gptType -ErrorAction Stop
+    Storage\New-Partition -DiskNumber $disk.Number -Offset $offset -Size $size -GptType $gptType -ErrorAction Stop | Microsoft.PowerShell.Core\Out-Null
 
     $observed = @(Storage\Get-Partition -DiskNumber $disk.Number -ErrorAction Stop |
         Microsoft.PowerShell.Core\Where-Object { [uint64]$_.Offset -eq $offset })
