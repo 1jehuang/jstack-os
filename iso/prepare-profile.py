@@ -100,6 +100,7 @@ airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '9' '-b' '1M' 
 file_permissions["/usr/local/lib/jstack-live-setup"]="0:0:755"
 file_permissions["/usr/local/bin/jstack-install-live"]="0:0:755"
 file_permissions["/usr/local/bin/jstack-install-help"]="0:0:755"
+file_permissions["/usr/local/bin/jstack-install-run"]="0:0:755"
 '''
     (profile / 'profiledef.sh').write_text(text.replace('@NPROC@', str(os.cpu_count() or 2)))
     package_file = profile / 'packages.x86_64'
@@ -137,10 +138,28 @@ exec cat /usr/share/doc/jstack-live/INSTALL.md
     marker.unlink(missing_ok=True)
     if overlay is None:
         put(root, '/etc/jstack-live-installer.json', json.dumps(INSTALLER_MARKER) + '\n')
+    put(root, '/usr/local/bin/jstack-install-run', '''#!/bin/sh
+# Run the installer in a pty-preserving log, then keep the window open so
+# the result (success or the exact refusal reason) is never lost.
+log=/run/jstack-install-$(date +%Y%m%d-%H%M%S).log
+script -q -e -c "sudo jstack-install-live $*" "$log"
+status=$?
+echo
+if [ "$status" -eq 0 ]; then
+    echo "=== INSTALL FINISHED. Power off (sudo poweroff), remove the USB, then boot the computer. ==="
+else
+    echo "=== INSTALL DID NOT COMPLETE (exit $status). Read the REFUSED/FAILED line above. ==="
+    echo "=== Nothing is written before you type the confirmation code. Fix the issue and run it again. ==="
+fi
+echo "Full log: $log"
+echo
+printf 'Press Enter to close this window. '
+read -r _
+''', 0o755)
     for name, title, command in (
-        ('jstack-install', 'Install Jstack OS (blank disk)', 'sudo jstack-install-live'),
+        ('jstack-install', 'Install Jstack OS (blank disk)', 'jstack-install-run'),
         ('jstack-install-alongside', 'Install Jstack OS next to Windows (dual boot)',
-         'sudo jstack-install-live --alongside-windows'),
+         'jstack-install-run --alongside-windows'),
         ('jstack-install-help', 'Jstack USB installation instructions', 'jstack-install-help'),
     ):
         put(root, f'/usr/share/applications/{name}.desktop',

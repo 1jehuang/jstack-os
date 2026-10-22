@@ -91,8 +91,14 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual((root / 'usr/share/doc/jstack-live/INSTALL.md').read_bytes(),
                          (ROOT / 'iso/INSTALL.md').read_bytes())
         self.assertIn('sudo jstack-install-live', (root / 'etc/motd').read_text())
-        self.assertIn('Exec=foot -e sudo jstack-install-live',
+        self.assertIn('Exec=foot -e jstack-install-run',
                       (root / 'usr/share/applications/jstack-install.desktop').read_text())
+        self.assertIn('Exec=foot -e jstack-install-run --alongside-windows',
+                      (root / 'usr/share/applications/jstack-install-alongside.desktop').read_text())
+        runner = root / 'usr/local/bin/jstack-install-run'
+        subprocess.run(['sh', '-n', str(runner)], check=True)
+        self.assertIn('read -r', runner.read_text())
+        self.assertIn('sudo jstack-install-live', runner.read_text())
         packages = set((p / 'packages.x86_64').read_text().splitlines())
         self.assertTrue({'python', 'rsync', 'btrfs-progs', 'dosfstools', 'gptfdisk',
                          'util-linux', 'arch-install-scripts', 'linux', 'mkinitcpio'} <= packages)

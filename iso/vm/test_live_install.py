@@ -216,12 +216,13 @@ class Serial:
             self.log.flush()
             self.buffer += data.decode('utf-8', errors='replace').replace('\r', '')
 
-    def bootstrap(self, installed: bool, timeout: int):
+    def bootstrap(self, installed: bool, timeout: int, password: str = PASSWORD):
         if installed:
             self.expect(r'login:\s*$', timeout)
             self.send(USER + '\n')
-            self.expect(r'Password:\s*$', 30)
-            self.send(PASSWORD + '\n')
+            if password:
+                self.expect(r'Password:\s*$', 30)
+                self.send(password + '\n')
         else:
             self.expect(r'automatic login', timeout)
         # login's banner is not shell readiness. Fish probes terminal features

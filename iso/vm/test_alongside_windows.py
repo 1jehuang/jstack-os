@@ -139,7 +139,7 @@ def run(args, artifacts: Path, result: dict):
         s.bootstrap(False, args.boot_timeout)
         s.script('live prerequisites', f'''set -euo pipefail
 test "$(lsblk -dn -o SERIAL {DISK})" = JSTACKTARGET
-umask 077; printf '%s\\n' {shlex.quote(h.PASSWORD)} > /run/jstack-vm-password
+umask 077; printf '%s\\n' {shlex.quote(args.password)} > /run/jstack-vm-password
 lsblk -o NAME,TYPE,SIZE,FSTYPE,PARTTYPE,LABEL
 ''')
         _, before = s.script('pre-install snapshot', snapshot_script())
@@ -189,7 +189,7 @@ lsblk -o NAME,TYPE,SIZE,FSTYPE,PARTTYPE,LABEL
     args.ovmf_vars = artifacts / 'live' / 'OVMF_VARS.fd'
     h.progress('Booting installed dual-boot disk without ISO', phase='installed-boot')
     with h.VM(args, artifacts, 'installed', target) as vm:
-        vm.serial.bootstrap(True, args.boot_timeout)
+        vm.serial.bootstrap(True, args.boot_timeout, args.password)
         _, result['installed_checks'] = vm.serial.script('installed dual-boot checks', installed_script(), 180)
         vm.shutdown()
 
@@ -207,7 +207,9 @@ def main(argv=None):
     p.add_argument('--boot-timeout', type=int, default=300)
     p.add_argument('--refusal-timeout', type=int, default=120)
     p.add_argument('--install-timeout', type=int, default=1800)
+    p.add_argument('--empty-password', action='store_true', help='install with an empty password')
     args = p.parse_args(argv)
+    args.password = '' if args.empty_password else h.PASSWORD
     if os.geteuid() == 0:
         print('Run as an ordinary user', file=sys.stderr)
         return 2

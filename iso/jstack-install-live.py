@@ -735,7 +735,7 @@ def configure_target(root, username, hostname, password, root_uuid, esp_uuid, se
                      'etc/NetworkManager/conf.d/20-jstack-live.conf',
                      'etc/sudoers.d/15-jstack-live', 'usr/local/lib/jstack-live-setup',
                      'usr/local/bin/jstack-install-live', MARKER,
-                     'usr/local/bin/jstack-install-help',
+                     'usr/local/bin/jstack-install-help', 'usr/local/bin/jstack-install-run',
                      'usr/share/applications/jstack-install.desktop',
                      'usr/share/applications/jstack-install-alongside.desktop',
                      'usr/share/applications/jstack-install-help.desktop',
@@ -775,7 +775,12 @@ def configure_target(root, username, hostname, password, root_uuid, esp_uuid, se
     # Account creation uses clean package skel and never copies the live home.
     chroot('useradd', '-m', '-U', '-G', 'wheel,video,input,audio', '-s', '/usr/bin/fish', username)
     seed_jcode_credentials(root, username)
-    chroot('chpasswd', input=f'{username}:{password}\n')
+    if password:
+        chroot('chpasswd', input=f'{username}:{password}\n')
+    else:
+        # Empty password chosen: no login password at all. tty1 autologin and
+        # passwordless sudo are already the installed policy.
+        chroot('passwd', '-d', username)
     put(root, 'etc/sudoers.d/10-wheel', '%wheel ALL=(ALL:ALL) ALL\n', 0o440)
     put(root, 'etc/sudoers.d/15-jstack-nopasswd', f'{username} ALL=(ALL:ALL) NOPASSWD: ALL\n', 0o440)
     chroot('visudo', '-c')
@@ -1029,9 +1034,9 @@ def main(argv=None):
         password = sys.stdin.readline().rstrip('\n')
     else:
         require(sys.stdin.isatty(), '--password-stdin required noninteractively')
-        password = getpass.getpass('New user password: ')
+        password = getpass.getpass('New user password (Enter for none): ')
         require(password == getpass.getpass('Repeat password: '), 'passwords differ')
-    require(len(password) >= 8 and not any(c in password for c in '\r\n\x00:'), 'password must have at least 8 characters, without colon/newline/NUL')
+    require(not any(c in password for c in '\r\n\x00:'), 'password must not contain a colon, newline or NUL')
     install(identity, source, args.user, args.hostname, password, args.serial_console)
     return 0
 
@@ -1048,9 +1053,9 @@ def ask_account(args, guided):
         password = sys.stdin.readline().rstrip('\n')
     else:
         require(sys.stdin.isatty(), '--password-stdin required noninteractively')
-        password = getpass.getpass('New user password: ')
+        password = getpass.getpass('New user password (Enter for none): ')
         require(password == getpass.getpass('Repeat password: '), 'passwords differ')
-    require(len(password) >= 8 and not any(c in password for c in '\r\n\x00:'), 'password must have at least 8 characters, without colon/newline/NUL')
+    require(not any(c in password for c in '\r\n\x00:'), 'password must not contain a colon, newline or NUL')
     return password
 
 

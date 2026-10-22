@@ -548,11 +548,18 @@ class CliTests(SafeTest):
                 installer.main(args)
             install.assert_not_called()
 
-    def test_empty_short_and_injectable_passwords_refused(self):
-        for password in ('', '\n', 'short\n', 'long:password\n', 'long\x00password\n', 'long\rpassword\n'):
+    def test_injectable_passwords_refused(self):
+        for password in ('long:password\n', 'long\x00password\n', 'long\rpassword\n'):
             with self.subTest(password=repr(password)), self.cli() as (install, _), patch.object(installer.sys, 'stdin', io.StringIO(password)), self.assertRaisesRegex(installer.Refusal, 'password'):
                 installer.main(self.args())
             install.assert_not_called()
+
+    def test_empty_and_short_passwords_allowed(self):
+        for password in ('', '\n', 'short\n'):
+            with self.subTest(password=repr(password)), self.cli() as (install, _), patch.object(installer.sys, 'stdin', io.StringIO(password)):
+                installer.main(self.args())
+            install.assert_called_once()
+            self.assertEqual(install.call_args.args[4], password.rstrip('\n'))
 
     def test_invalid_username_hostname_refused(self):
         for option, value in [('--user', 'root'), ('--user', '-bad'), ('--user', 'alice;id'), ('--user', 'a' * 33),
