@@ -218,7 +218,10 @@ function Invoke-JStackCreatePartition {
         throw 'Refusing to create a partition overlapping an existing partition'
     }
 
-    Storage\New-Partition -DiskNumber $disk.Number -Offset $offset -Size $size -GptType ([string]$Request.type_guid) -ErrorAction Stop
+    # New-Partition rejects a bare GUID with "The specified partition type is
+    # not valid" (observed live); it accepts only the {...} registry form.
+    $gptType = '{' + (ConvertTo-JStackGuid ([string]$Request.type_guid)) + '}'
+    Storage\New-Partition -DiskNumber $disk.Number -Offset $offset -Size $size -GptType $gptType -ErrorAction Stop
 
     $observed = @(Storage\Get-Partition -DiskNumber $disk.Number -ErrorAction Stop |
         Microsoft.PowerShell.Core\Where-Object { [uint64]$_.Offset -eq $offset })
