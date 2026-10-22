@@ -260,6 +260,49 @@ That seal is the safety property, not an oversight. Anything built here must kee
 it: the executor must remain unable to construct a boundary against the machine
 it is running on.
 
+## Live Windows 11 campaign (2026-10-22)
+
+The read-only-media executor now exists as `vm/tools/run_campaign_step.py` and
+has driven a real Windows 11 Enterprise 25H2 guest (Secure Boot on, TPM 2.0,
+BitLocker off) through live, plan-bound steps. One step is one fresh guest, one
+authorised action from the control medium, run by a boot-time SYSTEM task, then
+power-off and an offline read-back of the observation. Steps chain through
+`--continue-from`, which rebases the previous stopped overlay onto the same
+immutable base in a new run.
+
+Observed end to end, with evidence under `installer/vm/evidence/live/`:
+
+1. `collect_inventory`: the reviewed collector ran live; its snapshot normalized
+   through `jstack-inventory`.
+2. `jstack-plan` produced a plan from that live inventory (see the attestation
+   caveat below), and `jstack-installer dispatch` rendered plan-bound requests.
+3. `shrink_windows_ntfs`: C: was resized to exactly the planned 93161783296
+   bytes; GPT read back offline, ESP/MSR/recovery unchanged.
+4. `create_xbootldr_partition`: exactly the planned interval and type GUID was
+   created in the freed space.
+
+Defects that only live Windows exposed, each fixed with a regression check where
+the mock harness could express it: the ISO and control medium sharing a QEMU
+fdset; Windows 11 24H2+ silently BitLocker-encrypting the "bitlocker-off" base
+image; `Get-Volume` throwing (not returning empty) for the MSR; `DriveLetter`
+being `[char]0` rather than `$null`; the BitLocker module's host warning landing
+in stdout ahead of the JSON; `{...}` versus bare GUID forms in both partition
+resolution and `New-Partition -GptType`; and the PowerShell 5.1 UTF-8 BOM.
+
+Open findings from the live run, not yet resolved:
+
+- **Partition GUIDs.** The planner assigns each created partition a deterministic
+  GUID, and the Linux adapter sets it with `sgdisk --partition-guid`. Windows
+  `New-Partition` has no parameter for a partition's unique GUID, so the live
+  XBOOTLDR carries a Windows-chosen GUID. Either XBOOTLDR creation moves to the
+  Linux side, or the plan must accept a Windows-assigned XBOOTLDR GUID that is
+  recorded and bound after creation. This is a design decision, not a bug fix.
+- **Planning gates.** The read-only collector always reports
+  `firmware_variables_writable: false` and Secure Boot as `enabled_untrusted`,
+  so `jstack-plan` refuses every live inventory. The live plan above was made by
+  attesting those two fields by hand. A real bootstrap needs the
+  `jstack-firmware` probe and a Secure Boot trust check to supply them.
+
 ## What closing every row does *not* authorise
 
 Closing PH-01 through PH-18 does not make production mutation reachable, and
