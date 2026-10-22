@@ -164,6 +164,46 @@ fn dispatch_request(
         serde_json::Value::Number(plan.body.windows_resize.original_size_bytes.into()),
     );
 
+    // Partition creation needs the exact planned geometry. It is taken from the
+    // plan's own created_partitions entry for the role the action names, never
+    // from an argument, together with the confirmed allocation interval the
+    // adapter re-checks before writing.
+    let created_role = match action {
+        "create_xbootldr_partition" => Some(jstack_installer_core::PartitionRole::Xbootldr),
+        "create_root_partition" => Some(jstack_installer_core::PartitionRole::JstackRoot),
+        _ => None,
+    };
+    if let Some(role) = created_role {
+        let partition = plan
+            .body
+            .created_partitions
+            .iter()
+            .find(|partition| partition.role == role)
+            .ok_or_else(|| format!("plan creates no {role:?} partition"))?;
+        for (key, value) in [
+            (
+                "partition_guid",
+                serde_json::Value::String(partition.partition_guid.to_string()),
+            ),
+            (
+                "type_guid",
+                serde_json::Value::String(partition.type_guid.to_string()),
+            ),
+            ("offset_bytes", partition.offset_bytes.into()),
+            ("size_bytes", partition.size_bytes.into()),
+            (
+                "allocation_start_bytes",
+                plan.body.allocation_interval.start_bytes.into(),
+            ),
+            (
+                "allocation_end_bytes",
+                plan.body.allocation_interval.end_bytes.into(),
+            ),
+        ] {
+            targets.insert(key.to_owned(), value);
+        }
+    }
+
     let request = dispatch(graph, &capability, action, plan.plan_hash.as_str(), targets)
         .map_err(|error| format!("dispatch refused: {error}"))?;
 

@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import secrets
+import subprocess
 import sys
 import threading
 import time
@@ -72,6 +73,7 @@ def run_step(
     scenario_id: str = DEFAULT_SCENARIO,
     deadline_seconds: int = DEFAULT_DEADLINE_SECONDS,
     run_id: str | None = None,
+    continue_from: str | None = None,
 ) -> dict[str, Any]:
     workspace = lab.safe_workspace(workspace, lab.require_scratch_root())
     launch_directory = workspace / "launch"
@@ -103,7 +105,50 @@ def run_step(
 
     agent_evidence: dict[str, Any] = {}
 
+    previous_overlay: Path | None = None
+    if continue_from is not None:
+        # A multi-step install carries disk state from one step to the next.
+        # The previous run's overlay is never reused or written: its bytes are
+        # copied into this run's freshly created overlay, which has the same
+        # single immutable backing file, so the runner's one-fresh-overlay-over-
+        # one-base invariant and the previous run's evidence both stay intact.
+        previous_overlay = workspace / "runs" / continue_from / "disk-overlay.qcow2"
+        if not previous_overlay.is_file():
+            raise CampaignStepError(f"no stopped overlay for run {continue_from}")
+        if read_guest_observation._overlay_is_in_use(previous_overlay):
+            raise CampaignStepError(f"run {continue_from} still holds its overlay open")
+
     def hook(overlay: Path, _run_directory: Path, _run_id: str) -> None:
+        if previous_overlay is not None:
+            # Rebase the previous step's allocated clusters onto the same
+            # immutable base in this run's fresh overlay. `qemu-img convert -B`
+            # writes only the clusters that differ from the base, so the copy
+            # is as small as the previous overlay rather than a full disk.
+            base = Path(json.loads(subprocess.run(
+                ["qemu-img", "info", "--output=json", str(previous_overlay)],
+                capture_output=True, check=True, text=True,
+                env=lab.subprocess_environment(staging),
+            ).stdout)["backing-filename"])
+            overlay.unlink()
+            subprocess.run(
+                ["qemu-img", "convert", "-O", "qcow2", "-F", "qcow2", "-B", str(base),
+                 str(previous_overlay), str(overlay)],
+                capture_output=True, check=True, timeout=1800,
+                env=lab.subprocess_environment(staging),
+            )
+            os.chmod(overlay, 0o600)
+            agent_evidence["continued_from"] = {
+                "run_id": continue_from,
+                "overlay_sha256": lab.sha256_file(previous_overlay),
+            }
+            # A stale observation from the previous step must never be read
+            # back as this step's result.
+            subprocess.run(
+                ["guestfish", "--rw", "-a", str(overlay), "-i", "rm-f",
+                 read_guest_observation.OBSERVATION_GUEST_PATH],
+                stdin=subprocess.DEVNULL, capture_output=True, check=True,
+                timeout=600, env=lab.subprocess_environment(staging),
+            )
         agent_evidence.update(install_campaign_agent.install(overlay, scratch=staging))
 
     plan = runner.prepare_launch(
@@ -173,6 +218,10 @@ def main() -> int:
     parser.add_argument("--scenario", default=DEFAULT_SCENARIO)
     parser.add_argument("--deadline-seconds", type=int, default=DEFAULT_DEADLINE_SECONDS)
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--continue-from",
+        help="run id whose stopped overlay this step starts from",
+    )
     arguments = parser.parse_args()
     try:
         request = json.loads(Path(arguments.request).read_text(encoding="utf-8"))
@@ -183,6 +232,7 @@ def main() -> int:
             scenario_id=arguments.scenario,
             deadline_seconds=arguments.deadline_seconds,
             run_id=arguments.run_id,
+            continue_from=arguments.continue_from,
         )
     except (CampaignStepError, lab.LabSafetyError, OSError, KeyError) as error:
         print(json.dumps({"error": str(error)}, indent=2), file=sys.stderr)
