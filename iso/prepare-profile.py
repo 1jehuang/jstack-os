@@ -137,6 +137,8 @@ exec cat /usr/share/doc/jstack-live/INSTALL.md
         put(root, '/etc/jstack-live-installer.json', json.dumps(INSTALLER_MARKER) + '\n')
     for name, title, command in (
         ('jstack-install', 'Install Jstack OS (blank disk)', 'sudo jstack-install-live'),
+        ('jstack-install-alongside', 'Install Jstack OS next to Windows (dual boot)',
+         'sudo jstack-install-live --alongside-windows'),
         ('jstack-install-help', 'Jstack USB installation instructions', 'jstack-install-help'),
     ):
         put(root, f'/usr/share/applications/{name}.desktop',

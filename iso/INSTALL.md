@@ -1,15 +1,50 @@
 # Install Jstack OS from this USB
 
-This clean Jstack USB can run a live Niri desktop and install Jstack onto a
-blank internal disk without downloading packages. Nothing installs automatically.
+This clean Jstack USB can run a live Niri desktop and install Jstack without
+downloading packages, either onto a blank internal disk or into free space next
+to Windows (dual boot). Nothing installs automatically.
 The ordinary Arch Linux installer USB is a different image and cannot do this.
 
-## Before you start
+## Install next to Windows (dual boot)
+
+Do these steps in Windows first:
+
+1. Back up anything important.
+2. If BitLocker or "Device encryption" is on, save the recovery key
+   (https://aka.ms/myrecoverykey). Windows may ask for it once after the install.
+3. Turn off Fast Startup: Control Panel > Power Options > "Choose what the power
+   buttons do" > untick "Turn on fast startup".
+4. Shrink Windows: right-click Start > Disk Management > right-click the C:
+   volume > Shrink Volume. Shrink by at least 40 GB (40960 MB). 80 GB or more is
+   better. Leave the new space as "Unallocated". Do not create a volume in it.
+5. Turn off Secure Boot in the firmware setup (BIOS). This image is unsigned.
+
+Then boot this USB, open the launcher with Alt+Space, and choose "Install Jstack
+OS next to Windows (dual boot)", or run in a terminal:
+
+    sudo jstack-install-live --alongside-windows
+
+The installer lists every existing partition as "keep" and the two partitions it
+will create in the unallocated space. Type the ALONGSIDE- confirmation to
+proceed. It never resizes, moves, formats, or deletes an existing partition. On
+the shared EFI partition it only adds EFI/systemd and loader/. Windows' own boot
+files are not changed.
+
+After installing, power off, remove the USB, and power on. A boot menu lists
+Jstack OS and Windows Boot Manager. If the computer goes straight to Windows,
+pick "Jstack OS" from the firmware boot menu (F12 on Dell, F9 on HP, F12 or F10
+on Lenovo/ASUS/Acer) or move it first in the BIOS boot order.
+
+To remove Jstack later: delete the two JSTACK partitions in Windows Disk
+Management and extend C:. The "Jstack OS" boot entry can be removed from the
+BIOS boot list. The leftover EFI/systemd files are harmless.
+
+## Blank disk: before you start
 
 - Back up anything important. The selected target becomes a new Jstack system.
-- This installer is for a blank whole internal disk, at least 32 GiB, on an
+- This mode is for a blank whole internal disk, at least 32 GiB, on an
   x86-64 UEFI computer with Secure Boot disabled. Existing partitions or
-  filesystem signatures are refused. There is no dual boot or upgrade mode.
+  filesystem signatures are refused. Use the dual-boot mode above for Windows.
 - Keep the machine connected to power and leave this USB plugged in throughout
   installation. Do not suspend the live session while installing.
 - No Ubuntu installation or network connection is required for installation.

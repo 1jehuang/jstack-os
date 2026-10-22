@@ -753,5 +753,142 @@ class TargetPolicyTests(SafeTest):
         self.assertEqual(self.run.call_count, 1)
 
 
+class AlongsideWindowsTests(SafeTest):
+    """Planner for --alongside-windows. Only sgdisk --print / blkid are mocked."""
+    GIB_S = 1024**3 // 512
+    SIZE = 200 * 1024**3
+
+    def windows_disk(self, parts, sector=512):
+        """parts: list of (number, first, last, type)."""
+        parent = self.root / 'devices/block/nvme0n1'
+        parent.mkdir(parents=True)
+        devdir = self.root / 'sys/dev/block'
+        devdir.mkdir(parents=True, exist_ok=True)
+        children = []
+        lines = []
+        for number, first, last, ptype in parts:
+            path = parent / f'nvme0n1p{number}'
+            path.mkdir()
+            (path / 'partition').write_text(str(number))
+            (path / 'start').write_text(str(first * sector // 512))
+            (path / 'size').write_text(str((last - first + 1) * sector // 512))
+            (devdir / f'259:{number}').symlink_to(path)
+            children.append({'name': f'/dev/nvme0n1p{number}', 'type': 'part', 'maj:min': f'259:{number}',
+                             'size': (last - first + 1) * sector, 'partuuid': f'00000000-0000-0000-0000-00000000000{number}',
+                             'parttype': ptype, 'mountpoints': [None]})
+            lines.append(f'   {number}   {first}   {last}   1.0 GiB   0700  x')
+        last_usable = self.SIZE // sector - 34
+        listing = (f'Disk /dev/nvme0n1\nFirst usable sector is 34, last usable sector is {last_usable}\n'
+                   'Number  Start (sector)    End (sector)  Size       Code  Name\n' + '\n'.join(lines) + '\n')
+        identity = {**IDENTITY, 'device': '/dev/nvme0n1', 'size': self.SIZE, 'sector': sector, 'sysfs': str(parent)}
+        node = {**DISK, 'children': children}
+        def fake_run(*args, **kwargs):
+            if args[0] == 'sgdisk':
+                return SimpleNamespace(stdout=listing, returncode=0)
+            if args[0] == 'blkid':
+                return SimpleNamespace(stdout='gpt\n', returncode=0)
+            raise AssertionError(f'unexpected command {args}')
+        self.run.side_effect = fake_run
+        realpath = Path
+        def path(value):
+            return devdir if str(value) == '/sys/dev/block' else realpath(value)
+        stack = contextlib.ExitStack()
+        stack.enter_context(patch.object(installer, 'Path', side_effect=path))
+        stack.enter_context(patch.object(installer, 'inspect_disk', return_value=(identity, node)))
+        stack.enter_context(patch.object(installer, 'busy_check'))
+        self.addCleanup(stack.close)
+        return identity
+
+    def win11(self):
+        g = self.GIB_S
+        end = self.SIZE // 512 - 34
+        return [(1, 2048, 2048 + 204800 - 1, installer.ESP_TYPE),
+                (2, 206848, 206848 + 32768 - 1, 'e3c9e316-0b5c-4db8-817d-f92df00215ae'),
+                (3, 239616, 239616 + 100 * g - 1, 'ebd0a0a2-b9e5-4433-87c0-68b6b72699c7'),
+                (4, end - g + 1, end, 'de94bba4-06d1-4d40-a16a-bfd50179d6ac')]
+
+    def test_plans_largest_gap_without_touching_existing(self):
+        self.windows_disk(self.win11())
+        layout = installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+        boot, root = layout['plan']
+        self.assertEqual((boot['number'], root['number']), (5, 6))
+        self.assertEqual(boot['parttype'], installer.XBOOTLDR_TYPE)
+        self.assertEqual(root['parttype'], installer.LINUX_TYPE)
+        windows_end = 239616 + 100 * self.GIB_S - 1
+        recovery_start = self.SIZE // 512 - 34 - self.GIB_S + 1
+        self.assertGreater(boot['first'], windows_end)
+        self.assertEqual(root['first'], boot['last'] + 1)
+        self.assertLess(root['last'], recovery_start)
+        self.assertEqual(boot['first'] % 2048, 0)
+        self.assertEqual(layout['esp'], 1)
+        for p in layout['plan']:
+            for e in layout['existing']:
+                lo, hi = e['start_bytes'] // 512, (e['start_bytes'] + e['size_bytes']) // 512 - 1
+                self.assertTrue(p['last'] < lo or p['first'] > hi, 'plan overlaps an existing partition')
+
+    def test_refuses_without_enough_free_space(self):
+        g = self.GIB_S
+        parts = self.win11()
+        parts[2] = (3, 239616, 239616 + 170 * g - 1, parts[2][3])
+        self.windows_disk(parts)
+        with self.assertRaisesRegex(installer.Refusal, 'largest unallocated space'):
+            installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+
+    def test_refuses_without_esp_or_with_linux(self):
+        parts = self.win11()
+        parts[0] = (1, 2048, 2048 + 204800 - 1, 'ebd0a0a2-b9e5-4433-87c0-68b6b72699c7')
+        self.windows_disk(parts)
+        with self.assertRaisesRegex(installer.Refusal, 'EFI System Partition'):
+            installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+
+    def test_refuses_existing_linux(self):
+        parts = self.win11()
+        parts[3] = (4, parts[3][1], parts[3][2], installer.LINUX_TYPE)
+        self.windows_disk(parts)
+        with self.assertRaisesRegex(installer.Refusal, 'Linux partitions'):
+            installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+
+    def test_token_binds_existing_partitions(self):
+        self.windows_disk(self.win11())
+        layout = installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+        changed = copy.deepcopy(layout)
+        changed['existing'][2]['size_bytes'] -= 512
+        self.assertNotEqual(installer.alongside_token(layout), installer.alongside_token(changed))
+        self.assertTrue(installer.alongside_token(layout).startswith('ALONGSIDE-'))
+
+    def test_partitioning_never_clears_table(self):
+        self.windows_disk(self.win11())
+        layout = installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+        calls = []
+        def fake_run(*args, **kwargs):
+            calls.append(args)
+            return SimpleNamespace(stdout='', stderr='', returncode=0)
+        with patch.object(installer, 'free_space_layout', return_value=layout), \
+             patch.object(installer, 'exclusive_device') as ex, \
+             patch.object(installer, 'reread_partitions'), \
+             patch.object(installer, 'wait_for_partitions', return_value=({}, [])):
+            ex.return_value.__enter__.return_value = (9, '/proc/self/fd/9')
+            self.run.side_effect = fake_run
+            installer.create_free_space_partitions(layout)
+        sgdisk = [c for c in calls if c[0] == 'sgdisk']
+        self.assertEqual(len(sgdisk), 1)
+        joined = ' '.join(map(str, sgdisk[0]))
+        for forbidden in ('--clear', '--zap', '-o', '--delete', '-d', '--resize'):
+            self.assertNotIn(' ' + forbidden, ' ' + joined)
+        self.assertIn('--new=5:', joined)
+        self.assertIn('--new=6:', joined)
+
+    def test_partitioning_refuses_changed_disk(self):
+        self.windows_disk(self.win11())
+        layout = installer.free_space_layout('/dev/nvme0n1', probe_esp=False)
+        changed = copy.deepcopy(layout)
+        changed['existing'][2]['size_bytes'] += 1024**3
+        with patch.object(installer, 'free_space_layout', return_value=changed), \
+             patch.object(installer, 'exclusive_device') as ex, \
+             self.assertRaisesRegex(installer.Refusal, 'DISK CHANGED'):
+            installer.create_free_space_partitions(layout)
+        ex.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

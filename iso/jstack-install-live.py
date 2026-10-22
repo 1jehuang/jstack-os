@@ -704,6 +704,7 @@ def configure_target(root, username, hostname, password, root_uuid, esp_uuid, se
                      'usr/local/bin/jstack-install-live', MARKER,
                      'usr/local/bin/jstack-install-help',
                      'usr/share/applications/jstack-install.desktop',
+                     'usr/share/applications/jstack-install-alongside.desktop',
                      'usr/share/applications/jstack-install-help.desktop',
                      'usr/share/doc/jstack-live',
                      'root/.automated_script.sh', 'root/.zlogin', 'etc/pacman.d/hooks'):
