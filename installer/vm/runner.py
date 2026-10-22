@@ -914,6 +914,7 @@ def prepare_launch(
     input_files: dict[str, str | Path] | None,
     run_id: str | None = None,
     control_media: str | Path | None = None,
+    overlay_hook: Any = None,
 ) -> LaunchPlan:
     scratch = lab.require_scratch_root()
     workspace = lab.safe_workspace(workspace_value, scratch)
@@ -1084,6 +1085,12 @@ def prepare_launch(
             os.mkdir(tpm_state, mode=0o700)
         overlay = run_directory / "disk-overlay.qcow2"
         _create_overlay(base, overlay, qemu_img, workspace)
+        if overlay_hook is not None:
+            # Offline preparation of this run's own fresh overlay (for example
+            # writing the campaign agent) while no guest exists. It runs before
+            # the chain is validated and pinned, so whatever it did is checked
+            # by the same invariants as an untouched overlay.
+            overlay_hook(overlay, run_directory, allocated_run_id)
     except BaseException:
         iso_pin.close()
         if control_pin is not None:
