@@ -84,9 +84,15 @@ try {
         }
         $env:JSTACK_WINDOWS_MODULE_ROOT = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
         $env:JSTACK_SYSTEM_DRIVE = $env:SystemDrive
+        # stdout carries only the JSON document. Warnings (BitLocker's module
+        # prints an unapproved-verb notice on import) go to other streams, and
+        # merging them with 2>&1 made a correct snapshot unparseable on the
+        # first live run. They are kept separately as diagnostics.
+        $diagnostics = Join-Path $env:TEMP 'jstack-collector.stderr'
         $output = & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File $collector 2>&1
+            -File $collector 2> $diagnostics
         $collectorExit = $LASTEXITCODE
+        $stderrText = if (Test-Path -LiteralPath $diagnostics) { Get-Content -LiteralPath $diagnostics -Raw } else { $null }
         $parsed = $null
         try { $parsed = $output | Out-String | ConvertFrom-Json } catch { $parsed = $null }
         Write-JStackObservation @{
@@ -96,6 +102,7 @@ try {
             exit_code     = $collectorExit
             postcondition = $parsed
             raw           = if ($null -eq $parsed) { ($output | Out-String) } else { $null }
+            stderr        = $stderrText
         }
         Stop-JStackGuest
         exit 0

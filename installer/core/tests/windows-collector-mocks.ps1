@@ -73,7 +73,7 @@ function Get-Partition {
             Guid = '{11111111-1111-4111-8111-111111111111}'
             GptType = '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
             Offset = [uint64]1048576; Size = [uint64]536870912
-            IsBoot = $false; IsSystem = $true; DriveLetter = $null; Type = 'EFI'
+            IsBoot = $false; IsSystem = $true; DriveLetter = [char]0; Type = 'EFI'
         }
     )
 }

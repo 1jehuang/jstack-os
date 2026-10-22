@@ -164,7 +164,13 @@ $disks = @(Get-JStackDisk | Microsoft.PowerShell.Utility\Sort-Object -Property N
         if ([string]::IsNullOrWhiteSpace($partitionGuid)) { $partitionGuid = $null }
         $partitionTypeGuid = [string]$partition.GptType
         if ([string]::IsNullOrWhiteSpace($partitionTypeGuid)) { $partitionTypeGuid = $null }
-        $isWindowsVolume = $null -ne $partition.DriveLetter -and [string]$partition.DriveLetter -ieq $systemDrive
+        # MSFT_Partition.DriveLetter is a [char]; a partition without a letter
+        # reports NUL (0), not $null. Observed on live Windows 11 25H2.
+        $driveLetter = $null
+        if ($null -ne $partition.DriveLetter -and [int][char]$partition.DriveLetter -ne 0) {
+            $driveLetter = [string]$partition.DriveLetter
+        }
+        $isWindowsVolume = $null -ne $driveLetter -and $driveLetter -ieq $systemDrive
         $resize = $null
         $bitlocker = $null
         if ($isWindowsVolume) {
@@ -189,7 +195,7 @@ $disks = @(Get-JStackDisk | Microsoft.PowerShell.Utility\Sort-Object -Property N
             size_bytes = [uint64]$partition.Size
             is_boot = [bool]$partition.IsBoot
             is_system = [bool]$partition.IsSystem
-            drive_letter = if ($null -eq $partition.DriveLetter) { $null } else { [string]$partition.DriveLetter }
+            drive_letter = $driveLetter
             name = if ([string]::IsNullOrWhiteSpace([string]$partition.Type)) { $null } else { [string]$partition.Type }
             volume = Convert-VolumeObservation -Partition $partition
             resize = $resize
