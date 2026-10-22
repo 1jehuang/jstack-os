@@ -147,6 +147,10 @@ def verify_observation(raw: bytes, request: dict) -> dict:
     """
 
     try:
+        # Windows PowerShell 5.1's Set-Content -Encoding UTF8 always writes a
+        # byte-order mark. Strip exactly that prefix and nothing else.
+        if raw.startswith(b"\xef\xbb\xbf"):
+            raw = raw[3:]
         observation = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ObservationError(f"observation is not valid JSON: {error}") from error

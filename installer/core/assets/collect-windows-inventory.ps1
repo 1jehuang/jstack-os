@@ -26,8 +26,22 @@ function Get-JStackPartition {
 
 function Get-JStackVolume {
     param([object]$Partition)
-    if ($script:runningOnWindows) { return @(Storage\Get-Volume -Partition $Partition -ErrorAction Stop) }
-    return @(Get-Volume -Partition $Partition -ErrorAction Stop)
+    # Real Windows throws "The requested object could not be found" for a
+    # partition with no volume (the MSR always has none) rather than returning
+    # nothing, which an -ErrorAction Stop turned into a failed inventory on the
+    # first live run. Only that one condition maps to "no volume"; every other
+    # error still stops collection.
+    try {
+        if ($script:runningOnWindows) { return @(Storage\Get-Volume -Partition $Partition -ErrorAction Stop) }
+        return @(Get-Volume -Partition $Partition -ErrorAction Stop)
+    }
+    catch {
+        $objectNotFound = $_.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::ObjectNotFound
+        if ($objectNotFound -or [string]$_.FullyQualifiedErrorId -like 'MSFT_Volume*NotFound*' -or [string]$_.Exception.Message -eq 'The requested object could not be found.') {
+            return @()
+        }
+        throw
+    }
 }
 
 function Get-JStackPartitionSupportedSize {

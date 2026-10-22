@@ -82,7 +82,9 @@ function Get-Volume {
     if ($Partition.DiskNumber -eq 1) { return @() }
     switch ($Partition.PartitionNumber) {
         1 { return [pscustomobject]@{ UniqueId = 'volume-esp'; FileSystem = 'FAT32'; Size = [uint64]536870912; SizeRemaining = [uint64]209715200; HealthStatus = 'Healthy' } }
-        2 { return @() }
+        # Real Windows throws ObjectNotFound for a volume-less partition (the
+        # MSR) instead of returning nothing; observed on the first live run.
+        2 { Write-Error -Message 'The requested object could not be found.' -Category ObjectNotFound -ErrorAction Stop }
         3 { return [pscustomobject]@{ UniqueId = 'volume-c'; FileSystem = 'NTFS'; Size = [uint64]429496729600; SizeRemaining = [uint64]180000000000; HealthStatus = 'Healthy' } }
         4 { return [pscustomobject]@{ UniqueId = 'winre'; FileSystem = 'NTFS'; Size = [uint64]1073741824; SizeRemaining = [uint64]536870912; HealthStatus = 'Healthy' } }
     }
