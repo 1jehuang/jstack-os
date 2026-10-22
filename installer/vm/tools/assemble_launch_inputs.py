@@ -89,10 +89,10 @@ def _boot_artifact_manifest(workspace: Path, graph_digest: str, plan_hash: str) 
 
     import artifacts
 
-    kernel = Path("/boot/vmlinuz-linux")
-    if not kernel.is_file():
+    kernel = artifacts.host_kernel()
+    if kernel is None:
         raise LaunchInputError(
-            "no kernel at /boot/vmlinuz-linux to build the boot artifacts from"
+            "no readable host kernel to build the boot artifacts from"
         )
     staging = workspace / "launch-artifacts"
     shutil.rmtree(staging, ignore_errors=True)

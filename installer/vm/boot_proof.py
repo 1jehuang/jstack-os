@@ -52,7 +52,7 @@ GZIP = "gzip"
 
 OVMF_SECURE_CODE = Path("/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd")
 OVMF_VARS = Path("/usr/share/edk2/x64/OVMF_VARS.4m.fd")
-DEFAULT_KERNEL = Path("/boot/vmlinuz-linux")
+DEFAULT_KERNEL = artifacts.host_kernel() or Path("/boot/vmlinuz-linux")
 
 # The guest prints exactly this and nothing else on success. It is deliberately
 # distinctive so it cannot be confused with firmware or kernel chatter.

@@ -681,8 +681,10 @@ def assess_readiness(workspace: Path) -> list[Readiness]:
     # readiness builds it rather than reporting a resolvable input as blocked:
     # a checklist that cries wolf is worse than no checklist.
     boot_artifacts_digest: str | None = None
-    kernel = Path("/boot/vmlinuz-linux")
-    if kernel.is_file():
+    import artifacts as _artifacts
+
+    kernel = _artifacts.host_kernel()
+    if kernel is not None:
         try:
             import artifacts
 

@@ -52,6 +52,31 @@ OPENSSL = "openssl"
 # copied, never rebuilt, so its identity is exactly the packaged bytes.
 SYSTEMD_BOOT = Path("/usr/lib/systemd/boot/efi/systemd-bootx64.efi")
 
+DEFAULT_KERNEL = Path("/boot/vmlinuz-linux")
+
+
+def host_kernel() -> Path | None:
+    """Return a readable host kernel image, or None.
+
+    Arch installs the kernel at /boot/vmlinuz-linux, but /boot is often mode
+    0700 (a FAT ESP mounted with a restrictive umask), so an unprivileged
+    harness cannot read it. The package keeps a byte-identical, world-readable
+    copy under /usr/lib/modules/<release>/vmlinuz, which is preferred as a
+    fallback over escalating privilege. The running kernel's release is tried
+    first so the choice is deterministic when several kernels are installed.
+    """
+
+    if os.access(DEFAULT_KERNEL, os.R_OK) and DEFAULT_KERNEL.is_file():
+        return DEFAULT_KERNEL
+    modules = Path("/usr/lib/modules")
+    candidates = [modules / os.uname().release / "vmlinuz"]
+    candidates += sorted(modules.glob("*/vmlinuz"), reverse=True)
+    for candidate in candidates:
+        if os.access(candidate, os.R_OK) and candidate.is_file():
+            return candidate
+    return None
+
+
 # Artifact roles, matching the closed role set in the release contract.
 ROLE_ESP_LOADER = "esp_loader"
 ROLE_INSTALLER_UKI = "installer_uki"
@@ -503,7 +528,7 @@ def verify_test_artifact_set(artifact_set: TestArtifactSet) -> dict[str, Any]:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     root.add_argument("--workspace", required=True)
-    root.add_argument("--kernel", default="/boot/vmlinuz-linux")
+    root.add_argument("--kernel", default=str(host_kernel() or DEFAULT_KERNEL))
     root.add_argument("--graph-digest", required=True)
     root.add_argument("--plan-hash", required=True)
     return root

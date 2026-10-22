@@ -217,13 +217,13 @@ def _boot_artifact_manifest_sha256() -> str:
     import tempfile
 
     sys.path.insert(0, str(INSTALLER_ROOT / "vm"))
-    kernel = Path("/boot/vmlinuz-linux")
-    if not kernel.is_file():
-        raise LedgerError("no kernel image at /boot/vmlinuz-linux to build boot artifacts from")
     try:
         import artifacts  # type: ignore[import-not-found]
     except ImportError as exc:  # pragma: no cover - environment defect
         raise LedgerError(f"cannot import the artifact builder: {exc}") from exc
+    kernel = artifacts.host_kernel()
+    if kernel is None:
+        raise LedgerError("no readable host kernel image to build boot artifacts from")
 
     scratch = Path(tempfile.mkdtemp(prefix="jstack-ledger-artifacts-"))
     try:
