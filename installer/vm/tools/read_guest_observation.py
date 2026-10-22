@@ -115,6 +115,10 @@ def read_observation(
             guest_path,
             "/dev/stdout",
         ],
+        # guestfish -i prompts for a key on stdin whenever it sees a
+        # BitLocker/LUKS volume; with an inherited non-tty stdin that becomes
+        # "could not read key from user" and blames the wrong thing.
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         check=False,
         timeout=600,

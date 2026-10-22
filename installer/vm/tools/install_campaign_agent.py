@@ -40,10 +40,9 @@ from read_guest_observation import _overlay_is_in_use  # noqa: E402
 
 AGENT_SOURCE = ROOT.parent / "core" / "assets" / "jstack-campaign-agent.ps1"
 
-# Windows runs everything in this directory at logon for the local machine, and
-# it needs no scheduled task, no service, and no registry edit. Fewer moving
-# parts is the point: each one is something that can silently not happen.
-STARTUP_DIRECTORY = "/ProgramData/Microsoft/Windows/Start Menu/Programs/StartUp"
+# The base image's boot-time SYSTEM task, created by its answer file, which runs
+# the agent script at this path when a run has written it.
+BOOT_TASK_NAME = "JStackCampaignAgent"
 AGENT_GUEST_PATH = "/jstack-campaign-agent.ps1"
 
 
@@ -59,7 +58,7 @@ def _tool(name: str) -> str:
 
 
 def install(overlay: Path, scratch: Path | None = None) -> dict[str, str]:
-    """Write the agent and its logon launcher into a stopped guest's overlay."""
+    """Write the agent script into a stopped guest's overlay."""
 
     if not overlay.is_file():
         raise AgentInstallError(f"no overlay at {overlay}")
@@ -73,21 +72,16 @@ def install(overlay: Path, scratch: Path | None = None) -> dict[str, str]:
         )
 
     agent = AGENT_SOURCE.read_bytes()
-    # A one-line launcher, because a .ps1 in StartUp opens an editor rather than
-    # running. The batch file is what Windows will actually execute.
-    launcher = (
-        "@echo off\r\n"
-        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
-        f"C:{AGENT_GUEST_PATH.replace('/', chr(92))}\r\n"
-    ).encode("ascii")
 
+    # The base image carries a boot-time SYSTEM task (JStackCampaignAgent) that
+    # runs C:\\jstack-campaign-agent.ps1 when it exists. Writing only the
+    # script is therefore enough: no logon, no UAC-filtered token, and no second
+    # launcher that could run the same action twice.
     home = scratch if scratch is not None else overlay.parent
     staging = Path(home) / ".agent-staging"
     staging.mkdir(mode=0o700, exist_ok=True)
     agent_file = staging / "jstack-campaign-agent.ps1"
-    launcher_file = staging / "jstack-campaign-agent.bat"
     agent_file.write_bytes(agent)
-    launcher_file.write_bytes(launcher)
 
     try:
         completed = subprocess.run(
@@ -100,11 +94,8 @@ def install(overlay: Path, scratch: Path | None = None) -> dict[str, str]:
                 "upload",
                 str(agent_file),
                 AGENT_GUEST_PATH,
-                ":",
-                "upload",
-                str(launcher_file),
-                f"{STARTUP_DIRECTORY}/jstack-campaign-agent.bat",
             ],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             check=False,
             timeout=900,
@@ -117,15 +108,13 @@ def install(overlay: Path, scratch: Path | None = None) -> dict[str, str]:
             )
     finally:
         agent_file.unlink(missing_ok=True)
-        launcher_file.unlink(missing_ok=True)
         staging.rmdir()
 
     return {
         "overlay": str(overlay),
         "agent_guest_path": AGENT_GUEST_PATH,
         "agent_sha256": hashlib.sha256(agent).hexdigest(),
-        "launcher_sha256": hashlib.sha256(launcher).hexdigest(),
-        "startup_entry": f"{STARTUP_DIRECTORY}/jstack-campaign-agent.bat",
+        "boot_task": BOOT_TASK_NAME,
     }
 
 

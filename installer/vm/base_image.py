@@ -318,6 +318,22 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
         "          <Path>reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\BitLocker"
         " /v PreventDeviceEncryption /t REG_DWORD /d 1 /f</Path>",
         "        </RunSynchronousCommand>",
+        # The campaign agent must run elevated and without anyone logging on:
+        # AutoLogon above is single-use and is consumed by the build itself, and
+        # a StartUp-folder program runs with a UAC-filtered token that cannot
+        # resize a partition. So the image carries one boot-time SYSTEM task
+        # that runs the agent *only if* a run has placed it on the disk. The
+        # agent itself is never baked in; it is written offline into each run's
+        # disposable overlay, so the base image stays agent-free and inert.
+        '        <RunSynchronousCommand wcm:action="add"'
+        ' xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">',
+        "          <Order>2</Order>",
+        "          <Description>run the campaign agent at boot when present"
+        "</Description>",
+        "          <Path>schtasks /create /f /tn JStackCampaignAgent /sc onstart"
+        " /ru SYSTEM /rl HIGHEST /tr \"powershell.exe -NoProfile"
+        " -ExecutionPolicy Bypass -File C:\\jstack-campaign-agent.ps1\"</Path>",
+        "        </RunSynchronousCommand>",
         "      </RunSynchronous>",
         "    </component>",
         "  </settings>",
