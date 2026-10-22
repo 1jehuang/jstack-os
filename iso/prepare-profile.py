@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import shutil
 import shlex
 
@@ -269,5 +270,17 @@ if __name__ == '__main__':
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--releng', type=Path, default=Path('/usr/share/archiso/configs/releng'))
     parser.add_argument('--overlay', type=Path)
+    parser.add_argument('--seed-jcode', type=Path,
+                        help='private openai.env to seed into the installed user (keeps clean marker)')
     args = parser.parse_args()
-    print(prepare(args.work.resolve(), args.releng, args.overlay))
+    profile = prepare(args.work.resolve(), args.releng, args.overlay)
+    if args.seed_jcode:
+        text = args.seed_jcode.read_text()
+        if not re.fullmatch(r'OPENAI_API_KEY=sk-[A-Za-z0-9_-]+\n', text):
+            raise SystemExit('seed must be exactly one OPENAI_API_KEY=sk-... line')
+        put(profile / 'airootfs', '/usr/share/jstack-seed/jcode/openai.env', text, 0o600)
+        with (profile / 'profiledef.sh').open('a') as f:
+            f.write('file_permissions["/usr/share/jstack-seed"]="0:0:700"\n'
+                    'file_permissions["/usr/share/jstack-seed/jcode"]="0:0:700"\n'
+                    'file_permissions["/usr/share/jstack-seed/jcode/openai.env"]="0:0:600"\n')
+    print(profile)

@@ -890,5 +890,30 @@ class AlongsideWindowsTests(SafeTest):
         ex.assert_not_called()
 
 
+class SeedTests(SafeTest):
+    def test_seed_copies_private_and_noop_when_absent(self):
+        target = self.root / 'target'
+        (target / 'home/alice').mkdir(parents=True)
+        self.put('target/etc/passwd', f'alice:x:{os.getuid()}:{os.getgid()}::/home/alice:/usr/bin/fish\n')
+        seed = self.root / 'seed'
+        with patch.object(installer, 'SEED_DIR', seed):
+            installer.seed_jcode_credentials(target, 'alice')
+            self.assertFalse((target / 'home/alice/.config').exists())
+            self.put('seed/openai.env', 'OPENAI_API_KEY=sk-test_ABC-123\n')
+            installer.seed_jcode_credentials(target, 'alice')
+        dest = target / 'home/alice/.config/jcode/openai.env'
+        self.assertEqual(dest.read_text(), 'OPENAI_API_KEY=sk-test_ABC-123\n')
+        self.assertEqual(dest.stat().st_mode & 0o777, 0o600)
+        self.assertEqual((dest.parent).stat().st_mode & 0o777, 0o700)
+
+    def test_malformed_seed_refused(self):
+        target = self.root / 'target'
+        (target / 'home/alice').mkdir(parents=True)
+        self.put('seed/openai.env', 'OPENAI_API_KEY=sk-x\nEVIL=1\n')
+        with patch.object(installer, 'SEED_DIR', self.root / 'seed'), \
+             self.assertRaisesRegex(installer.Refusal, 'malformed'):
+            installer.seed_jcode_credentials(target, 'alice')
+
+
 if __name__ == '__main__':
     unittest.main()

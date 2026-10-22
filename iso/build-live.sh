@@ -2,7 +2,7 @@
 # Build a live ISO, never install onto a disk. Run as an ordinary Arch user.
 set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-WORK= OVERLAY= VESKTOP= PREPARE_ONLY=0
+WORK= OVERLAY= VESKTOP= SEED= PREPARE_ONLY=0
 usage() {
   cat <<'EOF'
 Usage: iso/build-live.sh --work /absolute/new/scratch-dir [options]
@@ -16,9 +16,9 @@ EOF
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 while (($#)); do
   case "$1" in
-    --work|--overlay|--vesktop-package)
+    --work|--overlay|--vesktop-package|--seed-jcode)
       (($# >= 2)) || die "missing value for $1"
-      case "$1" in --work) WORK=$2;; --overlay) OVERLAY=$2;; --vesktop-package) VESKTOP=$2;; esac
+      case "$1" in --work) WORK=$2;; --overlay) OVERLAY=$2;; --vesktop-package) VESKTOP=$2;; --seed-jcode) SEED=$2;; esac
       shift 2 ;;
     --prepare-only) PREPARE_ONLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -45,6 +45,7 @@ mkdir -- "$WORK"
 mkdir -- "$WORK/packages" "$WORK/builds" "$WORK/sources" "$WORK/out"
 args=(--work "$WORK")
 [[ -z $OVERLAY ]] || args+=(--overlay "$(realpath -- "$OVERLAY")")
+[[ -z ${SEED:-} ]] || args+=(--seed-jcode "$(realpath -- "$SEED")")
 python3 "$ROOT/iso/prepare-profile.py" "${args[@]}"
 (( ! PREPARE_ONLY )) || { printf 'PROFILE=%s/profile\n' "$WORK"; exit 0; }
 

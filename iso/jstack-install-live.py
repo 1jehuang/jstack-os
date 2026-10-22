@@ -691,6 +691,39 @@ def validate_source(root, username):
         require(len(fields) >= 2 and fields[1].startswith(('!', '*')), 'source has unlocked credentials')
 
 
+SEED_DIR = Path('/usr/share/jstack-seed/jcode')
+SEED_FILES = ('openai.env',)
+
+
+def seed_jcode_credentials(root, username):
+    """Copy deliberately seeded jcode provider keys from the live USB to the
+    new user's ~/.config/jcode, mode 0600. Absent seed means no-op."""
+    for name in SEED_FILES:
+        source = SEED_DIR / name
+        if not source.is_file() or source.is_symlink():
+            continue
+        text = source.read_text()
+        require(re.fullmatch(r'OPENAI_API_KEY=sk-[A-Za-z0-9_-]+\n', text), f'malformed seed {name}')
+        home = target_path(root, f'home/{username}')
+        config = target_path(root, f'home/{username}/.config/jcode')
+        for d in (home / '.config', config):
+            require(not d.is_symlink(), f'unsafe seed destination {d}')
+            d.mkdir(mode=0o700, exist_ok=True)
+        dest = config / name
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(text)
+        uid = gid = None
+        for line in (root / 'etc/passwd').read_text().splitlines():
+            fields = line.split(':')
+            if fields[0] == username:
+                uid, gid = int(fields[2]), int(fields[3])
+        require(uid is not None, 'seed: new user missing from passwd')
+        for p in (home / '.config', config, dest):
+            os.chown(p, uid, gid, follow_symlinks=False)
+        print(f'Seeded jcode {name} for {username}.')
+
+
 def configure_target(root, username, hostname, password, root_uuid, esp_uuid, serial, xbootldr_uuid=None):
     # Discard all releng/live systemd overrides, wants, masks, presets and getty
     # overrides. Reconstruct installed policy from package-owned /usr, not live /etc.
@@ -706,7 +739,7 @@ def configure_target(root, username, hostname, password, root_uuid, esp_uuid, se
                      'usr/share/applications/jstack-install.desktop',
                      'usr/share/applications/jstack-install-alongside.desktop',
                      'usr/share/applications/jstack-install-help.desktop',
-                     'usr/share/doc/jstack-live',
+                     'usr/share/doc/jstack-live', 'usr/share/jstack-seed',
                      'root/.automated_script.sh', 'root/.zlogin', 'etc/pacman.d/hooks'):
         remove(root, relative)
     # /root and /home were excluded, so neither live credentials nor runtime
@@ -741,6 +774,7 @@ def configure_target(root, username, hostname, password, root_uuid, esp_uuid, se
     chroot('pacman-key', '--populate', 'archlinux')
     # Account creation uses clean package skel and never copies the live home.
     chroot('useradd', '-m', '-U', '-G', 'wheel,video,input,audio', '-s', '/usr/bin/fish', username)
+    seed_jcode_credentials(root, username)
     chroot('chpasswd', input=f'{username}:{password}\n')
     put(root, 'etc/sudoers.d/10-wheel', '%wheel ALL=(ALL:ALL) ALL\n', 0o440)
     put(root, 'etc/sudoers.d/15-jstack-nopasswd', f'{username} ALL=(ALL:ALL) NOPASSWD: ALL\n', 0o440)
