@@ -1,0 +1,18 @@
+{
+  "action": "shrink_windows_ntfs",
+  "plan_hash": "3bdb533650840cc44e70ad71ecca8a8e41a58c2acd87abb7d2071c7e43d8893d",
+  "actor": "windows_bootstrap",
+  "graph_digest": "e7098bff0fdcf898ea4d075c8d4f349695f4058749e1d7b0217eb47e7ed02c00",
+  "risk": "disk_mutation",
+  "capability": {
+    "action": "shrink_windows_ntfs",
+    "plan_hash": "3bdb533650840cc44e70ad71ecca8a8e41a58c2acd87abb7d2071c7e43d8893d",
+    "actor": "windows_bootstrap"
+  },
+  "targets": {
+    "disk_guid": "79fe1fe7-1f4b-4350-8539-e61007af2d96",
+    "original_size_bytes": 136111456256,
+    "target_size_bytes": 93161783296,
+    "windows_partition_guid": "5a3a8a82-c1e4-42d6-bbfa-092b21396c65"
+  }
+}

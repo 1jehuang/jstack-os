@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "plan_hash": "3bdb533650840cc44e70ad71ecca8a8e41a58c2acd87abb7d2071c7e43d8893d",
+  "body": {
+    "source_inventory_hash": "f03f9be6b19e2b5c55188c0d123d5c7fdd6c18780de15dc6f759cb47b5608530",
+    "install_id": "812ba51b-de3b-86e6-811b-3988f17eaa0f",
+    "partition_fingerprints": {
+      "source": "99338eb40f05e3a87886eee2100da2cba6c22fe706ae2f4ab1bfeb572c0eb673",
+      "windows_reserved": "7ab1b741aa8c94195b14618946425b3b0eb700cba52c969a1f692f694246f3b0",
+      "windows_handoff": "5c31b349851ce75d97485055705775514fef40885bb50be62d2890f61ec3263d",
+      "installed": "b96f5d928fba09fd3220d0a2ab01b996aee5dffcfd78ff2cac462a8010e74ccb"
+    },
+    "release_manifest_hash": "c3f4abaf3ffffa45085e1e9404743b840c931360821ff5161149af4b74338669",
+    "state_model_id": "jstack-no-usb-dual-boot-v1",
+    "disk_guid": "79fe1fe7-1f4b-4350-8539-e61007af2d96",
+    "alignment_bytes": 1048576,
+    "windows_resize": {
+      "partition_guid": "5a3a8a82-c1e4-42d6-bbfa-092b21396c65",
+      "volume_id": "\\\\?\\Volume{5a3a8a82-c1e4-42d6-bbfa-092b21396c65}\\",
+      "original_size_bytes": 136111456256,
+      "target_size_bytes": 93161783296,
+      "released_bytes": 42949672960
+    },
+    "allocation_interval": {
+      "start_bytes": 93716480000,
+      "end_bytes": 136666152960
+    },
+    "before_layout": [
+      {
+        "partition_guid": "3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3",
+        "type_guid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        "offset_bytes": 1048576,
+        "size_bytes": 536870912,
+        "role": "esp",
+        "filesystem": "fat32",
+        "volume_id": "\\\\?\\Volume{3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3}\\",
+        "name": "System"
+      },
+      {
+        "partition_guid": "a337724d-6baa-4016-a0de-50796ab1aab7",
+        "type_guid": "e3c9e316-0b5c-4db8-817d-f92df00215ae",
+        "offset_bytes": 537919488,
+        "size_bytes": 16777216,
+        "role": "msr",
+        "filesystem": null,
+        "volume_id": null,
+        "name": "Reserved"
+      },
+      {
+        "partition_guid": "5a3a8a82-c1e4-42d6-bbfa-092b21396c65",
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "offset_bytes": 554696704,
+        "size_bytes": 136111456256,
+        "role": "windows",
+        "filesystem": "ntfs",
+        "volume_id": "\\\\?\\Volume{5a3a8a82-c1e4-42d6-bbfa-092b21396c65}\\",
+        "name": "Basic"
+      },
+      {
+        "partition_guid": "a2b14175-f434-45fe-8b69-48a96f365643",
+        "type_guid": "de94bba4-06d1-4d40-a16a-bfd50179d6ac",
+        "offset_bytes": 136666152960,
+        "size_bytes": 770703360,
+        "role": "recovery",
+        "filesystem": "ntfs",
+        "volume_id": "\\\\?\\Volume{a2b14175-f434-45fe-8b69-48a96f365643}\\",
+        "name": "Recovery"
+      }
+    ],
+    "after_layout": [
+      {
+        "partition_guid": "3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3",
+        "type_guid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        "offset_bytes": 1048576,
+        "size_bytes": 536870912,
+        "role": "esp",
+        "filesystem": "fat32",
+        "volume_id": "\\\\?\\Volume{3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3}\\",
+        "name": "System"
+      },
+      {
+        "partition_guid": "a337724d-6baa-4016-a0de-50796ab1aab7",
+        "type_guid": "e3c9e316-0b5c-4db8-817d-f92df00215ae",
+        "offset_bytes": 537919488,
+        "size_bytes": 16777216,
+        "role": "msr",
+        "filesystem": null,
+        "volume_id": null,
+        "name": "Reserved"
+      },
+      {
+        "partition_guid": "5a3a8a82-c1e4-42d6-bbfa-092b21396c65",
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "offset_bytes": 554696704,
+        "size_bytes": 93161783296,
+        "role": "windows",
+        "filesystem": "ntfs",
+        "volume_id": "\\\\?\\Volume{5a3a8a82-c1e4-42d6-bbfa-092b21396c65}\\",
+        "name": "Basic"
+      },
+      {
+        "partition_guid": "670c6ec2-aeb5-84a3-a443-eead2a30794d",
+        "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
+        "offset_bytes": 93716480000,
+        "size_bytes": 4294967296,
+        "role": "xbootldr",
+        "filesystem": "fat32",
+        "volume_id": null,
+        "name": "JSTACK-BOOT"
+      },
+      {
+        "partition_guid": "2f09d6f0-e6dd-8c2e-a8a4-2278b186bab9",
+        "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+        "offset_bytes": 98011447296,
+        "size_bytes": 36507222016,
+        "role": "jstack_root",
+        "filesystem": "btrfs",
+        "volume_id": null,
+        "name": "JSTACK-ROOT"
+      },
+      {
+        "partition_guid": "a2b14175-f434-45fe-8b69-48a96f365643",
+        "type_guid": "de94bba4-06d1-4d40-a16a-bfd50179d6ac",
+        "offset_bytes": 136666152960,
+        "size_bytes": 770703360,
+        "role": "recovery",
+        "filesystem": "ntfs",
+        "volume_id": "\\\\?\\Volume{a2b14175-f434-45fe-8b69-48a96f365643}\\",
+        "name": "Recovery"
+      }
+    ],
+    "created_partitions": [
+      {
+        "partition_guid": "670c6ec2-aeb5-84a3-a443-eead2a30794d",
+        "type_guid": "bc13c2ff-59e6-4262-a352-b275fd6f7172",
+        "offset_bytes": 93716480000,
+        "size_bytes": 4294967296,
+        "role": "xbootldr",
+        "filesystem": "fat32",
+        "name": "JSTACK-BOOT"
+      },
+      {
+        "partition_guid": "2f09d6f0-e6dd-8c2e-a8a4-2278b186bab9",
+        "type_guid": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+        "offset_bytes": 98011447296,
+        "size_bytes": 36507222016,
+        "role": "jstack_root",
+        "filesystem": "btrfs",
+        "name": "JSTACK-ROOT"
+      }
+    ],
+    "rollback_objects": [
+      {
+        "kind": "partition",
+        "stable_id": "670c6ec2-aeb5-84a3-a443-eead2a30794d"
+      },
+      {
+        "kind": "partition",
+        "stable_id": "2f09d6f0-e6dd-8c2e-a8a4-2278b186bab9"
+      },
+      {
+        "kind": "esp_path",
+        "stable_id": "esp:3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3;path:\\EFI\\JStack\\Installations\\812ba51b-de3b-86e6-811b-3988f17eaa0f"
+      },
+      {
+        "kind": "windows_finalizer",
+        "stable_id": "task:\\JStack\\InstallerFinalizer-812ba51b-de3b-86e6-811b-3988f17eaa0f"
+      }
+    ]
+  }
+}
