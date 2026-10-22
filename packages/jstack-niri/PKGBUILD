@@ -1,7 +1,7 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-niri
 pkgver=0.1.0
-pkgrel=2
+pkgrel=3
 pkgdesc="jstack OS niri desktop: config, keymap, and helper scripts"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
@@ -32,6 +32,8 @@ package() {
 
   # Default niri config for new users (skel) and system fallback
   install -Dm644 "$files/config.kdl" "$pkgdir/etc/skel/.config/niri/config.kdl"
+  # Themed notifications (black, thin border, JetBrainsMono) to match waybar
+  install -Dm644 "$files/dunst/dunstrc" "$pkgdir/etc/skel/.config/dunst/dunstrc"
 
   # Shared assets
   install -Dm644 "$files/xkb/custom.xkb" "$pkgdir/usr/share/jstack/xkb/custom.xkb"

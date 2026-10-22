@@ -1,0 +1,105 @@
+# User dunst config. Replaces /etc/dunst/dunstrc.
+# Themed to match niri (thin 0.5px-style borders, 6px corners) and waybar
+# (pure black, #888 text, JetBrainsMono).
+
+[global]
+    monitor = 0
+    follow = none
+    width = 320
+    height = (0, 300)
+    origin = top-right
+    offset = (10, 40)
+    scale = 0
+    notification_limit = 5
+    indicate_hidden = yes
+
+    progress_bar = true
+    progress_bar_height = 4
+    progress_bar_frame_width = 0
+    progress_bar_min_width = 150
+    progress_bar_max_width = 320
+    progress_bar_corner_radius = 2
+
+    transparency = 0
+    separator_height = 1
+    separator_color = "#222222"
+    padding = 10
+    horizontal_padding = 12
+    text_icon_padding = 10
+    gap_size = 6
+
+    # Thin border like niri's 0.5 width focus ring / border.
+    frame_width = 1
+    frame_color = "#333333"
+    corner_radius = 6
+    corners = all
+    icon_corner_radius = 4
+
+    font = JetBrainsMono Nerd Font 10
+    line_height = 0
+    markup = full
+    format = "<b>%s</b>\n%b"
+    alignment = left
+    vertical_alignment = center
+    show_age_threshold = 60
+    ellipsize = middle
+    ignore_newline = no
+    stack_duplicates = true
+    hide_duplicate_count = false
+    show_indicators = no
+
+    enable_recursive_icon_lookup = true
+    icon_theme = Adwaita
+    icon_position = left
+    min_icon_size = 24
+    max_icon_size = 40
+
+    sticky_history = yes
+    history_length = 50
+    dmenu = /usr/bin/dmenu -p dunst:
+    browser = /usr/bin/xdg-open
+    always_run_script = true
+    title = Dunst
+    class = Dunst
+    ignore_dbusclose = false
+    force_xwayland = false
+    force_xinerama = false
+
+    mouse_left_click = close_current
+    mouse_middle_click = do_action, close_current
+    mouse_right_click = close_all
+
+[experimental]
+    per_monitor_dpi = false
+
+[urgency_low]
+    background = "#000000"
+    foreground = "#666666"
+    frame_color = "#222222"
+    timeout = 5
+    default_icon = dialog-information
+
+[urgency_normal]
+    background = "#000000"
+    foreground = "#aaaaaa"
+    frame_color = "#333333"
+    highlight = "#888888"
+    timeout = 8
+    override_pause_level = 30
+    default_icon = dialog-information
+
+# Critical notifications used to have timeout = 0 (never dismissed).
+# Keep them visible longer, but let them go away on their own.
+[urgency_critical]
+    background = "#000000"
+    foreground = "#f38ba8"
+    frame_color = "#f38ba8"
+    timeout = 30
+    override_pause_level = 60
+    default_icon = dialog-warning
+
+# Some apps request an explicit "never expire" timeout via D-Bus.
+# Cap those so nothing sticks around forever.
+[no_infinite_timeouts]
+    match_dbus_timeout = 0
+    override_dbus_timeout = 30
