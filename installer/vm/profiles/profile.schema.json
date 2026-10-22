@@ -39,7 +39,7 @@
           "binary": "qemu-system-x86_64",
           "version_constraint": {
             "minimum_inclusive": "11.0.0",
-            "maximum_exclusive": "11.1.0"
+            "maximum_exclusive": "11.2.0"
           },
           "accelerator": "kvm",
           "machine": {
@@ -323,7 +323,7 @@
           "binary": "qemu-system-x86_64",
           "version_constraint": {
             "minimum_inclusive": "11.0.0",
-            "maximum_exclusive": "11.1.0"
+            "maximum_exclusive": "11.2.0"
           },
           "accelerator": "kvm",
           "machine": {

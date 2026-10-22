@@ -43,6 +43,10 @@ class LaunchInputError(RuntimeError):
     """Raised when an input cannot be resolved from existing evidence."""
 
 
+# Paths of the exact files whose digests resolution pinned, keyed by role.
+resolved_paths: dict[str, Path] = {}
+
+
 def _extract_gpt(disk: Path, destination: Path, workspace: Path, sectors: int = 34) -> None:
     """Extract the base image's primary GPT region to a raw file.
 
@@ -172,6 +176,11 @@ def resolve_inputs(
         if not entry or not entry.get("resolved"):
             raise LaunchInputError(f"{input_id}: {scope} evidence is unresolved")
         resolved[input_id] = str(entry["sha256"])
+        if input_id == "installer-sha256" and entry.get("path"):
+            # Stage the exact binary whose digest was resolved. Resolution
+            # prefers a release build; staging a hardcoded debug path made the
+            # runner reject a correct launch as a digest mismatch.
+            resolved_paths["installer"] = Path(str(entry["path"]))
 
     declared = {str(item["id"]) for item in profile["required_inputs"]}
     if set(resolved) != declared:
@@ -201,7 +210,10 @@ def stage_artifacts(
     role_sources: dict[str, Path] = {
         "ovmf-enrolled-vars": workspace / firmware_enrollment.ENROLLED_VARS_NAME,
         "ovmf-fixed-vars": Path(lab.OVMF_VARS),
-        "installer": ROOT.parent / "controller" / "target" / "debug" / "jstack-installer",
+        "installer": resolved_paths.get(
+            "installer",
+            ROOT.parent / "controller" / "target" / "release" / "jstack-installer",
+        ),
         "installer-graph": ROOT.parent / "model" / "installer-state-graph.json",
         "release-manifest": (
             ROOT.parent / "core" / "fixtures" / "signed-release-manifest.json"

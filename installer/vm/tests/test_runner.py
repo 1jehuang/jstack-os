@@ -609,7 +609,7 @@ class RunnerSafetyTests(unittest.TestCase):
         executable.write_bytes(b"binary")
         constraint = {
             "minimum_inclusive": "11.0.0",
-            "maximum_exclusive": "11.1.0",
+            "maximum_exclusive": "11.2.0",
         }
         with mock.patch.object(
             runner.subprocess,
@@ -620,7 +620,7 @@ class RunnerSafetyTests(unittest.TestCase):
         with mock.patch.object(
             runner.subprocess,
             "run",
-            return_value=mock.Mock(stdout="QEMU emulator version 11.1.0", stderr=""),
+            return_value=mock.Mock(stdout="QEMU emulator version 11.2.0", stderr=""),
         ):
             with self.assertRaisesRegex(lab.LabSafetyError, "outside"):
                 runner._verify_version_constraint(

@@ -235,7 +235,7 @@ class ProfileRecordTests(unittest.TestCase):
                     profile["qemu"]["version_constraint"],
                     {
                         "minimum_inclusive": "11.0.0",
-                        "maximum_exclusive": "11.1.0",
+                        "maximum_exclusive": "11.2.0",
                     },
                 )
                 self.assertEqual(profile["qemu"]["machine"]["type"], "pc-q35-11.0")
