@@ -297,6 +297,30 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
         "      </UserData>",
         "    </component>",
         "  </settings>",
+        # Windows 11 24H2 and later enable BitLocker device encryption on their
+        # own during OOBE on any machine with a TPM and Secure Boot, which every
+        # profile has. An observed 25H2 build finished with its Windows volume
+        # carrying the "-FVE-FS-" signature, so a "bitlocker-off" scenario was
+        # booting an encrypted disk and the harness could not read or write the
+        # NTFS volume offline. BitLocker must be a property the scenario chooses,
+        # not one Windows chooses for it, so automatic encryption is prevented
+        # here and the bitlocker-on scenario enables it deliberately.
+        '  <settings pass="specialize">',
+        '    <component name="Microsoft-Windows-Deployment"'
+        ' processorArchitecture="amd64"'
+        ' publicKeyToken="31bf3856ad364e35" language="neutral"'
+        ' versionScope="nonSxS">',
+        "      <RunSynchronous>",
+        '        <RunSynchronousCommand wcm:action="add"'
+        ' xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">',
+        "          <Order>1</Order>",
+        "          <Description>prevent automatic device encryption</Description>",
+        "          <Path>reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\BitLocker"
+        " /v PreventDeviceEncryption /t REG_DWORD /d 1 /f</Path>",
+        "        </RunSynchronousCommand>",
+        "      </RunSynchronous>",
+        "    </component>",
+        "  </settings>",
         '  <settings pass="oobeSystem">',
         # The locale must be declared again in oobeSystem, not only in windowsPE.
         # windowsPE localises *setup*; OOBE asks the user its own region question

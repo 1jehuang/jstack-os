@@ -217,6 +217,29 @@ class AutounattendTests(BaseImageTestCase):
         self.assertEqual(first, second)
         self.assertNotIn(b"\r", first, "the answer file must use LF endings")
 
+    def test_the_answer_file_prevents_automatic_device_encryption(self) -> None:
+        """BitLocker is a scenario choice, never a Windows default.
+
+        Windows 11 24H2+ silently encrypts the system volume during OOBE on a TPM
+        + Secure Boot machine; an observed 25H2 build did exactly that, which
+        made every bitlocker-off scenario boot an encrypted disk.
+        """
+
+        payload = base_image.build_autounattend(self.record(), 64 * 1024**3)
+        document = xml.dom.minidom.parseString(payload)
+        passes = {
+            node.getAttribute("pass"): node
+            for node in document.getElementsByTagName("settings")
+        }
+        self.assertIn("specialize", passes)
+        paths = [
+            node.firstChild.data
+            for node in passes["specialize"].getElementsByTagName("Path")
+        ]
+        self.assertTrue(
+            any("PreventDeviceEncryption" in path and "/d 1" in path for path in paths)
+        )
+
     def test_the_answer_file_pins_the_exact_edition(self) -> None:
         record = self.record()
         payload = base_image.build_autounattend(record, 64 * 1024**3).decode()
