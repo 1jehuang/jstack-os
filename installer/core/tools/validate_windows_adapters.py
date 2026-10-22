@@ -36,6 +36,7 @@ ALLOWED_COMMANDS = {
     # Local helpers defined in the adapter file itself.
     "Assert-JStackCapability",
     "Assert-JStackDisposableVm",
+    "ConvertTo-JStackGuid",
     "Get-JStackPartitionObservation",
     "Invoke-JStackCreatePartition",
     "Invoke-JStackExpandWindows",
