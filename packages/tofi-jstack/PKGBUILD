@@ -14,7 +14,7 @@ makedepends=('git' 'meson' 'ninja' 'scdoc' 'wayland-protocols')
 provides=('tofi')
 conflicts=('tofi')
 source=("git+https://github.com/1jehuang/tofi.git"
-        "files/prompt-newline.patch")
+        "prompt-newline.patch::file://$startdir/files/prompt-newline.patch")
 sha256sums=('SKIP' '48b04327eee4a928953e1c5fb731b24eb7df2fd8e99f306932b35def954c8524')
 
 pkgver() {
