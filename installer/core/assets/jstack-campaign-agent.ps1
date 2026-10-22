@@ -34,6 +34,13 @@ function Write-JStackObservation {
     Move-Item -LiteralPath $temporary -Destination $ObservationPath -Force
 }
 
+function Stop-JStackGuest {
+    # One boot carries one action. Powering off after the observation is
+    # written is the host's completion signal, and it is what lets the host
+    # read the overlay offline: a stopped guest has a consistent disk.
+    & shutdown.exe /s /t 0 /f | Out-Null
+}
+
 function Find-JStackControlMedium {
     # The medium is a small removable FAT volume carrying exactly two files. It
     # is located by content rather than by drive letter, because Windows assigns
@@ -61,11 +68,38 @@ try {
             status = 'no-control-medium'
             detail = 'no attached volume carries both a request and the adapters'
         }
+        Stop-JStackGuest
         exit 0
     }
 
     $request = Get-Content -LiteralPath $medium.Request -Raw | ConvertFrom-Json
 
+    if ([string]$request.action -ceq 'collect_inventory') {
+        # Read-only. Runs the reviewed collector from the medium with the same
+        # trusted module root and system drive the jstack-inventory binary
+        # supplies, so the snapshot is the one a real bootstrap would take.
+        $collector = Join-Path $medium.Root 'jstack-collector.ps1'
+        if (-not (Test-Path -LiteralPath $collector)) {
+            throw 'collect_inventory requested but the medium carries no collector'
+        }
+        $env:JSTACK_WINDOWS_MODULE_ROOT = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+        $env:JSTACK_SYSTEM_DRIVE = $env:SystemDrive
+        $output = & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File $collector 2>&1
+        $collectorExit = $LASTEXITCODE
+        $parsed = $null
+        try { $parsed = $output | Out-String | ConvertFrom-Json } catch { $parsed = $null }
+        Write-JStackObservation @{
+            status        = if ($collectorExit -eq 0 -and $null -ne $parsed) { 'completed' } else { 'failed' }
+            action        = 'collect_inventory'
+            plan_hash     = [string]$request.plan_hash
+            exit_code     = $collectorExit
+            postcondition = $parsed
+            raw           = if ($null -eq $parsed) { ($output | Out-String) } else { $null }
+        }
+        Stop-JStackGuest
+        exit 0
+    }
     # The adapters demand a matching pair of attestation variables and refuse to
     # mutate without them. The agent supplies the token the medium carries; it
     # cannot mint one, so a medium without a valid attestation is inert.
@@ -94,6 +128,7 @@ try {
         postcondition = $parsed
         raw         = ($output | Out-String)
     }
+    Stop-JStackGuest
     exit 0
 }
 catch {
@@ -107,5 +142,6 @@ catch {
         plan_hash = if ($request) { [string]$request.plan_hash } else { $null }
         postcondition = $null
     }
+    Stop-JStackGuest
     exit 1
 }

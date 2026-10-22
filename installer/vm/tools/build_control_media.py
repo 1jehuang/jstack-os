@@ -46,6 +46,7 @@ import lab  # noqa: E402
 CONTROL_IMAGE_BYTES = images.MINIMUM_FAT32_BYTES
 
 ADAPTER_SOURCE = ROOT.parent / "core" / "assets" / "windows-mutation-adapters.ps1"
+COLLECTOR_SOURCE = ROOT.parent / "core" / "assets" / "collect-windows-inventory.ps1"
 
 
 class ControlMediaError(RuntimeError):
@@ -102,6 +103,9 @@ def build(
     if not ADAPTER_SOURCE.is_file():
         raise ControlMediaError(f"adapter script is missing: {ADAPTER_SOURCE}")
     adapter = ADAPTER_SOURCE.read_bytes()
+    # The read-only inventory collector, byte-identical to the copy embedded in
+    # jstack-inventory, so the live snapshot comes from the reviewed source.
+    collector = COLLECTOR_SOURCE.read_bytes()
     request = build_request(action, plan_hash, capability, attestation, targets or {})
 
     destination.unlink(missing_ok=True)
@@ -112,6 +116,7 @@ def build(
         workspace,
         [
             images.Placement("/jstack-adapters.ps1", adapter),
+            images.Placement("/jstack-collector.ps1", collector),
             images.Placement("/jstack-request.json", request),
         ],
     )
@@ -121,6 +126,7 @@ def build(
     # actually see.
     for name, expected in (
         ("/jstack-adapters.ps1", adapter),
+        ("/jstack-collector.ps1", collector),
         ("/jstack-request.json", request),
     ):
         observed = images._fat_read(image, name)
@@ -133,6 +139,7 @@ def build(
         "action": action,
         "plan_hash": plan_hash,
         "adapter_sha256": hashlib.sha256(adapter).hexdigest(),
+        "collector_sha256": hashlib.sha256(collector).hexdigest(),
         "request_sha256": hashlib.sha256(request).hexdigest(),
         "transaction": result,
     }

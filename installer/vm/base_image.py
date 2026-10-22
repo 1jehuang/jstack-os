@@ -334,6 +334,16 @@ def build_autounattend(record: MediaRecord, disk_size_bytes: int) -> bytes:
         " /ru SYSTEM /rl HIGHEST /tr \"powershell.exe -NoProfile"
         " -ExecutionPolicy Bypass -File C:\\jstack-campaign-agent.ps1\"</Path>",
         "        </RunSynchronousCommand>",
+        # Fast Startup makes every shutdown a hibernation of the kernel session,
+        # which leaves NTFS marked in use. The harness writes the agent into the
+        # overlay and reads observations back offline, and ntfs-3g refuses to
+        # mount a hibernated volume for writing, so hibernation is disabled.
+        '        <RunSynchronousCommand wcm:action="add"'
+        ' xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">',
+        "          <Order>3</Order>",
+        "          <Description>disable hibernation and Fast Startup</Description>",
+        "          <Path>powercfg /hibernate off</Path>",
+        "        </RunSynchronousCommand>",
         "      </RunSynchronous>",
         "    </component>",
         "  </settings>",
