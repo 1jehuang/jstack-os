@@ -182,6 +182,10 @@ mkdir -p /home/jstack
 cp -rn /etc/skel/. /home/jstack/
 chown -R jstack:jstack /home/jstack
 chmod 700 /home/jstack
+if [ -f /usr/share/jstack-seed/jcode/openai.env ] && [ ! -e /home/jstack/.config/jcode/openai.env ]; then
+  install -d -m 700 -o jstack -g jstack /home/jstack/.config /home/jstack/.config/jcode
+  install -m 600 -o jstack -g jstack /usr/share/jstack-seed/jcode/openai.env /home/jstack/.config/jcode/openai.env
+fi
 if [ -d /home/jstack/.config/jcode ]; then
   find /home/jstack/.config/jcode -type d -exec chmod 700 {} +
   find /home/jstack/.config/jcode -type f -exec chmod 600 {} +
