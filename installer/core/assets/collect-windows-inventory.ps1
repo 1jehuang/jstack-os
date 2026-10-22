@@ -6,7 +6,10 @@ if ($runningOnWindows) {
     if ([string]::IsNullOrWhiteSpace($moduleRoot)) { throw 'Trusted Windows module root was not provided' }
     $env:PSModulePath = $moduleRoot
     Microsoft.PowerShell.Core\Import-Module -Name ($moduleRoot + '\Storage\Storage.psd1') -ErrorAction Stop
-    Microsoft.PowerShell.Core\Import-Module -Name ($moduleRoot + '\BitLocker\BitLocker.psd1') -ErrorAction Stop
+    # -DisableNameChecking: the BitLocker module's unapproved-verb warning is
+    # written to the host and lands in stdout ahead of the JSON document, which
+    # made every live snapshot unparseable for jstack-inventory.
+    Microsoft.PowerShell.Core\Import-Module -Name ($moduleRoot + '\BitLocker\BitLocker.psd1') -DisableNameChecking -ErrorAction Stop
     Microsoft.PowerShell.Core\Import-Module -Name ($moduleRoot + '\SecureBoot\SecureBoot.psd1') -ErrorAction Stop
     Microsoft.PowerShell.Core\Import-Module -Name ($moduleRoot + '\CimCmdlets\CimCmdlets.psd1') -ErrorAction Stop
     Microsoft.PowerShell.Core\Import-Module -Name ($moduleRoot + '\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop

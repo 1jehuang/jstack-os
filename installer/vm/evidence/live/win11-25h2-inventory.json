@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "collected_at_unix_ms": 1792680413970,
+  "host": {
+    "windows_version": "Microsoft Windows NT 10.0.26200.0",
+    "architecture": "x86_64",
+    "firmware": "uefi",
+    "secure_boot": "enabled_untrusted"
+  },
+  "readiness": {
+    "elevated": true,
+    "firmware_variables_writable": false,
+    "basic_gpt_disk": true,
+    "single_system_disk": true,
+    "windows_servicing_idle": true,
+    "storage_health_acceptable": true,
+    "power_safe": true,
+    "bitlocker_recovery_material_confirmed": false
+  },
+  "system_disk": {
+    "disk_guid": "79fe1fe7-1f4b-4350-8539-e61007af2d96",
+    "size_bytes": 137438953472,
+    "logical_sector_bytes": 512,
+    "physical_sector_bytes": 4096,
+    "partitions": [
+      {
+        "partition_guid": "3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3",
+        "type_guid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        "offset_bytes": 1048576,
+        "size_bytes": 536870912,
+        "role": "esp",
+        "filesystem": "fat32",
+        "filesystem_free_bytes": 497332224,
+        "volume_id": "\\\\?\\Volume{3ab4de3b-e240-40e9-bfa7-6c1ef27be2c3}\\",
+        "name": "System"
+      },
+      {
+        "partition_guid": "a337724d-6baa-4016-a0de-50796ab1aab7",
+        "type_guid": "e3c9e316-0b5c-4db8-817d-f92df00215ae",
+        "offset_bytes": 537919488,
+        "size_bytes": 16777216,
+        "role": "msr",
+        "filesystem": null,
+        "filesystem_free_bytes": null,
+        "volume_id": null,
+        "name": "Reserved"
+      },
+      {
+        "partition_guid": "5a3a8a82-c1e4-42d6-bbfa-092b21396c65",
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "offset_bytes": 554696704,
+        "size_bytes": 136111456256,
+        "role": "windows",
+        "filesystem": "ntfs",
+        "filesystem_free_bytes": null,
+        "volume_id": "\\\\?\\Volume{5a3a8a82-c1e4-42d6-bbfa-092b21396c65}\\",
+        "name": "Basic"
+      },
+      {
+        "partition_guid": "a2b14175-f434-45fe-8b69-48a96f365643",
+        "type_guid": "de94bba4-06d1-4d40-a16a-bfd50179d6ac",
+        "offset_bytes": 136666152960,
+        "size_bytes": 770703360,
+        "role": "recovery",
+        "filesystem": "ntfs",
+        "filesystem_free_bytes": null,
+        "volume_id": "\\\\?\\Volume{a2b14175-f434-45fe-8b69-48a96f365643}\\",
+        "name": "Recovery"
+      }
+    ],
+    "windows": {
+      "partition_guid": "5a3a8a82-c1e4-42d6-bbfa-092b21396c65",
+      "volume_id": "\\\\?\\Volume{5a3a8a82-c1e4-42d6-bbfa-092b21396c65}\\",
+      "current_size_bytes": 136111456256,
+      "supported_min_size_bytes": 22955675648,
+      "supported_max_size_bytes": 136111456256,
+      "bitlocker": "disabled"
+    }
+  }
+}
