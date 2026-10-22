@@ -52,7 +52,7 @@ class ProfileTests(unittest.TestCase):
         conf = (p / 'profiledef.sh').read_text()
         self.assertIn("'bios.syslinux'", conf)
         self.assertIn("'uefi.systemd-boot'", conf)
-        self.assertIn("'-processors' '2' '-mem' '512M'", conf)
+        self.assertIn(f"'-processors' '{os.cpu_count() or 2}' '-mem' '4G'", conf)
         self.assertIn(f'CacheDir = {self.work}/pacman-cache', (p / 'pacman.conf').read_text())
         hooks = (p / 'airootfs/etc/mkinitcpio.conf.d/archiso.conf').read_text()
         self.assertIn('archiso', hooks)

@@ -2,6 +2,7 @@
 """Generate a scratch-only Archiso profile. No mounts, disks, or root required."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -95,12 +96,12 @@ iso_name="jstack-live"
 iso_label="JSTACK_LIVE"
 iso_publisher="Jstack OS <https://github.com/1jehuang/jstack-os>"
 iso_application="Jstack OS live desktop and manual blank-disk installer"
-airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '9' '-b' '1M' '-processors' '2' '-mem' '512M')
+airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '9' '-b' '1M' '-processors' '@NPROC@' '-mem' '4G')
 file_permissions["/usr/local/lib/jstack-live-setup"]="0:0:755"
 file_permissions["/usr/local/bin/jstack-install-live"]="0:0:755"
 file_permissions["/usr/local/bin/jstack-install-help"]="0:0:755"
 '''
-    (profile / 'profiledef.sh').write_text(text)
+    (profile / 'profiledef.sh').write_text(text.replace('@NPROC@', str(os.cpu_count() or 2)))
     package_file = profile / 'packages.x86_64'
     packages = set(package_file.read_text().splitlines())
     # Some installed releng versions still list the removed broadcom-wl package.

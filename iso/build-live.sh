@@ -52,12 +52,13 @@ python3 "$ROOT/iso/prepare-profile.py" "${args[@]}"
 # Do not install build/runtime dependencies into the host. makepkg's dependency
 # checks cannot resolve our not-yet-installed local meta-packages, so --nodeps is
 # intentional. The final pacstrap transaction resolves all runtime dependencies.
-export MAKEFLAGS="${MAKEFLAGS:--j2}" CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+JOBS=${JSTACK_JOBS:-$(nproc)}
+export MAKEFLAGS="${MAKEFLAGS:--j$JOBS}" CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$JOBS}"
 export CARGO_HOME="$WORK/cargo-cache" PKGDEST="$WORK/packages" SRCDEST="$WORK/sources"
 cat > "$WORK/makepkg.conf" <<'EOF'
 source /etc/makepkg.conf
 PKGEXT='.pkg.tar.zst'
-COMPRESSZST=(zstd -c -T2 -)
+COMPRESSZST=(zstd -c -T0 -)
 EOF
 build_package() {
   local dir=$1
