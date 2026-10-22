@@ -92,12 +92,20 @@ function Read-JStackRequest {
 # Plan-bound target resolution
 # ---------------------------------------------------------------------------
 
+function ConvertTo-JStackGuid {
+    # Storage cmdlets render GPT GUIDs in registry form ({...}); the plan uses
+    # the bare RFC 4122 form. Compare a canonical form so a formatting
+    # difference cannot hide the one disk the plan names (observed live).
+    param([string]$Value)
+    return $Value.Trim().TrimStart('{').TrimEnd('}').ToLowerInvariant()
+}
+
 function Resolve-JStackDisk {
     # Resolve by GPT disk GUID only. A disk number is a positional identity that
     # can change between boots, so it is never accepted from the request.
     param([string]$DiskGuid)
     $matches = @(Storage\Get-Disk -ErrorAction Stop | Microsoft.PowerShell.Core\Where-Object {
-        [string]$_.Guid -ieq $DiskGuid -and [string]$_.PartitionStyle -eq 'GPT'
+        (ConvertTo-JStackGuid ([string]$_.Guid)) -ceq (ConvertTo-JStackGuid $DiskGuid) -and [string]$_.PartitionStyle -eq 'GPT'
     })
     if ($matches.Count -ne 1) {
         throw "Plan disk $DiskGuid does not resolve to exactly one GPT disk"
@@ -108,7 +116,7 @@ function Resolve-JStackDisk {
 function Resolve-JStackPartition {
     param([uint32]$DiskNumber, [string]$PartitionGuid)
     $matches = @(Storage\Get-Partition -DiskNumber $DiskNumber -ErrorAction Stop |
-        Microsoft.PowerShell.Core\Where-Object { [string]$_.Guid -ieq $PartitionGuid })
+        Microsoft.PowerShell.Core\Where-Object { (ConvertTo-JStackGuid ([string]$_.Guid)) -ceq (ConvertTo-JStackGuid $PartitionGuid) })
     if ($matches.Count -ne 1) {
         throw "Plan partition $PartitionGuid does not resolve to exactly one partition"
     }
