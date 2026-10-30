@@ -6,6 +6,10 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
+
+mod jcode_state;
 
 fn main() {
     loop {
@@ -34,13 +38,44 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let _ = reader.get_mut().shutdown(Shutdown::Write);
+    let (tx, rx) = mpsc::channel();
+    let event_tx = tx.clone();
+    std::thread::spawn(move || loop {
+        match read_next_known_event(&mut reader) {
+            Ok(Some(event)) => {
+                if event_tx.send(Ok(Some(event))).is_err() {
+                    break;
+                }
+            }
+            Ok(None) => continue,
+            Err(err) => {
+                let _ = event_tx.send(Err(err.to_string()));
+                break;
+            }
+        }
+    });
+    let states = Arc::new(Mutex::new(HashMap::new()));
+    let poll_states = Arc::clone(&states);
+    std::thread::spawn(move || loop {
+        let next = jcode_state::snapshot();
+        *poll_states.lock().unwrap() = next;
+        // Refresh registry-to-window associations even when session states stay unchanged.
+        if tx.send(Ok(None)).is_err() {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    });
     let mut workspaces = Vec::new();
     let mut windows = Vec::new();
     let mut have_workspaces = false;
     let mut have_windows = false;
 
     loop {
-        let Some(event) = read_next_known_event(&mut reader)? else {
+        let event = rx.recv()?.map_err(std::io::Error::other)?;
+        let Some(event) = event else {
+            if have_workspaces && have_windows {
+                output_status(&workspaces, &windows, &states.lock().unwrap());
+            }
             continue;
         };
 
@@ -128,7 +163,7 @@ fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if should_output && have_workspaces && have_windows {
-            output_status(&workspaces, &windows);
+            output_status(&workspaces, &windows, &states.lock().unwrap());
         }
     }
 }
@@ -174,7 +209,7 @@ fn read_next_known_event(
     }
 }
 
-fn output_status(workspaces: &[Workspace], windows: &[Window]) {
+fn output_status(workspaces: &[Workspace], windows: &[Window], states: &HashMap<String, String>) {
     // Pre-compute terminal apps.
     // Avoid per-pid process detection for foot/footclient when multiple windows
     // share the same pid, to prevent false positives across windows.
@@ -253,9 +288,17 @@ fn output_status(workspaces: &[Workspace], windows: &[Window]) {
                 let app_id = win.app_id.as_deref().unwrap_or("");
                 let title = win.title.as_deref().unwrap_or("");
                 let mut color = get_color(app_id, title, win.pid, &terminal_apps);
+                let state_color = if is_terminal(app_id) || app_id.contains("jcode") {
+                    jcode_state::window_color(win.pid, title, states)
+                } else {
+                    None
+                };
+                if let Some(state_color) = state_color {
+                    color = state_color.to_string();
+                }
                 let is_tmux = is_tmux_title(title);
 
-                if !ws.is_focused {
+                if !ws.is_focused && state_color.is_none() {
                     color = dim_color(&color);
                 }
 

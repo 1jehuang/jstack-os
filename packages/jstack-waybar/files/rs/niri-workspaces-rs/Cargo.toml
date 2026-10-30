@@ -2,6 +2,12 @@
 name = "niri-workspaces"
 version = "0.1.0"
 edition = "2021"
+description = "Niri Windows Waybar Preview with per-session Jcode state colors"
+autobins = false
+
+[[bin]]
+name = "niri-windows-waybar-preview"
+path = "src/main.rs"
 
 [dependencies]
 niri-ipc = { version = "26.4.0", features = ["clap"] }
