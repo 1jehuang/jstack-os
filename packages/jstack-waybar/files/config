@@ -8,7 +8,7 @@
         "custom/window-uptime"
     ],
     "modules-center": [
-        "custom/workspaces"
+        "custom/niri-windows-preview"
     ],
     "modules-right": [
         "custom/net",
@@ -37,8 +37,8 @@
         "spacing": 10,
         "show-passive-items": true
     },
-    "custom/workspaces": {
-        "exec": "/usr/lib/jstack/waybar/niri-workspaces",
+    "custom/niri-windows-preview": {
+        "exec": "/usr/lib/jstack/waybar/niri-windows-waybar-preview",
         "return-type": "json",
         "format": "{}",
         "escape": false

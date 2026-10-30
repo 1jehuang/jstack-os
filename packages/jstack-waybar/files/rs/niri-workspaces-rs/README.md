@@ -1,8 +1,8 @@
-# niri-workspaces-rs
+# niri-windows-waybar-preview
 
-A fast, event-driven workspace indicator for [Waybar](https://github.com/Alexays/Waybar) and [niri](https://github.com/YaLTeR/niri).
+A fast, event-driven window preview grouped by workspace for [Waybar](https://github.com/Alexays/Waybar) and [niri](https://github.com/YaLTeR/niri).
 
-<img width="960" height="600" alt="niri-workspaces-rs demo" src="assets/demo.gif" />
+<img width="960" height="600" alt="niri-windows-waybar-preview demo" src="assets/demo.gif" />
 
 ## Features
 
@@ -10,6 +10,7 @@ A fast, event-driven workspace indicator for [Waybar](https://github.com/Alexays
 - **Event-driven daemon mode** — keeps a persistent niri socket connection and emits JSON updates only when workspace/window state changes.
 - **App-aware coloring** — built-in colors for Chrome (red), Firefox, Discord/Vesktop, Spotify, Todoist, Gmail, and terminals.
 - **Terminal app detection via `/proc`** — detects `jcode`, Claude, Codex, and Neovim/Vim running inside terminal windows.
+- **Jcode status colors**: cyan means running, red means blocked, and green means done.
 - **Terminal support** — works with Alacritty, Kitty, Ghostty, Foot, and Footclient.
 - **Focus semantics** — uses `█` for the focused window, `▌` for the active window on an unfocused workspace, and `|` for other windows.
 - **tmux hinting** — uses `¦` for non-focused tmux windows.
@@ -37,9 +38,11 @@ The daemon is **~10-12x faster** than the signal-based approach and **~300x fast
 
 ## Installation
 
+The source crate remains in `files/rs/niri-workspaces-rs`; the public binary is `niri-windows-waybar-preview`. Run these commands from that crate directory:
+
 ```bash
 cargo build --release
-cp target/release/niri-workspaces ~/.config/waybar/
+cp target/release/niri-windows-waybar-preview ~/.config/waybar/
 ```
 
 If Waybar is already running, restart Waybar or reload the module so the new binary is picked up.
@@ -47,14 +50,15 @@ If Waybar is already running, restart Waybar or reload the module so the new bin
 ## Waybar Configuration
 
 ```json
-"custom/workspaces": {
-    "exec": "~/.config/waybar/niri-workspaces",
+"custom/niri-windows-preview": {
+    "exec": "~/.config/waybar/niri-windows-waybar-preview",
     "return-type": "json",
-    "format": "{}"
+    "format": "{}",
+    "escape": false
 }
 ```
 
-No `interval` or `signal` is needed — the daemon outputs JSON whenever relevant niri events occur.
+No `interval` or `signal` is needed. The daemon outputs JSON whenever relevant niri events occur. Use `#custom-niri-windows-preview` as the CSS selector.
 
 ## License
 

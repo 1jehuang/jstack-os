@@ -38,8 +38,8 @@ package() {
   done
 
   # Compiled custom modules
-  install -Dm755 "$files/rs/niri-workspaces-rs/target/release/niri-workspaces" \
-    "$pkgdir/usr/lib/jstack/waybar/niri-workspaces"
+  install -Dm755 "$files/rs/niri-workspaces-rs/target/release/niri-windows-waybar-preview" \
+    "$pkgdir/usr/lib/jstack/waybar/niri-windows-waybar-preview"
   install -Dm755 "$files/rs/battery-rs/target/release/waybar-battery" \
     "$pkgdir/usr/lib/jstack/waybar/battery-status"
   install -Dm755 "$files/rs/window-uptime-rs/target/release/window-uptime" \
