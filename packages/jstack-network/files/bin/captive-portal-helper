@@ -146,24 +146,35 @@ def main():
             log("network changed during verification, discarding result")
             return
         remember_status(ssid, state)
-        save("attempt.json", {"network": initial, "finished": time.time(), "state": state})
+        attempt = {"network": initial, "finished": time.time(), "state": state,
+                   "browser_opened": previous.get("network") == initial and
+                   previous.get("browser_opened") is True}
+        save("attempt.json", attempt)
         log(f"verified connectivity={state!r}")
         if state == "full":
             notify("Wi-Fi internet works", f"{ssid} has full connectivity.")
             return
-        # Never persist a permanent success/dedup key for an unsuccessful attempt.
+        if attempt["browser_opened"]:
+            log("login window already opened for this connection; use Network Login to reopen")
+            return
+        # Acceptance remains retryable. Only deduplicate a submitted browser launch
+        # until a disconnect, network change or confirmed-online observation.
         need = re.findall(r"NEED_INPUT:\s*(.*)", output)
         detail = need[-1] if need else "browser login"
-        notify("Wi-Fi portal needs attention", f"{ssid}: {detail}. Opening one login page.")
         if network() != initial:
             log("network changed before browser fallback, skipping")
             return
-        try:
-            subprocess.Popen(["xdg-open", "http://neverssl.com/"],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             start_new_session=True)
-        except OSError as exc:
-            log(f"browser fallback failed: {exc}")
+        # The launcher gives the browser its own systemd unit. setsid/Popen alone
+        # cannot escape the oneshot service's cgroup and hides launch failures.
+        rc, output = run(["network-login"], timeout=8)
+        log(f"network login launch exit={rc}")
+        if rc == 0:
+            attempt["browser_opened"] = True
+            save("attempt.json", attempt)
+            notify("Wi-Fi portal needs attention", f"{ssid}: {detail}. Opened Network Login.")
+        else:
+            log(f"network login launch failed: {output.strip()}")
+            notify("Wi-Fi login could not open", f"{ssid}: open Network Login from the app launcher to retry.")
 
 
 if __name__ == "__main__":

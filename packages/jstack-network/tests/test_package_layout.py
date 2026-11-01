@@ -18,10 +18,13 @@ class PackageLayoutTests(unittest.TestCase):
                 "stage-package", str(ROOT), str(stage),
             ], check=True, capture_output=True, text=True)
             for tool in ("wifi-pick", "captive-portal-helper", "captive-portal-autoaccept",
-                         "captive-portal-monitor"):
+                         "captive-portal-monitor", "network-login"):
                 installed = stage / "usr/bin" / tool
                 self.assertEqual(installed.read_bytes(), (ROOT / "files/bin" / tool).read_bytes())
                 self.assertTrue(installed.stat().st_mode & 0o111)
+            desktop = (stage / "usr/share/applications/network-login.desktop").read_text()
+            self.assertIn("Name=Network Login", desktop)
+            self.assertIn("Exec=network-login", desktop)
             preset = (stage / "usr/lib/systemd/user-preset/90-jstack-network.preset").read_text()
             self.assertIn("enable captive-portal-monitor.service", preset)
             self.assertIn("enable captive-portal-helper.timer", preset)

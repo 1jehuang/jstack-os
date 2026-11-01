@@ -1,0 +1,148 @@
+#!/usr/bin/python3
+"""Open a disposable, captive-portal-only Firefox window in a user service.
+
+The persistent directory contains only the profile policy. Each window gets a
+fresh runtime profile, removed by systemd even when Firefox crashes. Nothing in
+~/.mozilla or the user's normal Firefox profiles is read or changed.
+"""
+import json
+import os
+from pathlib import Path
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import uuid
+
+URL = "http://neverssl.com/"
+PREFERENCES = {
+    "dom.security.https_only_mode": False,
+    "dom.security.https_only_mode_pbm": False,
+    "dom.security.https_first": False,
+    "dom.security.https_first_pbm": False,
+    "network.trr.mode": 5,
+    "network.proxy.type": 0,
+    "browser.shell.checkDefaultBrowser": False,
+    "browser.startup.homepage_override.mstone": "ignore",
+    "browser.aboutwelcome.enabled": False,
+    "datareporting.policy.dataSubmissionEnabled": False,
+    "toolkit.telemetry.enabled": False,
+    "browser.privatebrowsing.autostart": True,
+    "extensions.allowPrivateBrowsingByDefault": False,
+    "signon.rememberSignons": False,
+    "browser.formfill.enable": False,
+}
+
+
+def private_directory(path):
+    """Refuse symlinks and foreign-owned directories before writing secrets."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise OSError(f"unsafe directory: {path}")
+    path.chmod(0o700)
+    return path
+
+
+def runtime_root():
+    value = os.environ.get("XDG_RUNTIME_DIR")
+    if not value or not Path(value).is_absolute():
+        raise OSError("XDG_RUNTIME_DIR must name an absolute private runtime directory")
+    runtime = Path(value)
+    info = runtime.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) & 0o077):
+        raise OSError(f"unsafe runtime directory: {runtime}")
+    return private_directory(private_directory(runtime / "jstack") / "network-login")
+
+
+def cleanup(value):
+    path = Path(value)
+    root = runtime_root()
+    if path.parent != root or not path.name.startswith("profile-"):
+        raise OSError("refusing cleanup outside network-login runtime profiles")
+    if path.is_symlink():
+        raise OSError("refusing symlink profile cleanup")
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def systemd_argument(value):
+    # ExecStopPost uses systemd's quoting, not shell quoting. Literal percent
+    # signs must be doubled to prevent expansion of systemd specifiers.
+    return '"' + (str(value).replace("\\", "\\\\").replace('"', '\\"')
+                  .replace("%", "%%").replace("$", "$$")
+                  .replace("\n", "\\n").replace("\r", "\\r")) + '"'
+
+
+def launch():
+    firefox = shutil.which("firefox")
+    runner = shutil.which("systemd-run")
+    if not firefox or not runner:
+        raise OSError("Firefox and systemd-run are required")
+    data = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
+    if not data.is_absolute():
+        raise OSError("XDG_DATA_HOME must be absolute")
+    base = private_directory(private_directory(data / "jstack") / "network-login")
+    policy = "// Captive portal profile only. TLS verification remains unchanged.\n" + "".join(
+        f"user_pref({json.dumps(key)}, {json.dumps(value)});\n"
+        for key, value in PREFERENCES.items()
+    )
+    # Atomic replacement cannot follow a pre-existing user.js symlink.
+    fd, temporary = tempfile.mkstemp(prefix=".user-", dir=base)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(policy)
+        os.replace(temporary, base / "user.js")
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    profile = Path(tempfile.mkdtemp(prefix="profile-", dir=runtime_root()))
+    (profile / "user.js").write_text(policy)
+    (profile / "user.js").chmod(0o600)
+    stop = " ".join(systemd_argument(arg) for arg in (
+        sys.executable, str(Path(__file__).resolve()), "--cleanup", str(profile)))
+    command = [runner, "--user", "--collect", "--quiet", "--expand-environment=no",
+               "--unit=jstack-network-login-" + uuid.uuid4().hex,
+               "--property=Type=exec", "--property=ExitType=cgroup",
+               "--property=ExecStopPost=" + stop]
+    # Forward the desktop environment even if the user manager was started
+    # before the graphical session. Do not forward the entire environment.
+    for name in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS",
+                 "XDG_RUNTIME_DIR", "XDG_ACTIVATION_TOKEN", "DESKTOP_STARTUP_ID"):
+        if name in os.environ:
+            command.append(f"--setenv={name}={os.environ[name]}")
+    command += ["--", firefox, "--no-remote", "--new-window", "--profile", str(profile), URL]
+    try:
+        result = subprocess.run(command, timeout=5, capture_output=True, text=True, check=False)
+    except subprocess.TimeoutExpired as error:
+        # Submission may already have succeeded. Never delete a profile which
+        # a manager-owned Firefox may be using. Runtime storage expires at logout.
+        raise OSError("systemd-run submission timed out after 5 seconds; check user services") from error
+    except OSError:
+        cleanup(str(profile))
+        raise
+    if result.returncode:
+        cleanup(str(profile))
+        detail = (result.stderr or result.stdout or "no diagnostic").strip()
+        raise OSError(f"systemd-run failed ({result.returncode}): {detail}")
+    return 0
+
+
+def main(argv=None):
+    args = sys.argv[1:] if argv is None else argv
+    try:
+        if len(args) == 2 and args[0] == "--cleanup":
+            cleanup(args[1])
+            return 0
+        if args:
+            raise OSError("usage: network-login")
+        return launch()
+    except (OSError, ValueError) as error:
+        print(f"network-login: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

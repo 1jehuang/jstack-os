@@ -1,7 +1,7 @@
 # Maintainer: Jeremy <jstack-os>
 pkgname=jstack-network
 pkgver=0.2.0
-pkgrel=5
+pkgrel=6
 pkgdesc="jstack OS network stack: Wi-Fi reliability, picker, and captive portal handling"
 arch=('any')
 url="https://github.com/1jehuang/jstack-os"
@@ -17,6 +17,7 @@ depends=(
   'tofi-jstack>=r265.bb5617b-3'
   'util-linux'
   'xdg-utils'
+  'firefox'
 )
 source=()
 
@@ -24,9 +25,12 @@ package() {
   local files="$startdir/files"
 
   # CLI tools
-  for b in wifi-pick captive-portal-helper captive-portal-autoaccept captive-portal-watch captive-portal-monitor; do
+  for b in wifi-pick captive-portal-helper captive-portal-autoaccept captive-portal-watch captive-portal-monitor network-login; do
     install -Dm755 "$files/bin/$b" "$pkgdir/usr/bin/$b"
   done
+
+  install -Dm644 "$files/applications/network-login.desktop" \
+    "$pkgdir/usr/share/applications/network-login.desktop"
 
   # Internal boot-time Wi-Fi recovery helper.
   install -Dm755 "$files/libexec/wifi-boot-recovery" \

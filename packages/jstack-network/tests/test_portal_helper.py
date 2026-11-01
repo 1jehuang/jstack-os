@@ -22,7 +22,7 @@ STUB = r'''#!/usr/bin/env python3
 import json, os, pathlib, sys, time
 root = pathlib.Path(os.environ['FAKE_ROOT'])
 name = pathlib.Path(sys.argv[0]).name
-if name == 'xdg-open':
+if name == 'network-login':
     with (root / 'browser-pids').open('a') as f:
         f.write(str(os.getpid()) + '\n')
 args = sys.argv[1:]
@@ -40,6 +40,8 @@ if name == 'nmcli':
     else:
         time.sleep(cfg.get('nm_delay', 0))
         print(cfg.get('verified', 'portal') if 'check' in args else cfg.get('state', 'portal'))
+elif name == 'network-login':
+    sys.exit(cfg.get('launch_rc', 0))
 elif name == 'captive-portal-autoaccept':
     (root / 'started').touch()
     time.sleep(cfg.get('accept_delay', 0))
@@ -57,7 +59,7 @@ class PortalHelperTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.bin = self.root / 'bin'
         self.bin.mkdir()
-        for name in ['nmcli', 'captive-portal-autoaccept', 'notify-send', 'xdg-open']:
+        for name in ['nmcli', 'captive-portal-autoaccept', 'notify-send', 'network-login']:
             p = self.bin / name
             p.write_text(STUB)
             p.chmod(0o755)
@@ -86,7 +88,7 @@ class PortalHelperTests(unittest.TestCase):
                         active |= Path(f'/proc/{pid}/stat').read_text().split()[2] != 'Z'
                     except FileNotFoundError:
                         pass
-            if len(self.calls('xdg-open')) >= expected and not active:
+            if len(self.calls('network-login')) >= expected and not active:
                 return
             time.sleep(.01)
         self.fail('browser stubs did not finish')
@@ -98,7 +100,7 @@ class PortalHelperTests(unittest.TestCase):
 
     def await_browser(self):
         for _ in range(100):
-            if self.calls('xdg-open'):
+            if self.calls('network-login'):
                 return
             time.sleep(.01)
         self.fail('browser stub did not run')
@@ -107,7 +109,7 @@ class PortalHelperTests(unittest.TestCase):
         result = self.launch()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.await_browser()
-        self.assertEqual(len(self.calls('xdg-open')), 1)
+        self.assertEqual(len(self.calls('network-login')), 1)
         self.assertEqual(len(self.calls('captive-portal-autoaccept')), 1)
         self.assertFalse(any('check' in c for c in self.calls('nmcli')))
         self.assertTrue(all(c[-2:] == ['--rescan', 'no'] for c in self.calls('nmcli') if 'wifi' in c))
@@ -120,7 +122,7 @@ class PortalHelperTests(unittest.TestCase):
         self.assertEqual(self.launch().returncode, 0)
         self.assertFalse(any('check' in c for c in self.calls('nmcli')))
         self.assertEqual(len(self.calls('captive-portal-autoaccept')), 1)
-        self.assertFalse(self.calls('xdg-open'))
+        self.assertFalse(self.calls('network-login'))
         self.assertIn('\tfull\t', (self.cache / 'ssid-status.tsv').read_text())
 
     def test_failure_cooldown_expires(self):
@@ -133,12 +135,36 @@ class PortalHelperTests(unittest.TestCase):
         p.write_text(json.dumps(state))
         self.launch()
         self.assertEqual(len(self.calls('captive-portal-autoaccept')), 2)
+        self.assertEqual(len(self.calls('network-login')), 1)
+
+    def test_browser_launch_failure_is_visible_and_retryable(self):
+        self.configure(launch_rc=1)
+        result = self.launch()
+        self.assertIn('network login launch failed', result.stdout)
+        self.assertFalse(json.loads((self.cache / 'attempt.json').read_text())['browser_opened'])
+        self.assertIn('Wi-Fi login could not open', str(self.calls('notify-send')))
+        p = self.cache / 'attempt.json'
+        state = json.loads(p.read_text())
+        state['finished'] -= 61
+        p.write_text(json.dumps(state))
+        self.configure()
+        self.launch()
+        self.assertEqual(len(self.calls('network-login')), 2)
+        self.assertTrue(json.loads(p.read_text())['browser_opened'])
+
+    def test_full_connectivity_resets_browser_dedup(self):
+        self.launch()
+        self.configure(state='full')
+        self.launch()
+        self.configure()
+        self.launch()
+        self.assertEqual(len(self.calls('network-login')), 2)
 
     def test_network_change_discards_result_and_browser(self):
         self.configure(change=True, rc=0)
         result = self.launch()
         self.assertIn('network changed during accept', result.stdout)
-        self.assertFalse(self.calls('xdg-open'))
+        self.assertFalse(self.calls('network-login'))
         self.assertFalse((self.cache / 'attempt.json').exists())
         self.assertFalse(any('check' in c for c in self.calls()))
 
@@ -164,7 +190,7 @@ class PortalHelperTests(unittest.TestCase):
             self.configure(state=state)
             self.assertEqual(self.launch().returncode, 0)
         self.assertFalse(self.calls('captive-portal-autoaccept'))
-        self.assertFalse(self.calls('xdg-open'))
+        self.assertFalse(self.calls('network-login'))
 
     def test_corrupt_retry_state_is_safe(self):
         self.cache.mkdir(parents=True)
@@ -185,7 +211,7 @@ class PortalHelperTests(unittest.TestCase):
         (self.bin / 'captive-portal-autoaccept').write_text('#!/usr/bin/env nonexistent-portal-engine\n')
         self.assertEqual(self.launch().returncode, 0)
         self.await_browser()
-        self.assertEqual(len(self.calls('xdg-open')), 1)
+        self.assertEqual(len(self.calls('network-login')), 1)
 
     def test_disconnect_resets_retry_for_reconnect(self):
         self.launch()
@@ -194,6 +220,7 @@ class PortalHelperTests(unittest.TestCase):
         self.configure()
         self.launch()
         self.assertEqual(len(self.calls('captive-portal-autoaccept')), 2)
+        self.assertEqual(len(self.calls('network-login')), 2)
 
     def test_cached_nm_timeout_is_bounded_and_conservative(self):
         self.configure(nm_delay=10)
@@ -203,7 +230,7 @@ class PortalHelperTests(unittest.TestCase):
         self.assertLess(time.monotonic() - start, 5)
         self.assertIn('timed out', result.stdout)
         self.assertFalse(self.calls('captive-portal-autoaccept'))
-        self.assertFalse(self.calls('xdg-open'))
+        self.assertFalse(self.calls('network-login'))
 
     def test_network_change_before_acceptor_is_guarded(self):
         with patch.object(helper, 'CACHE', self.cache), \

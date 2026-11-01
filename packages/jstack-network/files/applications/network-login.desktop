@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Network Login
+Comment=Open a separate browser window to sign in to public Wi-Fi
+Exec=network-login
+Icon=network-wireless
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=WiFi;Wi-Fi;Internet;Login;Captive;Portal;Hotspot;
+StartupNotify=false

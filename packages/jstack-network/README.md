@@ -1,5 +1,51 @@
 # Wi-Fi connection and captive portal recovery
 
+## Open a network login manually
+
+Search **Network Login** in the app launcher, or run `network-login`. This opens
+a separate Firefox window for the current network's sign-in page. It starts at
+plain HTTP so the network can redirect to its portal, even when your normal
+browser enforces HTTPS-only browsing. It does not connect or disconnect Wi-Fi.
+If the network is already authorized, it can show the ordinary HTTP landing page
+instead of a login. No universal URL can force an already-authorized network to
+show its portal again.
+
+The portal browser has isolated settings and does not change normal Firefox
+preferences. TLS certificate verification remains enabled. Its systemd user
+service is separate from the short-lived recovery helper so finishing that
+helper cannot kill the login window. Launch failures are reported rather than
+silently discarded. Automatic retries do not repeatedly open windows for the
+same connection. Use the launcher to reopen manually when needed.
+
+Each invocation uses a disposable private-browsing profile. Extensions are not
+enabled in its private windows, preventing managed extension welcome tabs from
+covering the network login. Cookies are not shared with normal browsing and the
+runtime profile is removed when its service stops.
+
+### November 1, 2026 repair validation
+
+WellsFargo logs at 14:12 PST showed the acceptor hitting a TLS handshake failure
+on the portal, then falling back to an unobserved `xdg-open`. Replaying the old
+browser fallback produced `Secure Site Not Available` at an upgraded HTTPS URL.
+The new launcher preserves plain HTTP in an isolated browser without disabling
+TLS verification or altering the user's ordinary Firefox preferences.
+
+The package suite passed 68 tests after the repair. The installed desktop entry
+passes `desktop-file-validate` and appears in `jofi list` as **Network Login**.
+The real installed helper was also executed in a transient oneshot service with
+inert network-state and acceptor fixtures: it exited successfully in 155 ms,
+recorded `browser_opened: true`, and its separate real Firefox service remained
+running after the helper exited. A live private window showed the HTTP NeverSSL
+landing page rather than the HTTPS-only error or extension onboarding page.
+This verifies launch/lifecycle behavior, not a fresh WellsFargo authentication.
+The real WellsFargo connection and IP were unchanged throughout. No disconnect,
+authorization reset, automatic payment or credential submission was performed.
+
+Installed helper backup: `/var/lib/jstack-network/backups/20261101-network-login/`.
+Only the helper, new launcher and desktop entry were installed, without changing
+package-manager metadata. A fresh unauthenticated portal login still needs to be
+observed on the next naturally joined public network.
+
 ## Recovery flow
 
 - `wifi-pick` shows cached scan results without waiting for a full scan. Selecting
