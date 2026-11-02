@@ -1,0 +1,933 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-11-01",
+  "scope": "Every visible entry returned by jofi list on the reference machine. Classifies shortcut promotion, not upstream packages' own application menus.",
+  "default_audience": "personal",
+  "shared_limit": 7,
+  "entries": [
+    {
+      "id": "apt-tracker.desktop",
+      "name": "Apartment Price Tracker",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "avalon-dogpatch-siteplan.desktop",
+      "name": "Avalon Dogpatch Site Plan",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "bitwarden.desktop",
+      "name": "Bitwarden",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "bookface.desktop",
+      "name": "Bookface",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "bookface-deals.desktop",
+      "name": "Bookface Deals",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "btop.desktop",
+      "name": "btop++",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "chatgpt.desktop",
+      "name": "ChatGPT (Codex)",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "chin111-lesson6.desktop",
+      "name": "Chinese 111 Lesson 6",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "claude-console.desktop",
+      "name": "Claude Console",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "airpods-connect.desktop",
+      "name": "Connect AirPods Pro 3",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "connect-iphone-hotspot.desktop",
+      "name": "Connect iPhone Hotspot",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "copy-jcode-repo-link.desktop",
+      "name": "Copy Jcode Repo Link",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "copy-pitch-deck.desktop",
+      "name": "Copy Pitch Deck Link",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "disable-chinese-input.desktop",
+      "name": "Disable Chinese Input",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "disable-lid-switch-10h.desktop",
+      "name": "Disable Lid Switch - 10 Hours",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "disable-lid-switch.desktop",
+      "name": "Disable Lid Switch - Dim Only",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "disable-lid-switch-unplugged.desktop",
+      "name": "Disable Lid Switch - Until Unplugged",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "disconnect-airpods.desktop",
+      "name": "Disconnect AirPods",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "disconnect-iphone-hotspot.desktop",
+      "name": "Disconnect iPhone Hotspot",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "discord-web.desktop",
+      "name": "Discord Web",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "discordo.desktop",
+      "name": "Discordo",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "dislike-song.desktop",
+      "name": "Dislike Song",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "edstem.desktop",
+      "name": "EdStem",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "enable-chinese-trackpad-draw-bridge.desktop",
+      "name": "Enable Chinese Trackpad Draw Bridge",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "excalidraw.desktop",
+      "name": "Excalidraw",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "org.gnome.Nautilus.desktop",
+      "name": "Files",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "Basic file management. Share the Files role, not a requirement to use Nautilus instead of the distro's Thunar."
+    },
+    {
+      "id": "firefox.desktop",
+      "name": "Firefox",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "One general-purpose browser entry. Do not add a duplicate New Window shortcut."
+    },
+    {
+      "id": "camera-fix.desktop",
+      "name": "Fix Camera",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "bookface-seed-crm.desktop",
+      "name": "Fundraising CRM",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "gemini.desktop",
+      "name": "Gemini",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "github.desktop",
+      "name": "GitHub",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "github-profile.desktop",
+      "name": "GitHub Profile",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "github-repos.desktop",
+      "name": "GitHub Repos",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "gmail.desktop",
+      "name": "Gmail",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "gmail-cse.desktop",
+      "name": "Gmail (CSE)",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "gmail-uw.desktop",
+      "name": "Gmail (UW)",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "gmail-code-watcher.desktop",
+      "name": "Gmail Code Watcher",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "google-calendar.desktop",
+      "name": "Google Calendar",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "google-chrome.desktop",
+      "name": "Google Chrome",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "google-maps.desktop",
+      "name": "Google Maps",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "google-meet-test.desktop",
+      "name": "Google Meet Test",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "google-passwords-webapp.desktop",
+      "name": "Google Passwords",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "gradescope.desktop",
+      "name": "Gradescope",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "hackernews.desktop",
+      "name": "Hacker News",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "lstopo.desktop",
+      "name": "Hardware Locality lstopo",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "hn-launch.desktop",
+      "name": "hn launch",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "hogpatch-door.desktop",
+      "name": "Hogpatch Door",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "htop.desktop",
+      "name": "Htop",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "investor-db.desktop",
+      "name": "Investor DB",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "jcode.desktop",
+      "name": "Jcode",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "Core Jstack agent entry. Package a portable launcher, never the reference machine's absolute desktop-client path."
+    },
+    {
+      "id": "jcode-analytics.desktop",
+      "name": "jcode Analytics",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-bench-results.desktop",
+      "name": "Jcode Bench Results",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-bench-spec.desktop",
+      "name": "Jcode Bench Spec",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-config.desktop",
+      "name": "Jcode Config",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-content-idea.desktop",
+      "name": "Jcode Content: New Idea",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-content-review.desktop",
+      "name": "Jcode Content: Review",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-desktop.desktop",
+      "name": "Jcode Desktop",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-desktop-github-issues.desktop",
+      "name": "Jcode Desktop GitHub Issues",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-desktop-github-pull-requests.desktop",
+      "name": "Jcode Desktop GitHub Pull Requests",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-desktop-github-repo.desktop",
+      "name": "Jcode Desktop GitHub Repo",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-discovery.desktop",
+      "name": "jcode discovery",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-github-context.desktop",
+      "name": "Jcode GitHub Context",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-github-issues.desktop",
+      "name": "Jcode GitHub Issues",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-github-pull-requests.desktop",
+      "name": "Jcode GitHub Pull Requests",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-github-repo.desktop",
+      "name": "jcode github repo",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-here.desktop",
+      "name": "Jcode Here",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-hosted.desktop",
+      "name": "jcode Hosted Dashboard",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-models.desktop",
+      "name": "Jcode Models",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-permissions.desktop",
+      "name": "Jcode Permissions Review",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-queries-dashboard.desktop",
+      "name": "Jcode Queries Dashboard",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-restore.desktop",
+      "name": "Jcode Restore",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-save-for-reboot.desktop",
+      "name": "Jcode Save For Reboot",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-sponsor-dashboard.desktop",
+      "name": "Jcode Sponsor Dashboard",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-stars.desktop",
+      "name": "Jcode Stars",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-stars-notify.desktop",
+      "name": "jcode stars notify",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-telemetry.desktop",
+      "name": "jcode telemetry",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-telemetry-new.desktop",
+      "name": "jcode telemetry new",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-website.desktop",
+      "name": "jcode website",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode-website-screenshot.desktop",
+      "name": "Jcode Website Screenshot",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "jcode.sh.desktop",
+      "name": "jcode.sh",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "meet-next.desktop",
+      "name": "Join Next Meeting",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "justrust.desktop",
+      "name": "justrust",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "justrust-github-repo.desktop",
+      "name": "justrust github repo",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "justrust-hosted.desktop",
+      "name": "justrust Hosted Dashboard",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "justrust-remote.desktop",
+      "name": "justrust Remote Compile Machine",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "kill-discord.desktop",
+      "name": "Kill Discord",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "lichess-3-plus-2.desktop",
+      "name": "Lichess 3+2",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "lichess-desktop.desktop",
+      "name": "Lichess Desktop",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "linkedin-jeremy-huang.desktop",
+      "name": "LinkedIn - Jeremy Huang",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "ffp-media.desktop",
+      "name": "Media Picker",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "monkeytype.desktop",
+      "name": "Monkeytype",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "x-latest-post.desktop",
+      "name": "My Latest X Post",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "nvim.desktop",
+      "name": "Neovim",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "network-login.desktop",
+      "name": "Network Login",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "Generic captive-portal recovery already maintained by jstack-network."
+    },
+    {
+      "id": "notepad-nvim-bare.desktop",
+      "name": "Notepad",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "openai-platform.desktop",
+      "name": "OpenAI Platform",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "openrouter.desktop",
+      "name": "OpenRouter",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "niri-organize-workspaces.desktop",
+      "name": "Organize Workspaces",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "copy-personal-email.desktop",
+      "name": "Personal Email Copy",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "pitch-deck.desktop",
+      "name": "Pitch Deck",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "play-song.desktop",
+      "name": "Play Song",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "pokemon-showdown.desktop",
+      "name": "Pokemon Showdown",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "org.prismlauncher.PrismLauncher.desktop",
+      "name": "Prism Launcher",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "qvidcap.desktop",
+      "name": "Qt V4L2 video capture utility",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "reddit.desktop",
+      "name": "Reddit",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "rename-last-recording.desktop",
+      "name": "Rename Last Recording",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "rho.desktop",
+      "name": "Rho",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "rust-ops-log.desktop",
+      "name": "Rust Ops Log",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "screenshot-area.desktop",
+      "name": "Screenshot (Area)",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "Basic area capture using the compositor."
+    },
+    {
+      "id": "screenshot-fullscreen.desktop",
+      "name": "Screenshot (Fullscreen)",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "Basic fullscreen capture using the compositor."
+    },
+    {
+      "id": "screenshot-window.desktop",
+      "name": "Screenshot (Window)",
+      "kind": "desktop",
+      "audience": "shared",
+      "reason": "Basic window capture using the compositor."
+    },
+    {
+      "id": "bookface-send-safe.desktop",
+      "name": "Send a SAFE",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "skip-song.desktop",
+      "name": "Skip Song",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "slack.desktop",
+      "name": "Slack",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "jcode-soft-reboot.desktop",
+      "name": "Soft Reboot (Keep Jcode)",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "stop-song.desktop",
+      "name": "Stop Song",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "stripe-jcode.desktop",
+      "name": "Stripe (jcode)",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "thunar-settings.desktop",
+      "name": "Thunar Preferences",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "show-time.desktop",
+      "name": "Time and Date",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "todoist.desktop",
+      "name": "Todoist",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "toggle-touchpad.desktop",
+      "name": "Toggle Touchpad",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "toggle-touchscreen.desktop",
+      "name": "Toggle Touchscreen",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Reference-machine hardware or device workflow, not a default for everyone."
+    },
+    {
+      "id": "toggle-waybar.desktop",
+      "name": "Toggle Waybar",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "vesktop.desktop",
+      "name": "Vesktop",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "vim.desktop",
+      "name": "Vim",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "work-on-pitch-deck.desktop",
+      "name": "Work on Pitch Deck",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "workflow-1min.desktop",
+      "name": "Workflow 1 Min",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Project-specific development, operations, or maintainer workflow. Keep local."
+    },
+    {
+      "id": "x-compose.desktop",
+      "name": "X Compose",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "x.desktop",
+      "name": "x.com",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "yc-slack.desktop",
+      "name": "YC Slack",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Account, organization, course, or personal project shortcut. Keep local."
+    },
+    {
+      "id": "youtube.desktop",
+      "name": "YouTube",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    },
+    {
+      "id": "org.pwmt.zathura.desktop",
+      "name": "Zathura",
+      "kind": "desktop",
+      "audience": "personal",
+      "reason": "Optional application, service, or workflow preference. Useful to some people does not make it a minimal default."
+    }
+  ]
+}

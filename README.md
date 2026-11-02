@@ -12,7 +12,8 @@ preinstalled agent harnesses.
   - `jstack-agent/` - jcode preinstalled from a pinned release
   - `jstack-terminals/` - kitty (remote-control socket) + foot defaults
   - `jstack-niri/` - niri desktop: config, keymap, helper scripts
-  - `jstack-waybar/`, `jstack-network/`, `tofi-jstack/`
+  - `jstack-waybar/`, `jstack-network/`, `jofi-jstack/`
+  - `tofi-jstack/` - compatibility backend for utility prompts, not the app launcher
 - `install/` - `jstack-install.sh`: transactional installation from a persistent
   Ubuntu recovery host to a separate disk. See `docs/INSTALL_FROM_UBUNTU.md`
   - `jstack-scheduler/` - scx_lavd CPU scheduler (sched_ext), enabled by default
@@ -23,6 +24,8 @@ preinstalled agent harnesses.
   See [live image build instructions](iso/README.md).
 - `docs/TRIAGE.md` - the keep/drop decision log for everything migrated
   from the reference machine
+- `docs/LAUNCHER_ENTRIES.md` - every reference launcher entry marked shared or
+  personal. Only seven core entries are shared, everything else stays personal.
 
 ## Booting from USB
 
@@ -64,7 +67,9 @@ What you end up with (see `packages/jstack-base/files/POLICY.md`):
 
 - btrfs root, `@ @home @log @pkg`, zstd:3, **no snapper / snap-pac / timeshift**
   (blocked by a pacman hook)
-- niri + waybar + tofi + kitty (`allow_remote_control`, `/tmp/kitty.sock`) + foot
+- niri + waybar + jofi + kitty (`allow_remote_control`, `/tmp/kitty.sock`) + foot
+- Alt+Space uses Jofi. Tofi remains only for Wi-Fi, window, and power-menu
+  prompts until Jofi supports their stdin selection interfaces.
 - fish login shell, tty1 autologin, niri autostarts
 - keyd, NetworkManager + iwd, TLP, earlyoom, bluetooth
 - `jcode` preinstalled from a pinned release (`jstack-agent`)
@@ -88,6 +93,10 @@ changing anything under `install/` or `packages/`.
    (distro / personal / hardware / cruft).
 4. No hardcoded `/home/<user>` paths, hostnames, serials, or credentials in
    anything distro-bucketed.
+5. Reference launcher shortcuts are personal unless explicitly reviewed into
+   the minimal shared list. Check coverage with
+   `python3 tools/launcher-entry-policy.py --check-current`. This policy does
+   not remove local shortcuts or hide upstream package application entries.
 
 ## Building a package
 

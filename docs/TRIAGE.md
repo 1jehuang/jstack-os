@@ -7,6 +7,26 @@ Every item from the reference machine gets exactly one bucket:
 Rule of thumb: unsure → personal. Promoting later is easy, de-shipping is a
 breaking change.
 
+## Launcher entry audience and Jofi (2026-11-01)
+
+This section supersedes older Tofi app-launcher decisions below. Those dated
+sections remain as history, not instructions to restore Tofi's drun role.
+
+| Item | Bucket | Notes |
+|---|---|---|
+| Jofi app launcher and workspace-preserving Alt+Space wrapper | distro | Packaged from pinned public source as `jofi-jstack`. No personal apps, history, or configuration are imported. |
+| Tofi stdin, password, Wi-Fi, window and power prompts | distro compatibility | Keep only the utility interfaces that Jofi does not yet implement. Jofi is not a drop-in stdin selector. |
+| Files, Firefox, Jcode, Network Login, Screenshot (Area/Fullscreen/Window) | distro candidates | Exactly seven shared reference-entry roles. Implementations must be portable, not copied personal paths. This audit does not claim all roles have new packaged desktop files. |
+| Remaining 125 visible reference launcher entries | personal | Includes optional apps, services, account shortcuts, hardware controls and maintainer tooling, even when others might find them useful. No local entries are removed. |
+
+Every one of the 132 current visible entries has an explicit audience and
+rationale in [launcher-entries.json](launcher-entries.json), with a readable
+table in [LAUNCHER_ENTRIES.md](LAUNCHER_ENTRIES.md). Only names and desktop IDs
+are recorded, not personal commands or URLs. New entries remain personal until
+reviewed. The shared budget is seven, with fixture tests and a read-only
+`jofi list` coverage check. This is reference-shortcut promotion policy, not a
+retroactive uninstall of distro dependencies or an upstream-menu filter.
+
 ## Agent launcher (2026-09-18)
 
 | Item | Bucket | Notes |
