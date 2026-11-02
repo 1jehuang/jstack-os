@@ -30,6 +30,22 @@ class LauncherPackagingTests(unittest.TestCase):
         self.assertIn("'glib2'", text)  # gio launches desktop entries
         self.assertIn("'fontconfig'", text)
 
+    def test_full_vm_checks_installed_jofi_and_default_binding(self):
+        text = (ROOT / 'install/vm/test-ubuntu.sh').read_text()
+        for marker in ('jofi_version', 'jofi_wrapper', 'jofi_default', 'jofi_catalog'):
+            self.assertIn(f'echo "E2E-BOOT: {marker}=', text)
+            self.assertIn(f'chk "E2E-BOOT: {marker}=', text)
+        self.assertIn('sudo -u jeremy /usr/bin/jofi --version', text)
+        self.assertIn('sudo -u jeremy /usr/bin/jofi list', text)
+        self.assertIn('test -x /usr/bin/jofi-workspace', text)
+        self.assertIn('JSTACK_CONTROLLER_TOOLCHAIN:-1.98.1', text)
+        self.assertIn('justrust build --release --target x86_64-unknown-linux-musl', text)
+        check_script = text.split("cat > seed/check.sh <<'C'\n", 1)[1].split('\nC\n', 1)[0]
+        subprocess.run(['bash', '-n'], input=check_script, text=True, check=True)
+        binding = 'spawn "/usr/bin/jofi-workspace"'
+        self.assertIn(f"grep -Fc '{binding}'", check_script)
+        self.assertEqual((ROOT / 'packages/jstack-niri/files/config.kdl').read_text().count(binding), 1)
+
     def test_package_installs_binary_wrapper_and_license(self):
         scratch = Path(os.environ.get('JCODE_SCRATCH_DIR', Path.home() / '.cache'))
         scratch.mkdir(parents=True, exist_ok=True)

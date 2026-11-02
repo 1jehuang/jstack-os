@@ -32,7 +32,7 @@ mkdir -p "$work_parent"
 free_kib=$(df -Pk "$work_parent" | awk 'NR == 2 {print $4}')
 need_kib=$((MIN_FREE_GIB * 1024 * 1024))
 [ "$free_kib" -ge "$need_kib" ] || die "insufficient free space at $work_parent: need ${MIN_FREE_GIB} GiB, have $((free_kib / 1024 / 1024)) GiB"
-for tool in cargo curl qemu-img qemu-system-x86_64 tar xorriso timeout; do
+for tool in justrust curl qemu-img qemu-system-x86_64 tar xorriso timeout; do
   command -v "$tool" >/dev/null || die "required tool not found: $tool"
 done
 mkdir "$WORK"; cd "$WORK"
@@ -43,7 +43,10 @@ qemu-img create -q -f qcow2 -b noble.img -F qcow2 ubuntu.qcow2 50G
 qemu-img create -q -f qcow2 target.qcow2 24G
 
 log "building static transactional controller"
-(cd "$REPO/installer/controller" && cargo build --release --target x86_64-unknown-linux-musl --bin jstack-ubuntu-installer)
+# The bundled JR compiler does not currently include musl std libraries. Keep
+# this static compatibility build on an exact supported rustup toolchain.
+(cd "$REPO/installer/controller" && JUSTRUST_TOOLCHAIN="${JSTACK_CONTROLLER_TOOLCHAIN:-1.98.1}" \
+  justrust build --release --target x86_64-unknown-linux-musl --bin jstack-ubuntu-installer)
 cp "$REPO/installer/controller/target/x86_64-unknown-linux-musl/release/jstack-ubuntu-installer" seed-controller
 
 # 2. Seed ISO: cloud-init + repo tarball
@@ -105,6 +108,10 @@ echo "E2E-BOOT: default=$(systemctl get-default)"
 echo "E2E-BOOT: autologin=$(grep -c autologin /etc/systemd/system/getty@tty1.service.d/autologin.conf)"
 echo "E2E-BOOT: pkgs=$(pacman -Q jstack-base jstack-agent jstack-terminals jstack-niri jstack-network jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps jofi-jstack tofi-jstack 2>&1 | tr '\n' ';')"
 echo "E2E-BOOT: desktop=niri:$(command -v niri),kitty:$(command -v kitty),foot:$(command -v foot),waybar:$(command -v waybar),jofi:$(command -v jofi),tofi:$(command -v tofi),dunst:$(command -v dunst)"
+echo "E2E-BOOT: jofi_version=$(sudo -u jeremy /usr/bin/jofi --version)"
+echo "E2E-BOOT: jofi_wrapper=$(test -x /usr/bin/jofi-workspace && echo yes)"
+echo "E2E-BOOT: jofi_default=$(grep -Fc 'spawn "/usr/bin/jofi-workspace"' /home/jeremy/.config/niri/config.kdl)"
+echo "E2E-BOOT: jofi_catalog=$(sudo -u jeremy /usr/bin/jofi list | wc -l)"
 echo "E2E-BOOT: tlp_policy=$(grep -v '^#' /etc/tlp.d/10-jstack.conf | grep '=' | tr '\n' ' ')"
 echo "E2E-BOOT: network=$(grep -c '^wifi.backend=iwd$' /etc/NetworkManager/conf.d/jstack-wifi.conf) keyd=$(test -f /etc/keyd/default.conf && echo yes)"
 echo "E2E-BOOT: boot_timeout=$(awk '$1 == "timeout" {print $2}' /boot/loader/loader.conf) fallback=$(test -f /boot/loader/entries/jstack-fallback.conf && echo yes)"
@@ -183,6 +190,10 @@ chk "E2E-BOOT: scheduler=enabled" "sched_ext service enabled"
 chk "E2E-BOOT: default=graphical.target" "graphical default target"
 chk "E2E-BOOT: pkgs=.*jstack-scheduler.*jstack-firefox.*jstack-desktop-apps" "all jstack policy packages installed"
 chk "E2E-BOOT: desktop=niri:/usr/bin/niri,kitty:/usr/bin/kitty,foot:/usr/bin/foot,waybar:/usr/bin/waybar,jofi:/usr/bin/jofi,tofi:/usr/bin/tofi,dunst:/usr/bin/dunst" "desktop commands installed"
+chk "E2E-BOOT: jofi_version=jofi " "installed Jofi binary runs"
+chk "E2E-BOOT: jofi_wrapper=yes" "workspace-preserving Jofi wrapper installed"
+chk "E2E-BOOT: jofi_default=1" "installed user Alt+Space defaults to Jofi"
+chk "E2E-BOOT: jofi_catalog=[1-9][0-9]*" "installed Jofi discovers desktop entries"
 chk "E2E-BOOT: tlp_policy=.*CPU_SCALING_GOVERNOR_ON_AC=powersave.*CPU_SCALING_GOVERNOR_ON_BAT=powersave.*CPU_ENERGY_PERF_POLICY_ON_AC=performance.*CPU_ENERGY_PERF_POLICY_ON_BAT=balance_power" "TLP power policy"
 chk "E2E-BOOT: network=1 keyd=yes" "NetworkManager iwd backend and keyd policy"
 chk "E2E-BOOT: boot_timeout=1 fallback=yes" "systemd-boot timeout and fallback entry"
