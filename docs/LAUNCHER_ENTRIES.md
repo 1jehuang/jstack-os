@@ -196,3 +196,28 @@ backend for stdin/password/utility menus that Jofi does not currently implement
 (Wi-Fi selection, window picker, power menu). Removing those prompts without a
 replacement would break existing desktop features. Personal app launchers and
 user configuration are not imported into the distro Jofi package.
+
+## Validation recorded for this change
+
+- Nine audience-policy tests passed, including exact shared-list membership,
+  readable-table coverage, safe defaults, and unclassified-entry detection.
+- The read-only check against the actual running machine's `jofi list` covered
+  all 132 visible entries, with no missing or unknown entries.
+- The final combined tree passed 191 Python tests: policy 9, Jofi packaging 3,
+  ISO/profile generation 77, installer 33, and network/menu regressions 69.
+- The shipped Niri configuration passed `niri validate`, and changed package
+  and shell entrypoints passed `bash -n`.
+- The published Jofi source pin `9f85fa0d6c2b4d96dd4c138dbcbd75e023c5cf38`
+  passed `justrust check`, `justrust test` (52 passed, one ignored), and release
+  build. Its real release binary, wrapper, and license were staged through the
+  actual PKGBUILD `package()` function, with a successful binary `paths` smoke
+  check and resolved runtime libraries. Hosted maintenance caused automatic
+  local build fallback. These source checks are separate from fixture staging.
+- Full fresh-image installation, ISO boot, and graphical selection in a newly
+  installed desktop were not rerun. Profile/package tests and source builds
+  are not claimed as full boot acceptance.
+
+The package deliberately uses a fetchable public revision. The reference
+machine's later `e88385f` matcher changes were not yet published at audit time
+and are not included in this distro pin. See the package README for the update
+procedure. Existing local app launchers and the running desktop are unchanged.
