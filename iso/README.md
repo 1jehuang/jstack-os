@@ -28,8 +28,9 @@ The complete GUI package set can need considerably more storage and RAM than a
 minimal Arch ISO. Do not remove the USB while booted from it.
 
 Outputs are `WORK/out/jstack-live-*.iso`, `WORK/iso-sha256.txt`, and
-`WORK/package-sha256.txt`. All ten repository package directories are built from
-scratch copies, including tofi and the pinned Jcode release. `vesktop-bin` is built
+`WORK/package-sha256.txt`. All repository package directories are built from
+scratch copies, including pinned Jofi, Tofi prompt compatibility, and the pinned
+Jcode release. `vesktop-bin` is built
 from its AUR PKGBUILD to satisfy `jstack-desktop-apps`. Review that upstream build
 recipe as you would any AUR package. Alternatively supply
 `--vesktop-package /absolute/path/to/vesktop-bin-*.pkg.tar.zst` from a trusted build.

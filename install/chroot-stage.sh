@@ -44,8 +44,8 @@ build_and_install() {   # build_and_install <pkgdir>...
   done
 }
 
-# tofi-jstack is built from source (github.com/1jehuang/tofi); jstack-niri and
-# jstack-network depend on it. --skip-source-pkgs assumes you provide tofi yourself.
+# Jofi is the default app launcher. Tofi remains for stdin utility prompts.
+# --skip-source-pkgs assumes both source packages are already available.
 if [ "${J_SKIP_SOURCE:-0}" != 1 ]; then
   for p in ${J_SOURCE_PKGS:-}; do build_and_install "$REPO/packages/$p"; done
   for p in ${J_AUR_PKGS:-}; do

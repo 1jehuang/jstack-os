@@ -1,4 +1,6 @@
 # Maintainer: Jeremy <jstack-os>
+# Explicit stdin prompt compatibility for Wi-Fi, window selection and power menus.
+# Jofi is the default application launcher.
 # jstack's tofi fork: typo-tolerant matching, emacs-style keybindings.
 # Upstream tofi is unmaintained; this tracks github.com/1jehuang/tofi.
 pkgname=tofi-jstack

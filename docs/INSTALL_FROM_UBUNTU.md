@@ -15,7 +15,7 @@ Everything the reference machine has, minus the personal bits (see
 | Filesystem | btrfs, subvolumes `@ @home @log @pkg`, `compress=zstd:3,ssd,discard=async` |
 | Snapshots | **none**. snapper/snap-pac/timeshift/grub-btrfs are `conflicts` of `jstack-base` and blocked by a pacman hook |
 | Boot | systemd-boot, 1s timeout, `linux` + fallback entries |
-| Desktop | niri + waybar + tofi-jstack + dunst, black wallpaper, Caps->Esc xkb |
+| Desktop | niri + waybar + jofi-jstack + dunst (tofi-jstack retained for utility prompts), black wallpaper, Caps->Esc xkb |
 | Terminals | kitty (`allow_remote_control yes`, `listen_on unix:/tmp/kitty.sock`), foot |
 | Shell | fish, tty1 autologin -> `niri-session` |
 | Input | keyd (Right Alt -> Enter) |

@@ -1,0 +1,34 @@
+# Maintainer: Jeremy <jstack-os>
+pkgname=jofi-jstack
+pkgver=0.1.0.9f85fa0
+pkgrel=1
+pkgdesc="Native Wayland application launcher (pinned Jofi source)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/1jehuang/jofi"
+license=('MIT')
+depends=('glibc' 'gcc-libs' 'wayland' 'libxkbcommon' 'fontconfig' 'glib2' 'bash' 'jq' 'niri')
+optdepends=('rust: compile trusted local Rust launchers' 'wl-clipboard: clipboard shortcuts' 'libnotify: launch failure notifications')
+makedepends=('git' 'rust' 'pkgconf')
+provides=('jofi')
+conflicts=('jofi')
+options=('!lto')
+_commit=9f85fa0d6c2b4d96dd4c138dbcbd75e023c5cf38
+source=("git+https://github.com/1jehuang/jofi.git#commit=$_commit")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/jofi"
+  cargo build --release --locked
+}
+
+check() {
+  cd "$srcdir/jofi"
+  cargo test --locked
+}
+
+package() {
+  cd "$srcdir/jofi"
+  install -Dm755 target/release/jofi "$pkgdir/usr/bin/jofi"
+  install -Dm755 contrib/jofi-workspace "$pkgdir/usr/bin/jofi-workspace"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -9,7 +9,7 @@ import shutil
 import shlex
 
 PACKAGES = (
-    'tofi-jstack', 'jstack-base', 'jstack-agent', 'jstack-terminals',
+    'jofi-jstack', 'tofi-jstack', 'jstack-base', 'jstack-agent', 'jstack-terminals',
     'jstack-network', 'jstack-niri', 'jstack-waybar', 'jstack-scheduler',
     'jstack-firefox', 'jstack-desktop-apps', 'vesktop-bin',
     'python', 'rsync', 'btrfs-progs', 'dosfstools', 'gptfdisk',

@@ -226,7 +226,7 @@ binds {
     // Terminals and launcher
     Alt+Return hotkey-overlay-title="Open Terminal (kitty)" { spawn "kitty" "--single-instance"; }
     Alt+Shift+Return hotkey-overlay-title="Open Terminal (foot)" { spawn "foot"; }
-    Alt+Space hotkey-overlay-title="App Launcher" { spawn "tofi-drun-workspace"; }
+    Alt+Space hotkey-overlay-title="App Launcher" { spawn "/usr/bin/jofi-workspace"; }
     Alt+W hotkey-overlay-title="WiFi Picker" { spawn "wifi-pick"; }
     Alt+Shift+A hotkey-overlay-title="Bring Window Here" { spawn "tofi-bring-here"; }
     Alt+Shift+E hotkey-overlay-title="Power Menu" { spawn "tofi-power-menu"; }

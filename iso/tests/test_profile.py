@@ -26,6 +26,9 @@ class ProfileTests(unittest.TestCase):
         p = profile.prepare(self.work, RELENG)
         root = p / 'airootfs'
         self.assertIn('jstack-desktop-apps', (p / 'packages.x86_64').read_text())
+        self.assertIn('jofi-jstack', (p / 'packages.x86_64').read_text().splitlines())
+        # Jofi has no stdin selection mode. Utility prompts still require Tofi.
+        self.assertIn('tofi-jstack', (p / 'packages.x86_64').read_text().splitlines())
         self.assertNotIn('\ncloud-init\n', (p / 'packages.x86_64').read_text())
         packages = (p / 'packages.x86_64').read_text().splitlines()
         self.assertNotIn('broadcom-wl', packages)

@@ -69,7 +69,7 @@ for source in "$ROOT"/packages/*; do
   name=${source##*/}
   mkdir -- "$WORK/builds/$name"
   rsync -a --exclude .git --exclude target --exclude /pkg/ --exclude /src/ \
-    --exclude '*.pkg.tar.*' --exclude '.makepkg.log' --exclude /tofi/ \
+    --exclude '*.pkg.tar.*' --exclude '.makepkg.log' --exclude /tofi/ --exclude /jofi/ \
     "$source/" "$WORK/builds/$name/"
   build_package "$WORK/builds/$name"
 done

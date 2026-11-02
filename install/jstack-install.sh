@@ -8,7 +8,7 @@
 #
 # What you get (mirrors the reference machine, see packages/jstack-base/files/POLICY.md):
 #   btrfs root (@ @home @log @pkg, zstd:3), systemd-boot, NO snapper/snapshots,
-#   niri + waybar + tofi + kitty (remote control socket) + foot, fish login shell
+#   niri + waybar + Jofi + kitty (remote control socket) + foot, fish login shell
 #   with niri autostart on tty1, keyd, NetworkManager+iwd, TLP, jcode preinstalled.
 set -Eeuo pipefail
 
@@ -20,7 +20,7 @@ STATE_DIR="" TARGET_DISK="" ARTIFACT_LOOP="" ARTIFACT_IMAGE="" BUILDING_ARTIFACT
 JSTACK_PKGS=(jstack-base jstack-terminals jstack-agent jstack-network jstack-niri jstack-waybar jstack-scheduler jstack-firefox jstack-desktop-apps)
 BASE_PKGS=(base base-devel linux linux-firmware btrfs-progs efibootmgr networkmanager iwd fish git sudo vim intel-ucode amd-ucode)
 # Order matters: each package is built with makepkg -s, so deps on earlier jstack-* packages must already be installed (jstack-niri needs jstack-network).
-SOURCE_PKGS=(tofi-jstack)   # in-repo PKGBUILDs built in chroot
+SOURCE_PKGS=(tofi-jstack jofi-jstack)   # in-repo PKGBUILDs built in chroot
 AUR_PKGS=(vesktop-bin)      # AUR PKGBUILDs cloned + built in chroot (--skip-source-pkgs skips both)
 
 usage() { sed -n '2,15p' "$0"; exit "${1:-0}"; }
