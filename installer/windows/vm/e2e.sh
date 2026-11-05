@@ -47,6 +47,8 @@ fi
 cp "$HERE/../Install-JStack.ps1" "$HERE/../Uninstall-JStack.ps1" "$LAB/"
 
 rm -f "$LAB/$NAME.serial"
+for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "qemu-system.* -name $NAME " >/dev/null || break; sleep 3; done
+pgrep -f "qemu-system.* -name $NAME " >/dev/null && { echo "$NAME is already running (lab.py down $NAME --hard)"; exit 1; }
 setsid python3 "$HERE/lab.py" up "$NAME" --base "$BASE" --fresh --persist --port $PORT \
   > "$LAB/$NAME.up.log" 2>&1 < /dev/null &
 UP=$!
