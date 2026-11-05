@@ -69,7 +69,13 @@ Upload the contents of `payload/` with `Install-JStack.ps1`, `Install-JStack.cmd
 NVMe disk. `vm/e2e.sh` runs the whole flow in a fresh overlay of it:
 
     installer/windows/vm/lab.py build-base [--bitlocker]
-    installer/windows/vm/e2e.sh /abs/payload [--bitlocker] [--download]
+    installer/windows/vm/e2e.sh /abs/payload [--bitlocker] [--download | --release]
+    installer/windows/vm/negative.sh /abs/payload
+
+`--release` takes the scripts, `Install-JStack.cmd` and the payload from the published
+GitHub release. `negative.sh` covers failure paths: bad arguments, a corrupt payload
+(nothing changes), resuming a cut-off download and re-fetching a damaged part, refusing
+a second install, and cleaning up after an installer killed mid-write.
 
 `--bitlocker` turns on BitLocker with a TPM protector first and checks Windows comes back
 without the recovery key and with protection resumed. `--download` serves the payload over
