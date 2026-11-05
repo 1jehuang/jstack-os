@@ -167,7 +167,11 @@ function Get-Payload([string]$dest) {
         $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
         Say ("    downloading {0} ({1:N0} MB)" -f $rel, ($bytes / 1MB))
         if (Test-Path $curl) {
-            & $curl -fL --retry 5 --retry-delay 3 --connect-timeout 20 --speed-limit 1024 --speed-time 60 -C - -o $out $url
+            # PS 5.1 + ErrorActionPreference=Stop turns redirected native stderr (curl's progress)
+            # into a terminating error, so relax it here and rely on the exit code instead.
+            $ErrorActionPreference = 'Continue'
+            $quiet = if ([Console]::IsErrorRedirected) { '-sS' } else { '-#' }
+            & $curl $quiet -fL --retry 5 --retry-delay 3 --connect-timeout 20 --speed-limit 1024 --speed-time 60 -C - -o $out $url
             if ($LASTEXITCODE -ne 0) { Fail "download failed: $url" }
         } else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $out }
     }
