@@ -120,7 +120,8 @@ log '5. installer killed while writing, then Uninstall-JStack'
 run kill "
 Remove-Item C:\\ProgramData\\JStack\\install.log -ErrorAction SilentlyContinue
 \$p = Start-Process powershell.exe -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \"\$pw = ConvertTo-SecureString jstack-e2e -AsPlainText -Force; & C:\\lab\\Install-JStack.ps1 -PayloadUrl http://10.0.2.2:8799 -Username tester -Password \$pw -SizeGB 24 -Yes -NoReboot\"'
-\$t = 0; while (\$t -lt 900 -and -not (Select-String -Quiet -Path C:\\ProgramData\\JStack\\install.log -Pattern 'Writing Jstack OS' -ErrorAction SilentlyContinue)) { Start-Sleep 2; \$t += 2 }
+\$L = 'C:\\ProgramData\\JStack\\install.log'
+\$t = 0; while (\$t -lt 900 -and -not ((Test-Path \$L) -and (Select-String -Quiet -Path \$L -Pattern 'Writing Jstack OS'))) { Start-Sleep 2; \$t += 2 }
 Start-Sleep 15
 Stop-Process -Id \$p.Id -Force
 Start-Sleep 3
