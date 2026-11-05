@@ -23,7 +23,7 @@ while (($#)); do case $1 in
   --base) BASE=$2; shift 2;;
   --bitlocker) BITLOCKER=1; shift;;
   *) echo "unknown $1"; exit 2;; esac; done
-NAME=e2e-$BASE$( ((BITLOCKER)) && echo -bl)
+NAME=e2e-$BASE$( ((BITLOCKER)) && echo -bl || true)
 # Without BitLocker JStack becomes the default; with it the installer's auto choice is
 # Windows (JStack still starts once via firmware BootNext right after install).
 DEFAULT_OS=$( ((BITLOCKER)) && echo auto || echo jstack)
