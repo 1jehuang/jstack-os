@@ -1,0 +1,30 @@
+# JStack OS boot menu. Loaded by Canonical-signed GRUB via the Microsoft-signed
+# shim from \EFI\jstack\ on the shared Windows EFI partition. Installed by the
+# JStack Windows installer. Kernel and initramfs live in the Btrfs root.
+set timeout=5
+set timeout_style=menu
+set default=0
+if [ -s $prefix/grubenv ]; then load_env -f $prefix/grubenv; fi
+if [ "$next_entry" ]; then set default="$next_entry"; set next_entry=; save_env -f $prefix/grubenv next_entry; fi
+search --no-floppy --fs-uuid --set=jroot @ROOT_UUID@
+search --no-floppy --file --set=esp /EFI/Microsoft/Boot/bootmgfw.efi
+
+menuentry "Jstack OS" --id jstack {
+  set root=$jroot
+  linux /@/boot/vmlinuz root=UUID=@ROOT_UUID@ rootflags=subvol=@ rw rootfstype=btrfs quiet splash zswap.enabled=0
+  initrd /@/boot/initrd.img
+}
+# If BitLocker is on, prefer "Restart into Windows" from JStack (firmware
+# BootNext): chainloading here changes TPM PCR7 and may ask for the key.
+menuentry "Windows" --id windows {
+  set root=$esp
+  chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+}
+menuentry "Jstack OS (safe graphics)" --id jstack-safe {
+  set root=$jroot
+  linux /@/boot/vmlinuz root=UUID=@ROOT_UUID@ rootflags=subvol=@ rw rootfstype=btrfs nomodeset systemd.unit=multi-user.target
+  initrd /@/boot/initrd.img
+}
+menuentry "UEFI firmware settings" --id uefi {
+  fwsetup
+}

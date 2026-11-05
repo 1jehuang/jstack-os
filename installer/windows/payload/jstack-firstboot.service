@@ -1,0 +1,14 @@
+[Unit]
+Description=Jstack first boot setup (account from the Windows installer)
+After=local-fs.target systemd-udev-settle.service
+Before=display-manager.service getty@tty1.service greetd.service systemd-user-sessions.service
+ConditionPathExists=!/var/lib/jstack/firstboot.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jstack-firstboot
+StandardOutput=journal+console
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

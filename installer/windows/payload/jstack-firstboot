@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+r"""First boot of a JStack system installed from Windows.
+
+The Windows installer leaves \EFI\jstack\firstboot.json on the shared EFI
+partition: {"username","fullname","password","hostname","timezone","wifi":[...]}.
+It is the only way to pass answers across the reboot without asking the user
+again. This script applies it and then overwrites and deletes it, so the
+password never stays on the FAT partition.
+"""
+import json, os, subprocess, sys
+from pathlib import Path
+
+def run(*a, input=None, check=True):
+    return subprocess.run(a, input=input, text=True, check=check, capture_output=True)
+
+def log(m):
+    print(f'jstack-firstboot: {m}', flush=True)
+
+# 1. Find and mount the EFI partition that holds our boot files.
+esp = None
+out = run('lsblk', '-rno', 'PATH,PARTTYPE').stdout.split('\n')
+for line in out:
+    parts = line.split()
+    if len(parts) == 2 and parts[1].lower() == 'c12a7328-f81f-11d2-ba4b-00a0c93ec93b':
+        Path('/efi').mkdir(exist_ok=True)
+        if run('mount', parts[0], '/efi', check=False).returncode:
+            continue
+        if Path('/efi/EFI/jstack/shimx64.efi').exists():
+            esp = parts[0]; break
+        run('umount', '/efi', check=False)
+if not esp:
+    log('could not find the EFI partition with \\EFI\\jstack'); sys.exit(1)
+uuid = run('blkid', '-s', 'UUID', '-o', 'value', esp).stdout.strip()
+with open('/etc/fstab', 'a') as f:
+    f.write(f'UUID={uuid} /efi vfat rw,noatime,umask=0077,nofail 0 2\n')
+
+# 2. Use the whole partition Windows gave us (image is smaller than it).
+run('btrfs', 'filesystem', 'resize', 'max', '/', check=False)
+
+# 3. Answers.
+ans_path = Path('/efi/EFI/jstack/firstboot.json')
+ans = json.loads(ans_path.read_text(encoding='utf-8-sig')) if ans_path.exists() else {}
+user = ans.get('username') or 'jstack'
+host = ans.get('hostname') or 'jstack'
+Path('/etc/hostname').write_text(host + '\n')
+Path('/etc/hosts').write_text(f'127.0.0.1 localhost\n::1 localhost\n127.0.1.1 {host}\n')
+tz = ans.get('timezone')
+if tz and Path('/usr/share/zoneinfo', tz).is_file():
+    os.remove('/etc/localtime'); os.symlink(f'/usr/share/zoneinfo/{tz}', '/etc/localtime')
+if run('id', user, check=False).returncode:
+    run('useradd', '-m', '-G', 'wheel,video,input,audio', '-s', '/usr/bin/fish',
+        '-c', ans.get('fullname', user), user)
+if ans.get('password'):
+    run('chpasswd', input=f"{user}:{ans['password']}\n")
+else:
+    run('passwd', '-d', user)
+    log(f'no password given: {user} has an empty password, set one with passwd')
+run('passwd', '-l', 'root', check=False)
+tmpl = Path('/usr/share/jstack/systemd/autologin.conf.in')
+if tmpl.exists():
+    d = Path('/etc/systemd/system/getty@tty1.service.d'); d.mkdir(parents=True, exist_ok=True)
+    (d / 'autologin.conf').write_text(tmpl.read_text().replace('@USER@', user))
+
+# 4. Wi-Fi networks exported from Windows, so the network just works.
+for i, w in enumerate(ans.get('wifi', [])):
+    ssid, psk = w.get('ssid'), w.get('psk')
+    if not ssid:
+        continue
+    sec = f'[wifi-security]\nkey-mgmt=wpa-psk\npsk={psk}\n' if psk else ''
+    p = Path(f'/etc/NetworkManager/system-connections/windows-{i}.nmconnection')
+    p.write_text(f'[connection]\nid={ssid}\ntype=wifi\n\n[wifi]\nmode=infrastructure\nssid={ssid}\n\n'
+                 f'{sec}\n[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n')
+    p.chmod(0o600)
+
+# 5. Scrub the answers file (FAT: overwrite then delete).
+if ans_path.exists():
+    ans_path.write_bytes(b'\0' * max(4096, ans_path.stat().st_size)); os.sync(); ans_path.unlink()
+run('systemd-machine-id-setup', check=False)
+Path('/var/lib/jstack').mkdir(parents=True, exist_ok=True)
+Path('/var/lib/jstack/firstboot.done').write_text(f'{user}\n')
+log(f'ready: user {user}, host {host}')

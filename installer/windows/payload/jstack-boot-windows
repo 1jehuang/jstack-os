@@ -1,0 +1,12 @@
+#!/bin/sh
+# Restart straight into Windows once, via the firmware BootNext variable.
+# Firmware then loads Windows Boot Manager itself (not chainloaded by GRUB), so
+# TPM measurements match a normal Windows boot and BitLocker never asks for
+# its recovery key.
+set -e
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+num=$(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Windows Boot Manager.*/\1/p' | head -n1)
+[ -n "$num" ] || { echo "No 'Windows Boot Manager' firmware entry found." >&2; exit 1; }
+efibootmgr --quiet --bootnext "$num"
+[ "$1" = "--reboot" ] && exec systemctl reboot
+echo "Windows will start on the next restart."
