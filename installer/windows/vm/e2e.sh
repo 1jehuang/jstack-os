@@ -16,7 +16,7 @@ PAYLOAD=${1:?payload dir}; shift
 BASE=base
 while (($#)); do case $1 in --base) BASE=$2; shift 2;; *) echo "unknown $1"; exit 2;; esac; done
 NAME=e2e-$BASE
-PORT=8790
+PORT=8765  # guest agent always polls 10.0.2.2:8765
 lab() { python3 "$HERE/lab.py" "$@"; }
 log() { printf '[e2e %(%H:%M:%S)T] %s\n' -1 "$*"; }
 fail() { log "FAIL: $*"; lab screenshot "$NAME" "$LAB/$NAME-fail.ppm" >/dev/null 2>&1 || true; exit 1; }
@@ -58,7 +58,7 @@ Get-ChildItem -Recurse C:\\lab\\payload | Select-Object FullName,Length | Format
 " --timeout 1200 || fail 'copy failed'
 
 log 'running Install-JStack.ps1 -DryRun'
-lab ps "$NAME" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\lab\\Install-JStack.ps1 -PayloadDir C:\\lab\\payload -Username tester -Password (ConvertTo-SecureString 'jstack-e2e' -AsPlainText -Force) -SizeGB 24 -DryRun 2>&1" --timeout 300 \
+lab ps "$NAME" "\$pw = ConvertTo-SecureString 'jstack-e2e' -AsPlainText -Force; & C:\\lab\\Install-JStack.ps1 -PayloadDir C:\\lab\\payload -Username tester -Password \$pw -SizeGB 24 -DryRun *>&1 | Out-String -Width 300" --timeout 600 \
   | tee "$LAB/$NAME-dryrun.log"
 grep -q 'Dry run: all checks passed' "$LAB/$NAME-dryrun.log" || fail 'dry run failed'
 

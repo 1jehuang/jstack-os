@@ -188,7 +188,7 @@ function Open-RootImageStream([string]$dir, $manifest) {
     # split into parts for GitHub's 2 GB release asset limit, concatenated here in order.
     $names = @($manifest.files.PSObject.Properties.Name | Where-Object { $_ -like 'jstack-root.img.gz*' } | Sort-Object)
     if (-not $names) { Fail 'payload has no jstack-root.img.gz' }
-    $streams = foreach ($n in $names) { [System.IO.File]::OpenRead((Join-Path $dir $n)) }
+    $streams = @(foreach ($n in $names) { [System.IO.File]::OpenRead((Join-Path $dir $n)) })
     if ($streams.Count -eq 1) { $raw = $streams[0] } else {
         Add-Type -TypeDefinition @'
 using System.IO;
