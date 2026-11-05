@@ -37,10 +37,10 @@ if ((DOWNLOAD)); then
   mkdir -p "$LAB/$NAME-www"; rm -f "$LAB/$NAME-www"/*
   find "$PAYLOAD" -path "$PAYLOAD/work" -prune -o -type f -print0 | xargs -0 -I{} ln -f {} "$LAB/$NAME-www/"
   ls -la "$LAB/$NAME-www"
-  setsid python3 -m http.server 8766 -d "$LAB/$NAME-www" > "$LAB/$NAME-www.log" 2>&1 < /dev/null &
+  setsid python3 -m http.server 8799 -d "$LAB/$NAME-www" > "$LAB/$NAME-www.log" 2>&1 < /dev/null &
   WWW=$!
   tar -cf "$TAR" -T /dev/null
-  SRC='-PayloadUrl http://10.0.2.2:8766'
+  SRC='-PayloadUrl http://10.0.2.2:8799'
 else
   tar -C "$PAYLOAD" -cf "$TAR" --exclude=work .
   SRC='-PayloadDir C:\\lab\\payload'
