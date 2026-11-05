@@ -61,10 +61,11 @@ def answer_image(dest: Path, bitlocker: bool):
     (stage / 'autounattend.xml').write_text(xml)
     for name in ('lab-setup.ps1', 'lab-agent.ps1'):
         shutil.copyfile(HERE / name, stage / name)
-    sh('truncate', '-s', '16M', dest)
-    sh('mkfs.fat', '-n', 'LABANS', dest, stdout=subprocess.DEVNULL)
-    for f in stage.iterdir():
-        sh('mcopy', '-i', dest, f, '::/' + f.name)
+    # A second CD-ROM: Windows Setup scans removable media and CDs for
+    # autounattend.xml, but ignores a partitionless USB "superfloppy".
+    if dest.exists():
+        dest.unlink()
+    sh('xorriso', '-as', 'mkisofs', '-quiet', '-J', '-r', '-V', 'LABANS', '-o', dest, stage)
 
 
 def tpm_start(state: Path) -> Path:
@@ -99,7 +100,9 @@ def qemu_args(name: str, disk: Path, vars_fd: Path, tpm_sock: Path, extra=(), po
             '-usb', '-device', 'usb-tablet',
             '-vga', 'std', '-display', 'none',
             '-monitor', f'unix:{mon},server,nowait',
-            '-serial', f'file:{LAB / (name + ".serial")}',
+            '-chardev', f'socket,id=ser0,path={LAB / (name + ".serial.sock")},server=on,wait=off,'
+                        f'logfile={LAB / (name + ".serial")},logappend=on',
+            '-serial', 'chardev:ser0',
             *extra]
     return args
 
@@ -138,8 +141,8 @@ def build_base(args):
     tpm = tpm_start(LAB / f'{name}.tpm')
     extra = ['-drive', f'file={ISO},media=cdrom,if=none,id=cd,readonly=on',
              '-device', 'ide-cd,drive=cd,bus=ide.0,bootindex=0',
-             '-drive', f'file={LAB / (name + "-answer.img")},format=raw,if=none,id=ans',
-             '-device', 'usb-storage,drive=ans']
+             '-drive', f'file={LAB / (name + "-answer.img")},media=cdrom,if=none,id=ans,readonly=on',
+             '-device', 'ide-cd,drive=ans,bus=ide.1']
     p = subprocess.Popen(qemu_args(name, disk, LAB / f'{name}.vars.fd', tpm, extra))
     # "Press any key to boot from CD or DVD": keep tapping for 40 s.
     time.sleep(3)

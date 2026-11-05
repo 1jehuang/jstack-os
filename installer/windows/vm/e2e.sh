@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# End-to-end test of the Windows installer in a disposable Secure Boot VM.
+#
+#   installer/windows/vm/e2e.sh /abs/payload-dir [--base base|base-bl]
+#
+# 1. Boots a fresh overlay of the Windows base image (Secure Boot on, MS keys only, TPM).
+# 2. Copies the payload and installer in over the lab agent, runs Install-JStack.ps1 -Yes.
+# 3. Windows restarts; firmware BootNext starts shim -> GRUB -> signed kernel -> JStack.
+# 4. Checks on the serial console: Secure Boot enabled, firstboot done, user created.
+# 5. Requests BootNext back to Windows from JStack, and checks the agent returns
+#    (Windows still boots, and with BitLocker: no recovery prompt).
+set -euo pipefail
+HERE=$(cd -- "$(dirname -- "$0")" && pwd)
+LAB=${JSTACK_WIN_LAB:-${JCODE_SCRATCH_DIR:-$HOME/.cache}/jstack-windows-vm}
+PAYLOAD=${1:?payload dir}; shift
+BASE=base
+while (($#)); do case $1 in --base) BASE=$2; shift 2;; *) echo "unknown $1"; exit 2;; esac; done
+NAME=e2e-$BASE
+PORT=8790
+lab() { python3 "$HERE/lab.py" "$@"; }
+log() { printf '[e2e %(%H:%M:%S)T] %s\n' -1 "$*"; }
+fail() { log "FAIL: $*"; lab screenshot "$NAME" "$LAB/$NAME-fail.ppm" >/dev/null 2>&1 || true; exit 1; }
+
+# Payload is served to the guest as one tar (agent fetches files by name).
+TAR=$LAB/$NAME-payload.tar
+tar -C "$PAYLOAD" -cf "$TAR" --exclude=work .
+cp "$HERE/../Install-JStack.ps1" "$HERE/../Uninstall-JStack.ps1" "$LAB/"
+
+rm -f "$LAB/$NAME.serial"
+setsid python3 "$HERE/lab.py" up "$NAME" --base "$BASE" --fresh --persist --port $PORT \
+  > "$LAB/$NAME.up.log" 2>&1 < /dev/null &
+UP=$!
+trap 'touch "$LAB/$NAME.stop"; lab hmp "$NAME" quit >/dev/null 2>&1 || true; kill $UP 2>/dev/null || true' EXIT
+
+wait_agent() { # seconds
+  local end=$((SECONDS + $1))
+  while ((SECONDS < end)); do
+    if out=$(lab ps "$NAME" 'Write-Output alive' --timeout 20 2>/dev/null) && [[ $out == *alive* ]]; then return 0; fi
+    sleep 5
+  done
+  return 1
+}
+log "booting Windows ($BASE)"
+wait_agent 900 || fail 'Windows agent did not come up'
+lab ps "$NAME" 'Confirm-SecureBootUEFI; (Get-BitLockerVolume C:).ProtectionStatus' || true
+
+URL_T=$(lab put "$NAME" "$TAR"); URL_I=$(lab put "$NAME" "$LAB/Install-JStack.ps1"); URL_U=$(lab put "$NAME" "$LAB/Uninstall-JStack.ps1")
+log 'copying payload into the guest'
+lab ps "$NAME" "
+\$ErrorActionPreference='Stop'
+New-Item -ItemType Directory -Force C:\\lab\\payload | Out-Null
+\$wc = New-Object Net.WebClient
+\$wc.DownloadFile('$URL_T', 'C:\\lab\\payload.tar')
+\$wc.DownloadFile('$URL_I', 'C:\\lab\\Install-JStack.ps1')
+\$wc.DownloadFile('$URL_U', 'C:\\lab\\Uninstall-JStack.ps1')
+tar.exe -xf C:\\lab\\payload.tar -C C:\\lab\\payload
+Get-ChildItem -Recurse C:\\lab\\payload | Select-Object FullName,Length | Format-Table -Auto
+" --timeout 1200 || fail 'copy failed'
+
+log 'running Install-JStack.ps1 -DryRun'
+lab ps "$NAME" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\lab\\Install-JStack.ps1 -PayloadDir C:\\lab\\payload -Username tester -Password (ConvertTo-SecureString 'jstack-e2e' -AsPlainText -Force) -SizeGB 24 -DryRun 2>&1" --timeout 300 \
+  | tee "$LAB/$NAME-dryrun.log"
+grep -q 'Dry run: all checks passed' "$LAB/$NAME-dryrun.log" || fail 'dry run failed'
+
+log 'running Install-JStack.ps1 for real'
+lab ps "$NAME" "
+\$pw = ConvertTo-SecureString 'jstack-e2e' -AsPlainText -Force
+& C:\\lab\\Install-JStack.ps1 -PayloadDir C:\\lab\\payload -Username tester -Password \$pw -Hostname e2ehost -SizeGB 24 -DefaultOS jstack -NoReboot -Yes *>&1 | Out-String -Width 300
+bcdedit /enum firmware | Out-String
+Get-Partition | Format-Table -Auto | Out-String
+" --timeout 2400 | tee "$LAB/$NAME-install.log"
+grep -q 'Jstack OS is installed' "$LAB/$NAME-install.log" || fail 'installer did not finish'
+
+log 'restarting into JStack'
+lab ps "$NAME" 'shutdown.exe /r /t 2' --timeout 30 || true
+sleep 20
+# Log in on the serial getty as the account the installer created and run checks.
+python3 "$HERE/serial.py" "$LAB/$NAME.serial.sock" tester jstack-e2e 600 \
+  'echo SB=$(cat /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c | od -An -tu1 | awk "{print \$NF}")' \
+  'echo FB=$(cat /var/lib/jstack/firstboot.done) HOST=$(cat /etc/hostname) KERNEL=$(uname -r)' \
+  'echo jstack-e2e | sudo -S -p "" dmesg | grep -i "secure boot" | head -3' \
+  'echo ANSWERS=$(echo jstack-e2e | sudo -S -p "" ls /efi/EFI/jstack/)' \
+  'findmnt -no SOURCE,FSTYPE / ; df -h / | tail -1' \
+  'systemctl is-system-running; systemctl --failed --no-legend | head' \
+  'echo jstack-e2e | sudo -S -p "" efibootmgr' \
+  'echo jstack-e2e | sudo -S -p "" jstack-boot-windows --reboot' \
+  | tee "$LAB/$NAME-jstack.log" || fail 'serial login/checks failed'
+grep -q 'SB=1' "$LAB/$NAME-jstack.log" || fail 'Secure Boot not enabled in JStack'
+grep -q 'FB=tester HOST=e2ehost' "$LAB/$NAME-jstack.log" || fail 'first boot did not apply answers'
+grep -q 'firstboot.json' "$LAB/$NAME-jstack.log" && fail 'answer file was not erased'
+log 'JStack: Secure Boot on, account and hostname applied, answers erased'
+
+log 'JStack requested BootNext=Windows; waiting for Windows'
+wait_agent 900 || fail 'Windows did not come back after JStack (BitLocker recovery screen?)'
+lab ps "$NAME" '"SB=" + (Confirm-SecureBootUEFI); "BL=" + (Get-BitLockerVolume C:).ProtectionStatus; bcdedit /enum firmware | Select-String description' | tee -a "$LAB/$NAME-windows.log"
+lab screenshot "$NAME" "$LAB/$NAME-windows.ppm" >/dev/null || true
+
+log 'Uninstall-JStack.ps1'
+lab ps "$NAME" '& C:\lab\Uninstall-JStack.ps1 -Yes *>&1 | Out-String; Get-Partition | Format-Table -Auto | Out-String; bcdedit /enum firmware | Select-String description' --timeout 600 \
+  | tee "$LAB/$NAME-uninstall.log"
+grep -q 'Jstack OS removed' "$LAB/$NAME-uninstall.log" || fail 'uninstall failed'
+log "PASS ($BASE)"

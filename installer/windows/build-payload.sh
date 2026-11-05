@@ -10,8 +10,6 @@
 #     mmx64.efi             MOK manager shipped next to shim (only used on demand)
 #     grubx64.efi           Canonical-signed GRUB
 #     grub.cfg              finds the JStack root by filesystem UUID
-#     vmlinuz               Canonical-signed kernel
-#     initrd.img            generic mkinitcpio initramfs for that kernel
 #   manifest.json         versions, root UUID, sizes, digests
 #
 # Why the Ubuntu chain: firmware on almost every Windows PC trusts only
@@ -44,7 +42,8 @@ W=$OUT/work
 # Versions are pinned and every .deb is checked against the SHA256 published in
 # the Ubuntu archive index (signed Release -> Packages -> SHA256).
 fetch_deb() { # dist package -> path
-  local dist=$1 pkg=$2 idx=$W/Packages-$dist
+  local dist=$1 pkg=$2
+  local idx=$W/Packages-$dist
   [[ -f $idx ]] || curl -fsSL "$UBUNTU/dists/$dist/main/binary-amd64/Packages.gz" | zcat > "$idx"
   local rec; rec=$(awk -v p="$pkg" 'BEGIN{RS=""} $0 ~ "(^|\n)Package: " p "\n" {print; exit}' "$idx")
   [[ -n $rec ]] || die "package $pkg not in $dist"
@@ -57,11 +56,10 @@ fetch_deb() { # dist package -> path
   bsdtar -xOf "$dest" 'data.tar*' | bsdtar -xf - -C "$W/ub"
   printf '%s %s\n' "$pkg" "$(sed -n 's/^Version: //p' <<<"$rec")" >> "$W/versions"
 }
-fetch_deb noble shim-signed
+fetch_deb questing shim-signed   # 1.59: newer SBAT level than noble's 1.58, same MS signature
 fetch_deb noble-updates grub-efi-amd64-signed
 fetch_deb noble-updates "linux-image-$KVER"
-fetch_deb noble-updates "linux-modules-$KVER"
-fetch_deb noble-updates "linux-modules-extra-$KVER" 2>/dev/null || true
+fetch_deb noble-updates "linux-modules-$KVER"   # 7.x: includes the former modules-extra
 UB=$W/ub
 SHIM=$UB/usr/lib/shim/shimx64.efi.signed.latest
 [[ -f $SHIM ]] || SHIM=$UB/usr/lib/shim/shimx64.efi.signed
@@ -89,8 +87,6 @@ sudo cp "$UB/boot/config-$KVER" "$UB/boot/System.map-$KVER" "$ROOT/usr/lib/modul
 ROOT_UUID=$(python3 -c 'import uuid; print(uuid.uuid4())')
 echo "$ROOT_UUID" > "$W/root-uuid"
 sudo python3 "$HERE/payload/configure-root.py" "$ROOT" "$KVER" "$ROOT_UUID"
-sudo cp "$ROOT/boot/initrd.img" "$OUT/boot/initrd.img"
-sudo chown "$(id -u):$(id -g)" "$OUT/boot/initrd.img"
 
 # Btrfs image with the same subvolume layout as the USB installer.
 STAGE=$W/stage
@@ -113,7 +109,6 @@ sudo rm -rf "$STAGE"
 install -m644 "$SHIM" "$OUT/boot/shimx64.efi"
 install -m644 "$UB/usr/lib/shim/mmx64.efi" "$OUT/boot/mmx64.efi"
 install -m644 "$UB/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" "$OUT/boot/grubx64.efi"
-install -m644 "$UB/boot/vmlinuz-$KVER" "$OUT/boot/vmlinuz"
 sed "s/@ROOT_UUID@/$ROOT_UUID/g" "$HERE/payload/grub.cfg.in" > "$OUT/boot/grub.cfg"
 
 python3 - "$OUT" "$ROOT_UUID" "$IMG_BYTES" "$KVER" "$W/versions" "$ISO" <<'PY'
