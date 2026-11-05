@@ -251,7 +251,7 @@ function Test-RootImage([string]$device, [long]$bytes, [string]$expect) {
     try {
         [long]$left = $bytes
         while ($left -gt 0) {
-            $want = [int][math]::Min($block, $left)
+            $want = [int][math]::Min([long]$block, $left)
             $got = 0
             while ($got -lt $want) { $n = $s.Read($buf, $got, $want - $got); if ($n -le 0) { Fail 'short read while verifying' }; $got += $n }
             $null = $sha.TransformBlock($buf, 0, $want, $null, 0)
