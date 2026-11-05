@@ -66,12 +66,18 @@ Upload the contents of `payload/` with `Install-JStack.ps1`, `Install-JStack.cmd
 ## Testing
 
 `vm/lab.py` builds a Windows 11 VM with Secure Boot (Microsoft keys only), a TPM and an
-NVMe disk, then drives the installer inside it:
+NVMe disk. `vm/e2e.sh` runs the whole flow in a fresh overlay of it:
 
     installer/windows/vm/lab.py build-base [--bitlocker]
-    installer/windows/vm/lab.py up test --fresh
+    installer/windows/vm/e2e.sh /abs/payload [--base base-bl]
+
+It installs from Windows, reboots, logs in to JStack on the serial console as the account
+the installer created, checks Secure Boot, the first-boot answers and the erased answer
+file, uses "Restart into Windows" (firmware BootNext), waits for Windows, then uninstalls
+and checks C: and the firmware boot entries are back to how they were.
 
 ## Status
 
-The Secure Boot chain has been proven in QEMU with Microsoft-keys-only firmware.
-The full installer has not yet been run end to end in the test VM.
+Passing end to end in the VM (Windows 11 24H2, Secure Boot on with Microsoft keys only,
+TPM 2.0): install, JStack boot with Secure Boot enabled (kernel lockdown active), first-boot
+account/hostname, BootNext back to Windows, uninstall. Not yet tried on real hardware.

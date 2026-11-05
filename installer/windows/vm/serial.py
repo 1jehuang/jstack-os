@@ -74,7 +74,8 @@ if p in (None, b'Login incorrect'):
 # Plain, predictable shell (fish is the default login shell).
 send("exec bash --norc --noprofile")
 time.sleep(2)
-send("PS1='__P__ '; export TERM=dumb; stty -echo")
+# The marker is split in the command so its echo does not match the prompt itself.
+send("PS1='__''P__ '; export TERM=dumb; bind 'set enable-bracketed-paste off' 2>/dev/null; stty -echo")
 read_until([b'__P__ '], 20)
 for i, c in enumerate(cmds):
     print(f'$ {c}', flush=True)
