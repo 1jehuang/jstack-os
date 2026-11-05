@@ -87,3 +87,8 @@ for i, c in enumerate(cmds):
     text = out.decode(errors='replace').replace('\r', '')
     text = text.replace('__P__ ', '').strip()
     print(text, flush=True)
+# Leave the getty at a login prompt for the next caller (no-op if the last command rebooted).
+try:
+    send('exit')
+except OSError:
+    pass

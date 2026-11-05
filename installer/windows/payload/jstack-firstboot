@@ -60,6 +60,9 @@ tmpl = Path('/usr/share/jstack/systemd/autologin.conf.in')
 if tmpl.exists():
     d = Path('/etc/systemd/system/getty@tty1.service.d'); d.mkdir(parents=True, exist_ok=True)
     (d / 'autologin.conf').write_text(tmpl.read_text().replace('%USER%', user))
+    # Units were loaded before this ran: reload so the queued getty@tty1 (ordered after us)
+    # starts with the autologin drop-in on this very first boot.
+    run('systemctl', 'daemon-reload', check=False)
 # Same policy as the USB installer: tty1 autologin plus passwordless sudo for the owner.
 sudo = Path('/etc/sudoers.d/15-jstack-nopasswd')
 sudo.write_text(f'{user} ALL=(ALL:ALL) NOPASSWD: ALL\n'); sudo.chmod(0o440)
