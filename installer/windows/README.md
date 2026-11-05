@@ -69,7 +69,11 @@ Upload the contents of `payload/` with `Install-JStack.ps1`, `Install-JStack.cmd
 NVMe disk. `vm/e2e.sh` runs the whole flow in a fresh overlay of it:
 
     installer/windows/vm/lab.py build-base [--bitlocker]
-    installer/windows/vm/e2e.sh /abs/payload [--base base-bl]
+    installer/windows/vm/e2e.sh /abs/payload [--bitlocker] [--download]
+
+`--bitlocker` turns on BitLocker with a TPM protector first and checks Windows comes back
+without the recovery key and with protection resumed. `--download` serves the payload over
+HTTP and installs with `-PayloadUrl`, like the real release download.
 
 It installs from Windows, reboots, logs in to JStack on the serial console as the account
 the installer created, checks Secure Boot, the first-boot answers and the erased answer
@@ -80,4 +84,6 @@ and checks C: and the firmware boot entries are back to how they were.
 
 Passing end to end in the VM (Windows 11 24H2, Secure Boot on with Microsoft keys only,
 TPM 2.0): install, JStack boot with Secure Boot enabled (kernel lockdown active), first-boot
-account/hostname, BootNext back to Windows, uninstall. Not yet tried on real hardware.
+account/hostname, tty1 autologin, BootNext back to Windows, uninstall. Also passing with
+TPM BitLocker on C: (no recovery prompt, protection resumes) and with the payload
+downloaded over HTTP in split parts. Not yet tried on real hardware.
