@@ -39,7 +39,6 @@ if ((DOWNLOAD)); then
   ls -la "$LAB/$NAME-www"
   setsid python3 -m http.server 8799 -d "$LAB/$NAME-www" > "$LAB/$NAME-www.log" 2>&1 < /dev/null &
   WWW=$!
-  tar -cf "$TAR" -T /dev/null
   SRC='-PayloadUrl http://10.0.2.2:8799'
 else
   tar -C "$PAYLOAD" -cf "$TAR" --exclude=work .
@@ -86,16 +85,20 @@ if ((BITLOCKER)); then
   grep -q 'BL=On' "$LAB/$NAME-bl.log" || fail 'BitLocker protection is not on'
 fi
 
-URL_T=$(lab put "$NAME" "$TAR"); URL_I=$(lab put "$NAME" "$LAB/Install-JStack.ps1"); URL_U=$(lab put "$NAME" "$LAB/Uninstall-JStack.ps1")
+URL_T=; ((DOWNLOAD)) || URL_T=$(lab put "$NAME" "$TAR")
+URL_I=$(lab put "$NAME" "$LAB/Install-JStack.ps1"); URL_U=$(lab put "$NAME" "$LAB/Uninstall-JStack.ps1")
 log 'copying payload into the guest'
 lab ps "$NAME" "
 \$ErrorActionPreference='Stop'
 New-Item -ItemType Directory -Force C:\\lab\\payload | Out-Null
 \$wc = New-Object Net.WebClient
-\$wc.DownloadFile('$URL_T', 'C:\\lab\\payload.tar')
 \$wc.DownloadFile('$URL_I', 'C:\\lab\\Install-JStack.ps1')
 \$wc.DownloadFile('$URL_U', 'C:\\lab\\Uninstall-JStack.ps1')
-tar.exe -xf C:\\lab\\payload.tar -C C:\\lab\\payload
+if ('$URL_T') {
+  \$wc.DownloadFile('$URL_T', 'C:\\lab\\payload.tar')
+  tar.exe -xf C:\\lab\\payload.tar -C C:\\lab\\payload
+  if (\$LASTEXITCODE) { throw 'tar failed' }
+}
 Get-ChildItem -Recurse C:\\lab\\payload | Select-Object FullName,Length | Format-Table -Auto
 " --timeout 1200 || fail 'copy failed'
 
