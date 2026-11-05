@@ -171,8 +171,8 @@ function Get-Payload([string]$dest) {
             if ($LASTEXITCODE -ne 0) { Fail "download failed: $url" }
         } else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $out }
     }
+    if (-not $src) { Remove-Item -LiteralPath (Join-Path $dest 'manifest.json') -ErrorAction SilentlyContinue }   # never trust a stale one
     Fetch 'manifest.json' 0
-    if (-not $src) { Remove-Item (Join-Path $dest 'manifest.json'); Fetch 'manifest.json' 0 }
     $m = Get-Content -Raw -LiteralPath (Join-Path $dest 'manifest.json') | ConvertFrom-Json
     if ($m.schema -ne 1) { Fail "unsupported payload schema $($m.schema)" }
     foreach ($p in $m.files.PSObject.Properties) {

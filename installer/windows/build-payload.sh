@@ -103,6 +103,10 @@ sudo mkfs.btrfs -q -U "$ROOT_UUID" -L jstack --compress zstd:3 -r "$STAGE" \
 sudo chown "$(id -u):$(id -g)" "$IMG"
 IMG_BYTES=$(stat -c %s "$IMG")
 pigz -9 -c "$IMG" > "$OUT/jstack-root.img.gz" && rm -f "$IMG"  # gzip: Windows decompresses it natively
+# GitHub release assets must be under 2 GiB: split into parts the installer concatenates.
+if (( $(stat -c %s "$OUT/jstack-root.img.gz") > 1900 * 1024 * 1024 )); then
+  split -b 1900M -d -a 3 "$OUT/jstack-root.img.gz" "$OUT/jstack-root.img.gz.part" && rm "$OUT/jstack-root.img.gz"
+fi
 sudo rm -rf "$STAGE"
 
 # --- Boot files --------------------------------------------------------------
