@@ -20,6 +20,9 @@ while (($#)); do case $1 in
   --bitlocker) BITLOCKER=1; shift;;
   *) echo "unknown $1"; exit 2;; esac; done
 NAME=e2e-$BASE$( ((BITLOCKER)) && echo -bl)
+# Without BitLocker JStack becomes the default; with it the installer's auto choice is
+# Windows (JStack still starts once via firmware BootNext right after install).
+DEFAULT_OS=$( ((BITLOCKER)) && echo auto || echo jstack)
 PORT=8765  # guest agent always polls 10.0.2.2:8765
 lab() { python3 "$HERE/lab.py" "$@"; }
 log() { printf '[e2e %(%H:%M:%S)T] %s\n' -1 "$*"; }
@@ -89,7 +92,7 @@ grep -q 'Dry run: all checks passed' "$LAB/$NAME-dryrun.log" || fail 'dry run fa
 log 'running Install-JStack.ps1 for real'
 lab ps "$NAME" "
 \$pw = ConvertTo-SecureString 'jstack-e2e' -AsPlainText -Force
-& C:\\lab\\Install-JStack.ps1 -PayloadDir C:\\lab\\payload -Username tester -Password \$pw -Hostname e2ehost -SizeGB 24 -DefaultOS jstack -NoReboot -Yes *>&1 | Out-String -Width 300
+& C:\\lab\\Install-JStack.ps1 -PayloadDir C:\\lab\\payload -Username tester -Password \$pw -Hostname e2ehost -SizeGB 24 -DefaultOS $DEFAULT_OS -NoReboot -Yes *>&1 | Out-String -Width 300
 bcdedit /enum firmware | Out-String
 Get-Partition | Format-Table -Auto | Out-String
 " --timeout 2400 | tee "$LAB/$NAME-install.log"
@@ -106,11 +109,13 @@ python3 "$HERE/serial.py" "$LAB/$NAME.serial.sock" tester jstack-e2e 600 \
   'echo ANSWERS=$(echo jstack-e2e | sudo -S -p "" ls /efi/EFI/jstack/)' \
   'findmnt -no SOURCE,FSTYPE / ; df -h / | tail -1' \
   'systemctl is-system-running; systemctl --failed --no-legend | head' \
+  'sleep 5; echo TTY1=$(loginctl list-sessions --no-legend | awk "\$4==\"tty1\" {print \$3}")' \
   'echo jstack-e2e | sudo -S -p "" efibootmgr' \
   'echo jstack-e2e | sudo -S -p "" jstack-boot-windows --reboot' \
   | tee "$LAB/$NAME-jstack.log" || fail 'serial login/checks failed'
 grep -q 'SB=1' "$LAB/$NAME-jstack.log" || fail 'Secure Boot not enabled in JStack'
 grep -q 'FB=tester HOST=e2ehost' "$LAB/$NAME-jstack.log" || fail 'first boot did not apply answers'
+grep -q 'TTY1=tester' "$LAB/$NAME-jstack.log" || fail 'tty1 autologin did not log in the account'
 grep -q 'firstboot.json' "$LAB/$NAME-jstack.log" && fail 'answer file was not erased'
 log 'JStack: Secure Boot on, account and hostname applied, answers erased'
 
