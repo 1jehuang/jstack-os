@@ -217,6 +217,7 @@ public class JStackConcat : Stream {
     public override long Position { get { throw new System.NotSupportedException(); } set { throw new System.NotSupportedException(); } }
     public override void Flush() { } public override long Seek(long a, SeekOrigin b) { throw new System.NotSupportedException(); }
     public override void SetLength(long a) { throw new System.NotSupportedException(); }
+    protected override void Dispose(bool d) { if (d) foreach (Stream s in parts) s.Dispose(); base.Dispose(d); }
     public override void Write(byte[] b, int o, int c) { throw new System.NotSupportedException(); }
 }
 '@ -ErrorAction SilentlyContinue
@@ -494,6 +495,7 @@ shutdown.exe /r /t 0
 }
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $work) { Say "    Note: could not delete $work, you can remove it by hand." 'Yellow' }
 Step 'Done'
 Say 'Jstack OS is installed. The PC will restart into it now (first start takes about a minute).' 'Green'
 Say 'To get back to Windows: pick "Windows" in the menu at startup, or "Restart into Windows" in JStack.'

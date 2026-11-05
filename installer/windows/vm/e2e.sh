@@ -138,6 +138,8 @@ bcdedit /enum firmware | Out-String
 Get-Partition | Format-Table -Auto | Out-String
 " --timeout 2400 | tee "$LAB/$NAME-install.log"
 grep -q 'Jstack OS is installed' "$LAB/$NAME-install.log" || fail 'installer did not finish'
+lab ps "$NAME" '"LEFTOVER=" + (Test-Path C:\JStackInstall)' | tee -a "$LAB/$NAME-install.log"
+grep -q 'LEFTOVER=False' "$LAB/$NAME-install.log" || fail 'downloaded payload was left in C:\JStackInstall'
 
 log 'restarting into JStack'
 lab ps "$NAME" 'shutdown.exe /r /t 2' --timeout 30 || true
