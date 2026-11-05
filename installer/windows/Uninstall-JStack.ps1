@@ -51,5 +51,7 @@ $cur = (Get-Partition -DiskNumber $s.disk -PartitionNumber $s.c_partition).Size
 if ($max -gt $cur) { Resize-Partition -DiskNumber $s.disk -PartitionNumber $s.c_partition -Size $max }
 if ($s.PSObject.Properties['shortcut'] -and $s.shortcut) { Remove-Item -LiteralPath $s.shortcut -Force -ErrorAction SilentlyContinue }
 Remove-Item -LiteralPath (Join-Path $StateDir 'Restart-Into-JStack.ps1') -Force -ErrorAction SilentlyContinue
+# Downloaded payload left behind by an interrupted install (several GB).
+Remove-Item -LiteralPath (Join-Path $env:SystemDrive 'JStackInstall') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $StatePath -Force
 Write-Host 'Jstack OS removed. C: has its space back.' -ForegroundColor Green

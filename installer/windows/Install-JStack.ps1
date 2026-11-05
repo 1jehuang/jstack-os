@@ -181,7 +181,16 @@ function Get-Payload([string]$dest) {
     if ($m.schema -ne 1) { Fail "unsupported payload schema $($m.schema)" }
     foreach ($p in $m.files.PSObject.Properties) {
         Fetch $p.Name ([long]$p.Value.bytes)
-        $got = Get-FileSha256 (Join-Path $dest ($p.Name -replace '/', '\'))
+        $file = Join-Path $dest ($p.Name -replace '/', '\')
+        $got = Get-FileSha256 $file
+        if ($got -ne $p.Value.sha256 -and -not $src) {
+            # A full-size but damaged file (earlier run, flaky network) would otherwise be
+            # skipped forever by the size check in Fetch: fetch it again from scratch once.
+            Say "    $($p.Name) is damaged, downloading it again" 'Yellow'
+            Remove-Item -LiteralPath $file -Force
+            Fetch $p.Name ([long]$p.Value.bytes)
+            $got = Get-FileSha256 $file
+        }
         if ($got -ne $p.Value.sha256) { Fail "checksum mismatch for $($p.Name). Delete $dest and try again." }
     }
     return $m
