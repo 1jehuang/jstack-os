@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end test of the Windows installer in a disposable Secure Boot VM.
 #
-#   installer/windows/vm/e2e.sh /abs/payload-dir [--base base] [--bitlocker] [--download]
+#   installer/windows/vm/e2e.sh /abs/payload-dir [--base base] [--bitlocker] [--download | --release]
 #
 # 1. Boots a fresh overlay of the Windows base image (Secure Boot on, MS keys only, TPM).
 # 2. Copies the payload and installer in over the lab agent, runs Install-JStack.ps1 -Yes.
@@ -16,8 +16,10 @@ PAYLOAD=${1:?payload dir}; shift
 BASE=base
 BITLOCKER=0
 DOWNLOAD=0
+RELEASE=0
 while (($#)); do case $1 in
-  --download) DOWNLOAD=1; shift;;   # fetch over HTTP (curl + resume + split parts) like a release
+  --download) DOWNLOAD=1; shift;;
+  --release) RELEASE=1; DOWNLOAD=1; shift;;  # everything from the live GitHub release, via Install-JStack.cmd   # fetch over HTTP (curl + resume + split parts) like a release
   --base) BASE=$2; shift 2;;
   --bitlocker) BITLOCKER=1; shift;;
   *) echo "unknown $1"; exit 2;; esac; done
@@ -32,7 +34,10 @@ fail() { log "FAIL: $*"; lab screenshot "$NAME" "$LAB/$NAME-fail.ppm" >/dev/null
 
 # Payload is served to the guest as one tar (agent fetches files by name).
 TAR=$LAB/$NAME-payload.tar
-if ((DOWNLOAD)); then
+REL=https://github.com/1jehuang/jstack-os/releases/latest/download
+if ((RELEASE)); then
+  SRC=''   # installer default: -PayloadUrl $REL
+elif ((DOWNLOAD)); then
   # Release-style: the guest downloads every asset from a flat HTTP directory.
   mkdir -p "$LAB/$NAME-www"; rm -f "$LAB/$NAME-www"/*
   find "$PAYLOAD" -path "$PAYLOAD/work" -prune -o -type f -print0 | xargs -0 -I{} ln -f {} "$LAB/$NAME-www/"
@@ -101,6 +106,13 @@ if ('$URL_T') {
   tar.exe -xf C:\\lab\\payload.tar -C C:\\lab\\payload
   if (\$LASTEXITCODE) { throw 'tar failed' }
 }
+if ($RELEASE) {
+  # What a user gets: the scripts straight from the release, and the .cmd on its own
+  # (so it has to download Install-JStack.ps1 itself).
+  New-Item -ItemType Directory -Force C:\\lab\\cmd | Out-Null
+  foreach (\$f in 'Install-JStack.ps1','Uninstall-JStack.ps1') { \$wc.DownloadFile('$REL/'+\$f, 'C:\\lab\\'+\$f) }
+  \$wc.DownloadFile('$REL/Install-JStack.cmd', 'C:\\lab\\cmd\\Install-JStack.cmd')
+}
 Get-ChildItem -Recurse C:\\lab\\payload | Select-Object FullName,Length | Format-Table -Auto
 " --timeout 1200 || fail 'copy failed'
 
@@ -108,6 +120,15 @@ log 'running Install-JStack.ps1 -DryRun'
 lab ps "$NAME" "\$pw = ConvertTo-SecureString 'jstack-e2e' -AsPlainText -Force; & C:\\lab\\Install-JStack.ps1 $SRC -Username tester -Password \$pw -SizeGB 24 -DryRun *>&1 | Out-String -Width 300" --timeout 600 \
   | tee "$LAB/$NAME-dryrun.log"
 grep -q 'Dry run: all checks passed' "$LAB/$NAME-dryrun.log" || fail 'dry run failed'
+if ((RELEASE)); then
+  # The double-click path: a lone Install-JStack.cmd fetches the .ps1 from the release and
+  # runs it (pause at the end is answered from stdin).
+  log 'Install-JStack.cmd -DryRun (standalone, from the release)'
+  lab ps "$NAME" 'cmd.exe /c "echo.| C:\lab\cmd\Install-JStack.cmd -Username tester -NoPassword -SizeGB 24 -DryRun" 2>&1 | Out-String -Width 300' --timeout 600 \
+    | tee "$LAB/$NAME-cmd.log"
+  grep -q 'Dry run: all checks passed' "$LAB/$NAME-cmd.log" || fail 'Install-JStack.cmd dry run failed'
+fi
+lab ps "$NAME" '"CSIZE=" + (Get-Partition -DriveLetter C).Size' | tee "$LAB/$NAME-csize.log"
 
 log 'running Install-JStack.ps1 for real'
 lab ps "$NAME" "
@@ -158,4 +179,19 @@ log 'Uninstall-JStack.ps1'
 lab ps "$NAME" '& C:\lab\Uninstall-JStack.ps1 -Yes *>&1 | Out-String; Get-Partition | Format-Table -Auto | Out-String; bcdedit /enum firmware | Select-String description' --timeout 600 \
   | tee "$LAB/$NAME-uninstall.log"
 grep -q 'Jstack OS removed' "$LAB/$NAME-uninstall.log" || fail 'uninstall failed'
+# Everything the installer added is gone and C: is its original size again.
+lab ps "$NAME" '
+"CSIZE=" + (Get-Partition -DriveLetter C).Size
+"LINUXPARTS=" + @(Get-Partition | Where-Object GptType -eq "{0fc63daf-8483-4772-8e79-3d69d8477de4}").Count
+"FWENTRY=" + [bool](bcdedit /enum firmware | Select-String "Jstack OS")
+"SHORTCUT=" + (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Restart into JStack.lnk")
+"STATE=" + (Test-Path "$env:ProgramData\JStack\state.json")
+mountvol.exe S: /S | Out-Null; "ESPDIR=" + (Test-Path S:\EFI\jstack); "WINBOOT=" + (Test-Path S:\EFI\Microsoft\Boot\bootmgfw.efi); mountvol.exe S: /D | Out-Null
+' | tee "$LAB/$NAME-after.log"
+before=$(grep -o 'CSIZE=[0-9]*' "$LAB/$NAME-csize.log"); after=$(grep -o 'CSIZE=[0-9]*' "$LAB/$NAME-after.log")
+[[ -n $before && $before == "$after" ]] || fail "C: size not restored ($before vs $after)"
+for want in LINUXPARTS=0 FWENTRY=False SHORTCUT=False STATE=False ESPDIR=False WINBOOT=True; do
+  grep -q "$want" "$LAB/$NAME-after.log" || fail "after uninstall: expected $want"
+done
+log 'uninstall: C: size restored, partition, boot entry, ESP folder, shortcut and state gone'
 log "PASS ($BASE)"
