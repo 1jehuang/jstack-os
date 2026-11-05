@@ -81,7 +81,8 @@ if ((BITLOCKER)); then
   lab ps "$NAME" 'shutdown.exe /r /t 2' --timeout 30 || true
   sleep 30
   wait_agent 900 || fail 'Windows did not come back after enabling BitLocker'
-  lab ps "$NAME" '"BL=" + (Get-BitLockerVolume C:).ProtectionStatus' | tee "$LAB/$NAME-bl.log"
+  # Windows Update may suspend BitLocker around its own reboots: make sure it is active.
+  lab ps "$NAME" 'if ((Get-BitLockerVolume C:).ProtectionStatus -ne "On") { Resume-BitLocker -MountPoint C: | Out-Null }; "BL=" + (Get-BitLockerVolume C:).ProtectionStatus' | tee "$LAB/$NAME-bl.log"
   grep -q 'BL=On' "$LAB/$NAME-bl.log" || fail 'BitLocker protection is not on'
 fi
 
