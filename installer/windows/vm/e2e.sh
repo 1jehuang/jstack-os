@@ -81,8 +81,8 @@ if ((BITLOCKER)); then
   lab ps "$NAME" 'shutdown.exe /r /t 2' --timeout 30 || true
   sleep 30
   wait_agent 900 || fail 'Windows did not come back after enabling BitLocker'
-  # Windows Update may suspend BitLocker around its own reboots: make sure it is active.
-  lab ps "$NAME" 'if ((Get-BitLockerVolume C:).ProtectionStatus -ne "On") { Resume-BitLocker -MountPoint C: | Out-Null }; "BL=" + (Get-BitLockerVolume C:).ProtectionStatus' | tee "$LAB/$NAME-bl.log"
+  # Status reads Off for a short while after boot, and Windows Update may suspend it: poll.
+  lab ps "$NAME" '$i = 0; while ((Get-BitLockerVolume C:).ProtectionStatus -ne "On" -and $i -lt 24) { if ($i -eq 12) { Resume-BitLocker -MountPoint C: | Out-Null }; Start-Sleep 5; $i++ }; "BL=" + (Get-BitLockerVolume C:).ProtectionStatus' --timeout 300 | tee "$LAB/$NAME-bl.log"
   grep -q 'BL=On' "$LAB/$NAME-bl.log" || fail 'BitLocker protection is not on'
 fi
 
@@ -143,7 +143,7 @@ if ((BITLOCKER)); then
   lab ps "$NAME" 'shutdown.exe /r /t 2' --timeout 30 || true
   sleep 30
   wait_agent 900 || fail 'Windows did not come back on the second reboot'
-  lab ps "$NAME" '"BL2=" + (Get-BitLockerVolume C:).ProtectionStatus' | tee -a "$LAB/$NAME-windows.log"
+  lab ps "$NAME" '$i = 0; while ((Get-BitLockerVolume C:).ProtectionStatus -ne "On" -and $i -lt 24) { Start-Sleep 5; $i++ }; "BL2=" + (Get-BitLockerVolume C:).ProtectionStatus' --timeout 300 | tee -a "$LAB/$NAME-windows.log"
   grep -q 'BL2=On' "$LAB/$NAME-windows.log" || fail 'BitLocker protection did not resume'
   log 'BitLocker: no recovery prompt, protection resumed'
 fi
